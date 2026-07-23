@@ -7,6 +7,7 @@ from app.pipeline.context import PipelineContext
 from app.pipeline.graph import (
     decide_next_step,
     keep_chatting,
+    log_lead_and_notify,
     route_after_decision,
     score_lead,
     search_knowledge,
@@ -195,3 +196,62 @@ class TestKeepChatting:
         assert result.draft_text == "Let me check on that."
         prompt = mock_gen.call_args.args[0]
         assert "no matching knowledge found" in prompt
+
+
+class TestLogLeadAndNotify:
+    async def test_always_logs_a_lead(self) -> None:
+        state = _make_state("What flavors do you have?")
+        state.detected_intent = "knowledge_question"
+        state.lead_score = "cold"
+        state.decision = "keep_chatting"
+        with (
+            patch("app.pipeline.graph.LeadRepository") as mock_lead_repo_cls,
+            patch("app.pipeline.graph.EscalationRepository") as mock_escalation_repo_cls,
+        ):
+            mock_lead_repo_cls.return_value.add = AsyncMock()
+            mock_escalation_repo_cls.return_value.add = AsyncMock()
+            await log_lead_and_notify(state, _make_runtime())
+
+        mock_lead_repo_cls.return_value.add.assert_called_once()
+        logged_lead = mock_lead_repo_cls.return_value.add.call_args.args[0]
+        assert logged_lead.score == "cold"
+        assert logged_lead.tenant_id == state.tenant_id
+        assert logged_lead.conversation_id == state.conversation_id
+        mock_escalation_repo_cls.return_value.add.assert_not_called()
+
+    async def test_logs_an_escalation_when_escalated(self) -> None:
+        state = _make_state("Can you guarantee this will definitely cure my condition?")
+        state.lead_score = "warm"
+        state.decision = "escalate_to_human"
+        state.escalation_reason = "contraindication language (matched 'allerg')"
+        with (
+            patch("app.pipeline.graph.LeadRepository") as mock_lead_repo_cls,
+            patch("app.pipeline.graph.EscalationRepository") as mock_escalation_repo_cls,
+        ):
+            mock_lead_repo_cls.return_value.add = AsyncMock()
+            mock_escalation_repo_cls.return_value.add = AsyncMock()
+            await log_lead_and_notify(state, _make_runtime())
+
+        mock_escalation_repo_cls.return_value.add.assert_called_once()
+        logged_escalation = mock_escalation_repo_cls.return_value.add.call_args.args[0]
+        assert logged_escalation.reason == state.escalation_reason
+        assert logged_escalation.layer == "platform_floor"
+        assert logged_escalation.status == "pending"
+
+    async def test_does_not_log_escalation_without_a_reason(self) -> None:
+        # Shouldn't happen in practice (decide_next_step always sets a
+        # reason alongside escalate_to_human), but guards against a
+        # constraint violation if it ever did.
+        state = _make_state("hello")
+        state.lead_score = "cold"
+        state.decision = "escalate_to_human"
+        state.escalation_reason = None
+        with (
+            patch("app.pipeline.graph.LeadRepository") as mock_lead_repo_cls,
+            patch("app.pipeline.graph.EscalationRepository") as mock_escalation_repo_cls,
+        ):
+            mock_lead_repo_cls.return_value.add = AsyncMock()
+            mock_escalation_repo_cls.return_value.add = AsyncMock()
+            await log_lead_and_notify(state, _make_runtime())
+
+        mock_escalation_repo_cls.return_value.add.assert_not_called()
