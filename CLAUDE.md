@@ -63,6 +63,15 @@ forward — this pass doesn't cover anything added after it.
   detect-and-match the incoming message's language, not assume English; any
   embedding provider choice needs real cross-lingual retrieval, not just
   Turkish support. See `docs/ARCHITECTURE.md` §7.
+- LLM/embedding provider is Gemini (free tier), both through
+  `app.core.llm` (`generate_text` / `embed_text`) — pipeline nodes and
+  knowledge ingestion should call that module, not the `google-genai` SDK
+  directly, so swapping providers later stays contained. Two caveats to
+  keep in mind, not yet resolved: free-tier rate limits against a pipeline
+  that makes up to 3 LLM calls per inbound message, and free-tier
+  data-usage terms should be checked before routing real customer
+  conversations through it (REQUIREMENTS §12 stage 2), not just synthetic
+  testing (stage 1).
 
 ## Commands
 
@@ -90,9 +99,16 @@ discipline above; the existing set doesn't need reinstalling.
   if pytest ever isn't available)
 - Migrations: `alembic revision --autogenerate -m "..."` then `alembic
   upgrade head` — needs a reachable Postgres (`docker compose up -d db`).
-  The initial schema migration (all 11 Phase 1 tables, plus `CREATE
-  EXTENSION IF NOT EXISTS vector`) is already applied; downgrade→upgrade
-  round-trip has been verified to work from a clean DB.
+  Two migrations exist (initial schema; embedding dim 1536→768 for
+  Gemini), both applied, both downgrade→upgrade round-trip verified.
+
+**Alembic autogenerate gotcha, hit twice now — check for it every time a
+migration touches a `Vector(...)` column:** the generated file references
+`pgvector.sqlalchemy.vector.VECTOR(...)` but autogenerate doesn't add the
+`import pgvector.sqlalchemy` line for it — add it by hand or the migration
+fails at import time. A `render_item` hook in `alembic/env.py` would fix
+this at the root; hasn't been worth it for two migrations, reconsider if a
+third hits the same thing.
 
 **Docker networking gotcha already hit and fixed once — don't reintroduce
 it:** `.env`/`.env.example` use `localhost` for `ENVELOPS_DATABASE_URL`/
@@ -102,6 +118,37 @@ the compose network (containers reach each other by service name). The
 `environment:` overrides (`db`/`redis` instead of `localhost`) for exactly
 this reason — if you add a new env var that needs different values in each
 context, follow the same pattern rather than editing `.env` itself.
+
+**`config.py` gotcha already hit and fixed once:** `env_file` must be an
+absolute path (`Path(__file__).resolve().parents[3] / ".env"`), not the
+bare string `".env"` — pydantic-settings resolves a relative path against
+cwd, so running the app from `backend/` (the documented no-Docker path)
+silently loaded an empty config before this fix. Docker never hit this
+since compose injects real env vars directly, bypassing the file lookup.
+
+**Both `generate_text` and `embed_text` are confirmed working end to end
+against the real API** (`ENVELOPS_GEMINI_API_KEY` is set in `.env`). Getting
+here took two real, non-obvious findings — both already fixed in
+`core/llm.py`, don't re-break them:
+
+- **Free-tier quota is granted per model, not just per key/project, and a
+  given model can sit at a permanent zero quota on a given account** — this
+  shows as a 429 `generate_content_free_tier_requests, limit: 0` that never
+  recovers on retry, not a transient rate-limit blip (don't mistake it for
+  one — a real per-minute rate limit looks the same superficially but
+  actually clears after the stated `retryDelay`). `gemini-2.5-flash`,
+  `gemini-2.0-flash`, and `gemini-2.0-flash-lite` all hit this on this
+  account; `gemini-flash-lite-latest` (current `GENERATION_MODEL`) doesn't.
+  IoTOps hit and documented this same issue independently (see
+  `../iotops-workspace/IoTOps/deploy/iotops/.env.prod.example`) — if this
+  model ever stops working too, check what's actually available via `GET
+  https://generativelanguage.googleapis.com/v1beta/models?key=...` rather
+  than guessing another name.
+- **`text-embedding-004` (the original embedding model choice) is
+  retired** — `models.list()` no longer lists it. `gemini-embedding-001`
+  replaced it, with configurable output size via `output_dimensionality`
+  (current `EMBEDDING_MODEL`, requested at 768 to match the already-migrated
+  `knowledge_chunks.embedding` column rather than the model's 3072 default).
 
 Test coverage so far: `escalation/safety_gate.py` (Layer 1 safety floor,
 Turkish + English patterns, with regression tests for real false positives
