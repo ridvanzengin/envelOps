@@ -13,9 +13,12 @@ from langgraph.graph import END, StateGraph
 from langgraph.runtime import Runtime
 
 from app.core.llm import embed_text, generate_text
-from app.escalation.repository import TenantTriggerPhraseRepository
+from app.escalation.models import Escalation
+from app.escalation.repository import EscalationRepository, TenantTriggerPhraseRepository
 from app.escalation.safety_gate import check_safety_floor
 from app.knowledge.repository import KnowledgeChunkRepository
+from app.leads.models import Lead
+from app.leads.repository import LeadRepository
 from app.pipeline.context import PipelineContext
 from app.pipeline.state import PipelineState
 from app.tenants.repository import TenantRepository
@@ -152,8 +155,45 @@ def book_or_checkout(state: PipelineState) -> PipelineState:
     raise NotImplementedError
 
 
-def log_lead_and_notify(state: PipelineState) -> PipelineState:
-    raise NotImplementedError
+async def log_lead_and_notify(
+    state: PipelineState, runtime: Runtime[PipelineContext]
+) -> PipelineState:
+    """Step 7 (REQUIREMENTS §3): "recorded, tagged with source." Only the
+    "log" half is built — "notify team" has no channel designed yet
+    (ARCHITECTURE §10, still an open item), so this silently skips it
+    rather than fake a notification that doesn't go anywhere. "Tagged with
+    source" doesn't need a field here: conversation_id already links to
+    the conversation's channel.
+
+    Doesn't call session.commit() — that's the caller's job (whoever
+    invokes graph.ainvoke() owns the session for the whole run, per
+    PipelineContext's docstring), same as every other DB-touching node
+    here. Repository.add() already flushes, which is enough for
+    within-transaction visibility.
+    """
+    lead_repo = LeadRepository(runtime.context.session)
+    await lead_repo.add(
+        Lead(
+            tenant_id=state.tenant_id,
+            conversation_id=state.conversation_id,
+            score=state.lead_score or "cold",
+            notes=state.detected_intent,
+        )
+    )
+
+    if state.decision == "escalate_to_human" and state.escalation_reason is not None:
+        escalation_repo = EscalationRepository(runtime.context.session)
+        await escalation_repo.add(
+            Escalation(
+                tenant_id=state.tenant_id,
+                conversation_id=state.conversation_id,
+                reason=state.escalation_reason,
+                layer="platform_floor",  # only Layer 1 exists so far (REQUIREMENTS §6)
+                status="pending",
+            )
+        )
+
+    return state
 
 
 def build_pipeline_graph() -> StateGraph[PipelineState, PipelineContext]:
