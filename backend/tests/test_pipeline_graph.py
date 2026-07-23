@@ -5,7 +5,12 @@ import pytest
 from langgraph.runtime import Runtime
 
 from app.pipeline.context import PipelineContext
-from app.pipeline.graph import decide_next_step, route_after_decision, understand_intent
+from app.pipeline.graph import (
+    decide_next_step,
+    route_after_decision,
+    score_lead,
+    understand_intent,
+)
 from app.pipeline.state import PipelineState
 
 
@@ -40,6 +45,26 @@ class TestUnderstandIntent:
         with patch("app.pipeline.graph.generate_text", return_value="not a real label"):
             result = understand_intent(state)
         assert result.detected_intent == "other"
+
+
+class TestScoreLead:
+    def test_uses_model_label_when_valid(self) -> None:
+        state = _make_state("I want to order 5 jars right now, how do I pay?")
+        with patch("app.pipeline.graph.generate_text", return_value="hot"):
+            result = score_lead(state)
+        assert result.lead_score == "hot"
+
+    def test_is_case_and_whitespace_insensitive(self) -> None:
+        state = _make_state("Just curious what you sell")
+        with patch("app.pipeline.graph.generate_text", return_value="  Cold  \n"):
+            result = score_lead(state)
+        assert result.lead_score == "cold"
+
+    def test_falls_back_to_cold_on_unrecognized_label(self) -> None:
+        state = _make_state("asdkjasndkjan")
+        with patch("app.pipeline.graph.generate_text", return_value="not a real label"):
+            result = score_lead(state)
+        assert result.lead_score == "cold"
 
 
 class TestDecideNextStepSafetyFloor:
