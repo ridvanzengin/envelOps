@@ -1,0 +1,16 @@
+{
+  "nav": {
+    "inbox": "Gelen Kutusu",
+    "escalations": "Yükseltme Kuyruğu",
+    "knowledge": "Bilgi Kaynakları",
+    "settings": "Ayarlar",
+    "dashboard": "Panel"
+  },
+  "pages": {
+    "inbox": "Konuşma listesi ve mesaj görünümü burada olacak.",
+    "escalations": "İnsan onayı bekleyen konuşmalar — otomatik gönderim Faz 1 varsayılanı olduğu için birincil eylem ekranı.",
+    "knowledge": "Bilgi kaynağı ekle (URL/PDF/manuel), listele ve yenile.",
+    "settings": "Kanal bağlantı durumu ve güvenlik tetikleyici ifadeleri (sistem varsayılanları kilitli, kiracı yenilerini ekleyebilir).",
+    "dashboard": "Bugünkü potansiyel müşteriler, bugünkü yükseltmeler, yanıt süreleri."
+  }
+}

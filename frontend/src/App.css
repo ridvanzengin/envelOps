@@ -1,0 +1,11 @@
+nav {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+  padding: 1rem;
+  border-bottom: 1px solid #ddd;
+}
+
+main {
+  padding: 1rem;
+}

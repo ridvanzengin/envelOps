@@ -1,0 +1,16 @@
+{
+  "nav": {
+    "inbox": "Inbox",
+    "escalations": "Escalation queue",
+    "knowledge": "Knowledge sources",
+    "settings": "Settings",
+    "dashboard": "Dashboard"
+  },
+  "pages": {
+    "inbox": "Conversation list and thread view go here.",
+    "escalations": "Conversations waiting on a human — the primary action screen, since auto-send is the Phase 1 default.",
+    "knowledge": "Add (URL/PDF/manual), list, and refresh knowledge sources.",
+    "settings": "Channel connection status and safety trigger phrases (system defaults locked, tenant can add more).",
+    "dashboard": "Leads today, escalations today, response times."
+  }
+}

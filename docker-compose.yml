@@ -1,0 +1,49 @@
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: envelops
+      POSTGRES_PASSWORD: envelops
+      POSTGRES_DB: envelops
+    ports:
+      - "5432:5432"
+    volumes:
+      - db_data:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+  backend:
+    build: ./backend
+    env_file: .env
+    environment:
+      # override the host-dev (localhost) values from .env — inside the
+      # compose network, other containers are reached by service name, not
+      # localhost, which is the backend's own network namespace here
+      ENVELOPS_DATABASE_URL: postgresql+asyncpg://envelops:envelops@db:5432/envelops
+      ENVELOPS_REDIS_URL: redis://redis:6379/0
+    ports:
+      - "8000:8000"
+    depends_on:
+      - db
+      - redis
+    volumes:
+      - ./backend/app:/app/app
+
+  worker:
+    build: ./backend
+    env_file: .env
+    environment:
+      ENVELOPS_DATABASE_URL: postgresql+asyncpg://envelops:envelops@db:5432/envelops
+      ENVELOPS_REDIS_URL: redis://redis:6379/0
+    command: celery -A app.core.celery_app worker --loglevel=info
+    depends_on:
+      - db
+      - redis
+    volumes:
+      - ./backend/app:/app/app
+
+volumes:
+  db_data:

@@ -1,0 +1,108 @@
+"""The fixed 8-step pipeline (docs/ARCHITECTURE.md §4). Node bodies are not
+implemented yet — this file wires up the sequence/branching so the shape is
+settled before the logic (LLM calls, vector search, notifications) lands.
+
+Step 1 ("incoming message") happens before this graph runs — the channel
+ingestion path (§7) normalizes the message and hands off to Celery, which
+builds the initial PipelineState and invokes the graph starting at step 2.
+Step 8 (follow-up) is a separate Celery-triggered re-entry at step 2, not a
+node in this graph.
+"""
+
+from langgraph.graph import END, StateGraph
+
+from app.escalation.safety_gate import check_platform_safety_floor
+from app.pipeline.state import PipelineState
+
+# decide_next_step only runs the system-default half of the safety floor
+# (check_platform_safety_floor) — the tenant-additions half
+# (check_tenant_trigger_phrases / the combined check_safety_floor) needs a
+# DB-loaded phrase list, and pipeline nodes here are plain functions of
+# PipelineState with no session. Wiring that in is an open item, not
+# forgotten: whoever invokes this graph needs to either load the tenant's
+# phrases into state before this node runs, or thread a session through.
+
+
+def understand_intent(state: PipelineState) -> PipelineState:
+    raise NotImplementedError
+
+
+def search_knowledge(state: PipelineState) -> PipelineState:
+    raise NotImplementedError
+
+
+def score_lead(state: PipelineState) -> PipelineState:
+    raise NotImplementedError
+
+
+def decide_next_step(state: PipelineState) -> PipelineState:
+    trigger = check_platform_safety_floor(state.incoming_text)
+    if trigger is not None:
+        state.decision = "escalate_to_human"
+        state.escalation_reason = trigger.reason
+        return state
+
+    # Past the safety floor, "what counts as hot" and "what closing looks
+    # like" are per-tenant configuration (REQUIREMENTS.md §2), which doesn't
+    # exist in the data model yet — not implemented until that config does.
+    raise NotImplementedError
+
+
+def route_after_decision(state: PipelineState) -> str:
+    """Reads state.decision (set by decide_next_step) to pick a branch."""
+    if state.decision is None:
+        raise ValueError("decide_next_step must set state.decision before routing")
+    return state.decision
+
+
+def keep_chatting(state: PipelineState) -> PipelineState:
+    raise NotImplementedError
+
+
+def escalate_to_human(state: PipelineState) -> PipelineState:
+    """The safety-gate pause point (§5, §6) — the only pause in Phase 1.
+    Compiling this graph with a checkpointer (Postgres-backed) and calling
+    `interrupt()` here is what makes the pause/resume durable; that wiring
+    lives wherever the graph is compiled and invoked, not in this module."""
+    raise NotImplementedError
+
+
+def book_or_checkout(state: PipelineState) -> PipelineState:
+    raise NotImplementedError
+
+
+def log_lead_and_notify(state: PipelineState) -> PipelineState:
+    raise NotImplementedError
+
+
+def build_pipeline_graph() -> StateGraph:
+    graph = StateGraph(PipelineState)
+
+    graph.add_node("understand_intent", understand_intent)
+    graph.add_node("search_knowledge", search_knowledge)
+    graph.add_node("score_lead", score_lead)
+    graph.add_node("decide_next_step", decide_next_step)
+    graph.add_node("keep_chatting", keep_chatting)
+    graph.add_node("escalate_to_human", escalate_to_human)
+    graph.add_node("book_or_checkout", book_or_checkout)
+    graph.add_node("log_lead_and_notify", log_lead_and_notify)
+
+    graph.set_entry_point("understand_intent")
+    graph.add_edge("understand_intent", "search_knowledge")
+    graph.add_edge("search_knowledge", "score_lead")
+    graph.add_edge("score_lead", "decide_next_step")
+    graph.add_conditional_edges(
+        "decide_next_step",
+        route_after_decision,
+        {
+            "keep_chatting": "keep_chatting",
+            "escalate_to_human": "escalate_to_human",
+            "book_or_checkout": "book_or_checkout",
+        },
+    )
+    graph.add_edge("keep_chatting", "log_lead_and_notify")
+    graph.add_edge("escalate_to_human", "log_lead_and_notify")
+    graph.add_edge("book_or_checkout", "log_lead_and_notify")
+    graph.add_edge("log_lead_and_notify", END)
+
+    return graph
