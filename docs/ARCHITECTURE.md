@@ -29,6 +29,14 @@
   service instead of a separate vector DB, since graph retrieval and the
   template gallery are both deferred. Migrating to a dedicated vector DB later
   is a contained change (swap the retrieval query), not a rewrite.
+- **LLM + embedding provider:** Gemini (`google-genai`), covering both
+  generation and embeddings through one API key — chosen for its free tier
+  (REQUIREMENTS §12's synthetic-testing phase needs a $0 starting point).
+  One real gotcha worth knowing before picking a model name: free-tier
+  quota is granted per model, not per key/project, and a specific model can
+  sit at a permanent zero on an otherwise-working account (a 429 that never
+  recovers, easy to mistake for a temporary rate limit) — see `CLAUDE.md`
+  for the exact models that do/don't currently work on this account.
 - **Task queue:** Celery + Redis (message processing handoff, knowledge
   re-sync, follow-up delays, channel health checks)
 - **Messaging ingestion:** Beeper Desktop API (webhooks) as the primary
@@ -65,6 +73,13 @@ checkpoint table for LangGraph's pause/resume state (see §5).
 Key relationships: a tenant has many users/channels/knowledge sources; a
 channel routes to many conversations; a conversation contains many messages,
 optionally produces one lead, and may have escalation records.
+
+`tenants.closing_action` is REQUIREMENTS §2's "what closing looks like must
+be configurable per business" requirement, concretely: one of the pipeline's
+own branch names (`keep_chatting` | `escalate_to_human` | `book_or_checkout`)
+rather than a separate "business model" concept translated into one, since
+nothing else needs that indirection yet. Defaults to `escalate_to_human` —
+autonomous closing is opt-in, not the default.
 
 **Note:** `draft_replies` was designed earlier in this process (draft-and-
 approve on every message) but is **not part of Phase 1** — see §5.
@@ -131,7 +146,7 @@ UI omission.
 ## 6. Knowledge ingestion & retrieval
 
 **Static sources** (URL, PDF, manual entry): fetch/extract text → chunk
-(~300–500 tokens, overlap) → embed via a hosted embedding API → store in
+(~300–500 tokens, overlap) → embed via Gemini (§1) → store in
 `knowledge_chunks` (tenant-scoped, pgvector). A manual "refresh this source"
 action deletes and re-embeds a source's chunks — no silent staleness.
 
@@ -155,12 +170,14 @@ Phase 1 requirement (REQUIREMENTS §11), driven by the pilot business
   step or language field the pipeline branches on — the intent-understanding
   and reply-generation prompts instruct the model to detect and reply in the
   incoming message's language. This rides on the base LLM's existing
-  multilingual ability, not a bespoke component.
-- **Embeddings (§6)**: the hosted embedding API used for `knowledge_chunks`
-  must be evaluated for cross-lingual retrieval quality (Turkish query
-  against English-embedded chunks and vice versa), not just monolingual
-  Turkish support — this is a real selection criterion when picking the
-  provider, not an assumption to leave unchecked.
+  multilingual ability, not a bespoke component. Verified live for
+  `understand_intent`/`score_lead`/`keep_chatting` — Turkish in, Turkish out,
+  English in, English out, correct in both directions.
+- **Embeddings (§6)**: same-language retrieval (English query against
+  English-embedded chunks) is verified live. Cross-lingual retrieval quality
+  specifically (a Turkish query against English-embedded chunks, or vice
+  versa) has **not** been tested yet — worth checking before trusting it,
+  not an assumption to leave unchecked just because a provider is picked.
 - **Frontend (§10)**: a standard React i18n setup (e.g. `react-i18next`),
   independent of the two items above — this is the dashboard's own language
   switch for the business owner, unrelated to what language the pipeline
@@ -211,6 +228,16 @@ No drag-and-drop flow builder in Phase 1.
 
 ## 11. Open items carried forward (non-blocking, not designed yet)
 
+- **`book_or_checkout`'s node body** — every other branch of the pipeline
+  (§4) is implemented and verified; this is the one exception, and it's not
+  a gap so much as correctly-sequenced-later work: `decide_next_step`
+  already routes a hot, purchase-intent lead here correctly (verified), but
+  turning that routing decision into an actual checkout/booking action
+  needs a real connector (Shopify/WooCommerce API, a booking calendar, or
+  the manual CSV/spreadsheet fallback), which is REQUIREMENTS §13's own
+  step 2 ("live data connection... for platforms that support it"), not
+  step 1. Needs a product decision on which connector(s) to build first,
+  not just an engineering pass.
 - Channel failure behavior beyond the health-check stub — silent stop vs.
   detected fallback
 - Full observability dashboard (builder's trace view vs. owner's operational
