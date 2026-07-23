@@ -5,7 +5,12 @@ import pytest
 from langgraph.runtime import Runtime
 
 from app.pipeline.context import PipelineContext
-from app.pipeline.graph import decide_next_step, route_after_decision, understand_intent
+from app.pipeline.graph import (
+    decide_next_step,
+    route_after_decision,
+    search_knowledge,
+    understand_intent,
+)
 from app.pipeline.state import PipelineState
 
 
@@ -40,6 +45,45 @@ class TestUnderstandIntent:
         with patch("app.pipeline.graph.generate_text", return_value="not a real label"):
             result = understand_intent(state)
         assert result.detected_intent == "other"
+
+
+class TestSearchKnowledge:
+    async def test_populates_retrieved_chunks_from_repository(self) -> None:
+        state = _make_state("Do you ship internationally?")
+        fake_chunks = [
+            type("Chunk", (), {"content": "We ship worldwide via DHL."})(),
+            type("Chunk", (), {"content": "Shipping takes 3-5 business days."})(),
+        ]
+        with (
+            patch("app.pipeline.graph.embed_text", return_value=[0.1, 0.2, 0.3]),
+            patch("app.pipeline.graph.KnowledgeChunkRepository") as mock_repo_cls,
+        ):
+            mock_repo_cls.return_value.search_similar = AsyncMock(return_value=fake_chunks)
+            result = await search_knowledge(state, _make_runtime())
+        assert result.retrieved_chunks == [
+            "We ship worldwide via DHL.",
+            "Shipping takes 3-5 business days.",
+        ]
+
+    async def test_empty_when_no_chunks_match(self) -> None:
+        state = _make_state("Do you ship internationally?")
+        with (
+            patch("app.pipeline.graph.embed_text", return_value=[0.1, 0.2, 0.3]),
+            patch("app.pipeline.graph.KnowledgeChunkRepository") as mock_repo_cls,
+        ):
+            mock_repo_cls.return_value.search_similar = AsyncMock(return_value=[])
+            result = await search_knowledge(state, _make_runtime())
+        assert result.retrieved_chunks == []
+
+    async def test_uses_retrieval_query_task_type(self) -> None:
+        state = _make_state("Do you ship internationally?")
+        with (
+            patch("app.pipeline.graph.embed_text", return_value=[0.1]) as mock_embed,
+            patch("app.pipeline.graph.KnowledgeChunkRepository") as mock_repo_cls,
+        ):
+            mock_repo_cls.return_value.search_similar = AsyncMock(return_value=[])
+            await search_knowledge(state, _make_runtime())
+        mock_embed.assert_called_once_with(state.incoming_text, task_type="RETRIEVAL_QUERY")
 
 
 class TestDecideNextStepSafetyFloor:
