@@ -7,9 +7,8 @@ from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.db import Base
+from app.core.llm import EMBEDDING_DIM
 from app.core.models import TenantScopedMixin
-
-EMBEDDING_DIM = 1536  # must match whatever hosted embedding API is configured
 
 
 class KnowledgeSource(Base, TenantScopedMixin):

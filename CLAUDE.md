@@ -63,6 +63,15 @@ forward — this pass doesn't cover anything added after it.
   detect-and-match the incoming message's language, not assume English; any
   embedding provider choice needs real cross-lingual retrieval, not just
   Turkish support. See `docs/ARCHITECTURE.md` §7.
+- LLM/embedding provider is Gemini (free tier), both through
+  `app.core.llm` (`generate_text` / `embed_text`) — pipeline nodes and
+  knowledge ingestion should call that module, not the `google-genai` SDK
+  directly, so swapping providers later stays contained. Two caveats to
+  keep in mind, not yet resolved: free-tier rate limits against a pipeline
+  that makes up to 3 LLM calls per inbound message, and free-tier
+  data-usage terms should be checked before routing real customer
+  conversations through it (REQUIREMENTS §12 stage 2), not just synthetic
+  testing (stage 1).
 
 ## Commands
 
@@ -90,9 +99,16 @@ discipline above; the existing set doesn't need reinstalling.
   if pytest ever isn't available)
 - Migrations: `alembic revision --autogenerate -m "..."` then `alembic
   upgrade head` — needs a reachable Postgres (`docker compose up -d db`).
-  The initial schema migration (all 11 Phase 1 tables, plus `CREATE
-  EXTENSION IF NOT EXISTS vector`) is already applied; downgrade→upgrade
-  round-trip has been verified to work from a clean DB.
+  Two migrations exist (initial schema; embedding dim 1536→768 for
+  Gemini), both applied, both downgrade→upgrade round-trip verified.
+
+**Alembic autogenerate gotcha, hit twice now — check for it every time a
+migration touches a `Vector(...)` column:** the generated file references
+`pgvector.sqlalchemy.vector.VECTOR(...)` but autogenerate doesn't add the
+`import pgvector.sqlalchemy` line for it — add it by hand or the migration
+fails at import time. A `render_item` hook in `alembic/env.py` would fix
+this at the root; hasn't been worth it for two migrations, reconsider if a
+third hits the same thing.
 
 **Docker networking gotcha already hit and fixed once — don't reintroduce
 it:** `.env`/`.env.example` use `localhost` for `ENVELOPS_DATABASE_URL`/
@@ -102,6 +118,26 @@ the compose network (containers reach each other by service name). The
 `environment:` overrides (`db`/`redis` instead of `localhost`) for exactly
 this reason — if you add a new env var that needs different values in each
 context, follow the same pattern rather than editing `.env` itself.
+
+**`config.py` gotcha already hit and fixed once:** `env_file` must be an
+absolute path (`Path(__file__).resolve().parents[3] / ".env"`), not the
+bare string `".env"` — pydantic-settings resolves a relative path against
+cwd, so running the app from `backend/` (the documented no-Docker path)
+silently loaded an empty config before this fix. Docker never hit this
+since compose injects real env vars directly, bypassing the file lookup.
+
+`ENVELOPS_GEMINI_API_KEY` is set in `.env` now, and `core/llm.py` is
+confirmed correct as far as auth/wiring go — the smoke test reaches
+Google's servers and gets a real structured response back. But every
+model tried (`gemini-2.5-flash`, `gemini-2.0-flash`, `gemini-2.0-flash-lite`)
+returns `generate_content_free_tier_requests, limit: 0` — not a rate
+limit, a hard zero quota grant for this API key/project. This is an
+account/project-level thing on Google's side (free tier not enabled for
+this project, regional eligibility, or a billing-link requirement — unclear
+which without checking https://aistudio.google.com/apikey directly), not a
+code bug. `embed_text` hasn't been tested at all yet since generation was
+already blocked the same way — don't assume it works until this is
+resolved and it's actually been called.
 
 Test coverage so far: `escalation/safety_gate.py` (Layer 1 safety floor,
 Turkish + English patterns, with regression tests for real false positives
