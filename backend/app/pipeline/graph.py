@@ -11,8 +11,18 @@ node in this graph.
 
 from langgraph.graph import END, StateGraph
 
+from app.core.llm import generate_text
 from app.escalation.safety_gate import check_platform_safety_floor
 from app.pipeline.state import PipelineState
+
+# First-pass taxonomy, not a validated product design (REQUIREMENTS.md §2
+# says per-business config is deferred) — deliberately generic across all
+# four business models in §2's table rather than honey-seller-specific,
+# since nothing in the data model yet lets this vary per tenant. Revisit
+# once real synthetic/pilot messages (§12) show what's actually missing.
+_INTENT_LABELS = frozenset(
+    {"knowledge_question", "purchase_intent", "complaint_or_problem", "small_talk", "other"}
+)
 
 # decide_next_step only runs the system-default half of the safety floor
 # (check_platform_safety_floor) — the tenant-additions half
@@ -24,7 +34,19 @@ from app.pipeline.state import PipelineState
 
 
 def understand_intent(state: PipelineState) -> PipelineState:
-    raise NotImplementedError
+    prompt = (
+        "Classify the intent of this customer DM into exactly one of: "
+        f"{', '.join(sorted(_INTENT_LABELS))}. "
+        "The message may be in Turkish or English — respond in neither, "
+        "just the single label, nothing else, no punctuation.\n\n"
+        f"Message: {state.incoming_text}"
+    )
+    raw = generate_text(prompt).strip().lower()
+    # The model doesn't always follow the "just the label" instruction
+    # perfectly — fall back rather than let arbitrary text flow into
+    # state.detected_intent, which later steps will branch on.
+    state.detected_intent = raw if raw in _INTENT_LABELS else "other"
+    return state
 
 
 def search_knowledge(state: PipelineState) -> PipelineState:
