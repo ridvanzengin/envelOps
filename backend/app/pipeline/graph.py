@@ -11,6 +11,7 @@ node in this graph.
 
 from langgraph.graph import END, StateGraph
 from langgraph.runtime import Runtime
+from langgraph.types import interrupt
 
 from app.core.llm import embed_text, generate_text
 from app.escalation.models import Escalation
@@ -145,10 +146,21 @@ def keep_chatting(state: PipelineState) -> PipelineState:
 
 def escalate_to_human(state: PipelineState) -> PipelineState:
     """The safety-gate pause point (§5, §6) — the only pause in Phase 1.
-    Compiling this graph with a checkpointer (Postgres-backed) and calling
-    `interrupt()` here is what makes the pause/resume durable; that wiring
-    lives wherever the graph is compiled and invoked, not in this module."""
-    raise NotImplementedError
+    Compiling this graph with a checkpointer (Postgres-backed, see
+    app/pipeline/runner.py) and calling `interrupt()` here is what makes
+    the pause/resume durable; that wiring lives wherever the graph is
+    compiled and invoked, not in this module. Calling this function
+    directly, outside a graph run with a checkpointer attached, doesn't
+    pause anything — interrupt() needs the graph engine's execution
+    context to mean anything."""
+    interrupt(
+        {
+            "conversation_id": str(state.conversation_id),
+            "incoming_text": state.incoming_text,
+            "escalation_reason": state.escalation_reason,
+        }
+    )
+    return state
 
 
 def book_or_checkout(state: PipelineState) -> PipelineState:

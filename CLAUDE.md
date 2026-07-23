@@ -99,8 +99,15 @@ discipline above; the existing set doesn't need reinstalling.
   if pytest ever isn't available)
 - Migrations: `alembic revision --autogenerate -m "..."` then `alembic
   upgrade head` — needs a reachable Postgres (`docker compose up -d db`).
-  Two migrations exist (initial schema; embedding dim 1536→768 for
-  Gemini), both applied, both downgrade→upgrade round-trip verified.
+  Three migrations exist (initial schema; embedding dim 1536→768 for
+  Gemini; tenant closing_action), all applied, all downgrade→upgrade
+  round-trip verified.
+- LangGraph's own checkpoint tables (`checkpoints`, `checkpoint_blobs`,
+  `checkpoint_writes` — the safety-gate pause/resume state, ARCHITECTURE
+  §5) are **not** Alembic-managed. `app/pipeline/runner.get_checkpointer()`
+  calls `AsyncPostgresSaver.setup()` itself (idempotent) instead — a
+  deliberately separate schema-management path from our own domain tables,
+  since these belong to LangGraph, not to our data model.
 
 **Alembic autogenerate gotcha, hit twice now — check for it every time a
 migration touches a `Vector(...)` column:** the generated file references
@@ -109,6 +116,18 @@ migration touches a `Vector(...)` column:** the generated file references
 fails at import time. A `render_item` hook in `alembic/env.py` would fix
 this at the root; hasn't been worth it for two migrations, reconsider if a
 third hits the same thing.
+
+**Checkpointer gotcha already hit once — commit before invoking a
+checkpointed graph run, don't leave the session's setup writes
+uncommitted:** the pipeline's SQLAlchemy session (asyncpg) and the
+checkpointer's own connection (psycopg — a different driver, see
+`runner.py`'s `_psycopg_conn_string`) hung indefinitely (no error, no
+timeout, just stuck) when the session had an open, uncommitted transaction
+at the point `interrupt()` tried to write a checkpoint. Committing test-
+setup rows (tenant/channel/conversation) before calling `run_pipeline`
+fixed it. Root cause not fully isolated — treat "commit before invoking,
+don't hold a long-open write transaction across a checkpointed run" as the
+working rule either way.
 
 **Docker networking gotcha already hit and fixed once — don't reintroduce
 it:** `.env`/`.env.example` use `localhost` for `ENVELOPS_DATABASE_URL`/
