@@ -5,10 +5,12 @@ functions, not the SDK directly, so swapping providers later stays the
 "contained change" ARCHITECTURE §1 describes.
 
 EMBEDDING_DIM must match `knowledge/models.py`'s `KnowledgeChunk.embedding`
-column — text-embedding-004 has a fixed 768-dim output (unlike the newer
-gemini-embedding-* models, which support configurable output size). If the
-embedding model changes, both need updating together, plus a migration to
-alter the existing column.
+column. text-embedding-004 (the original choice here) turned out to be
+retired — gemini-embedding-001 replaced it and supports configurable
+output size via output_dimensionality, so 768 is requested explicitly to
+match the already-migrated column rather than taking the model's default
+(3072). If the embedding model or dimension changes, both need updating
+together, plus a migration to alter the existing column.
 """
 
 from google import genai
@@ -16,8 +18,17 @@ from google.genai import types
 
 from app.core.config import settings
 
-GENERATION_MODEL = "gemini-2.5-flash"
-EMBEDDING_MODEL = "text-embedding-004"
+GENERATION_MODEL = "gemini-flash-lite-latest"
+# Free-tier quota is granted per model, not just per key/project, and it
+# can be a persistent zero for a given model on a given account regardless
+# of key validity (a 429 that never recovers, not a transient rate-limit
+# blip) — confirmed against this same Google account via IoTOps's deploy
+# notes (deploy/iotops/.env.prod.example), which hit the identical issue
+# with gemini-2.0-flash/gemini-2.5-flash and settled on this model instead.
+# If this model's quota ever changes, check what's actually available via
+# `GET https://generativelanguage.googleapis.com/v1beta/models?key=...`
+# rather than assuming any particular model name works.
+EMBEDDING_MODEL = "gemini-embedding-001"
 EMBEDDING_DIM = 768
 
 _client: genai.Client | None = None
@@ -51,7 +62,9 @@ def embed_text(text: str, *, task_type: str = "RETRIEVAL_DOCUMENT") -> list[floa
     response = _get_client().models.embed_content(
         model=EMBEDDING_MODEL,
         contents=text,
-        config=types.EmbedContentConfig(task_type=task_type),
+        config=types.EmbedContentConfig(
+            task_type=task_type, output_dimensionality=EMBEDDING_DIM
+        ),
     )
     if not response.embeddings:
         raise ValueError(f"Gemini returned no embedding: {response!r}")

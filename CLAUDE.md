@@ -126,18 +126,29 @@ cwd, so running the app from `backend/` (the documented no-Docker path)
 silently loaded an empty config before this fix. Docker never hit this
 since compose injects real env vars directly, bypassing the file lookup.
 
-`ENVELOPS_GEMINI_API_KEY` is set in `.env` now, and `core/llm.py` is
-confirmed correct as far as auth/wiring go — the smoke test reaches
-Google's servers and gets a real structured response back. But every
-model tried (`gemini-2.5-flash`, `gemini-2.0-flash`, `gemini-2.0-flash-lite`)
-returns `generate_content_free_tier_requests, limit: 0` — not a rate
-limit, a hard zero quota grant for this API key/project. This is an
-account/project-level thing on Google's side (free tier not enabled for
-this project, regional eligibility, or a billing-link requirement — unclear
-which without checking https://aistudio.google.com/apikey directly), not a
-code bug. `embed_text` hasn't been tested at all yet since generation was
-already blocked the same way — don't assume it works until this is
-resolved and it's actually been called.
+**Both `generate_text` and `embed_text` are confirmed working end to end
+against the real API** (`ENVELOPS_GEMINI_API_KEY` is set in `.env`). Getting
+here took two real, non-obvious findings — both already fixed in
+`core/llm.py`, don't re-break them:
+
+- **Free-tier quota is granted per model, not just per key/project, and a
+  given model can sit at a permanent zero quota on a given account** — this
+  shows as a 429 `generate_content_free_tier_requests, limit: 0` that never
+  recovers on retry, not a transient rate-limit blip (don't mistake it for
+  one — a real per-minute rate limit looks the same superficially but
+  actually clears after the stated `retryDelay`). `gemini-2.5-flash`,
+  `gemini-2.0-flash`, and `gemini-2.0-flash-lite` all hit this on this
+  account; `gemini-flash-lite-latest` (current `GENERATION_MODEL`) doesn't.
+  IoTOps hit and documented this same issue independently (see
+  `../iotops-workspace/IoTOps/deploy/iotops/.env.prod.example`) — if this
+  model ever stops working too, check what's actually available via `GET
+  https://generativelanguage.googleapis.com/v1beta/models?key=...` rather
+  than guessing another name.
+- **`text-embedding-004` (the original embedding model choice) is
+  retired** — `models.list()` no longer lists it. `gemini-embedding-001`
+  replaced it, with configurable output size via `output_dimensionality`
+  (current `EMBEDDING_MODEL`, requested at 768 to match the already-migrated
+  `knowledge_chunks.embedding` column rather than the model's 3072 default).
 
 Test coverage so far: `escalation/safety_gate.py` (Layer 1 safety floor,
 Turkish + English patterns, with regression tests for real false positives
