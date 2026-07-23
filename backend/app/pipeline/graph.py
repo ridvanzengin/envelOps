@@ -12,11 +12,14 @@ node in this graph.
 from langgraph.graph import END, StateGraph
 from langgraph.runtime import Runtime
 
-from app.core.llm import generate_text
+from app.core.llm import embed_text, generate_text
 from app.escalation.repository import TenantTriggerPhraseRepository
 from app.escalation.safety_gate import check_safety_floor
+from app.knowledge.repository import KnowledgeChunkRepository
 from app.pipeline.context import PipelineContext
 from app.pipeline.state import PipelineState
+
+_KNOWLEDGE_SEARCH_TOP_K = 5
 
 # First-pass taxonomy, not a validated product design (REQUIREMENTS.md §2
 # says per-business config is deferred) — deliberately generic across all
@@ -51,8 +54,16 @@ def understand_intent(state: PipelineState) -> PipelineState:
     return state
 
 
-def search_knowledge(state: PipelineState) -> PipelineState:
-    raise NotImplementedError
+async def search_knowledge(
+    state: PipelineState, runtime: Runtime[PipelineContext]
+) -> PipelineState:
+    query_embedding = embed_text(state.incoming_text, task_type="RETRIEVAL_QUERY")
+    chunk_repo = KnowledgeChunkRepository(runtime.context.session)
+    chunks = await chunk_repo.search_similar(
+        state.tenant_id, query_embedding, limit=_KNOWLEDGE_SEARCH_TOP_K
+    )
+    state.retrieved_chunks = [chunk.content for chunk in chunks]
+    return state
 
 
 def score_lead(state: PipelineState) -> PipelineState:
