@@ -18,6 +18,7 @@ from app.escalation.safety_gate import check_safety_floor
 from app.knowledge.repository import KnowledgeChunkRepository
 from app.pipeline.context import PipelineContext
 from app.pipeline.state import PipelineState
+from app.tenants.repository import TenantRepository
 
 _KNOWLEDGE_SEARCH_TOP_K = 5
 
@@ -94,10 +95,21 @@ async def decide_next_step(
         state.escalation_reason = trigger.reason
         return state
 
-    # Past the safety floor, "what counts as hot" and "what closing looks
-    # like" are per-tenant configuration (REQUIREMENTS.md §2), which doesn't
-    # exist in the data model yet — not implemented until that config does.
-    raise NotImplementedError
+    # Past the safety floor: auto-send is the Phase 1 default (ARCHITECTURE
+    # §5), so anything short of a hot, clearly-buying lead just keeps
+    # chatting rather than escalating on a hunch — there's no general
+    # "when in doubt, ask a human" rule here, only the safety floor above.
+    if state.lead_score == "hot" and state.detected_intent == "purchase_intent":
+        tenant_repo = TenantRepository(runtime.context.session)
+        tenant = await tenant_repo.get(state.tenant_id)
+        # A missing tenant row shouldn't be possible in practice (state.tenant_id
+        # comes from an already-authenticated context), but if it somehow
+        # happened, defaulting to auto-send here would be exactly backwards.
+        state.decision = tenant.closing_action if tenant is not None else "escalate_to_human"
+        return state
+
+    state.decision = "keep_chatting"
+    return state
 
 
 def route_after_decision(state: PipelineState) -> str:
@@ -108,7 +120,24 @@ def route_after_decision(state: PipelineState) -> str:
 
 
 def keep_chatting(state: PipelineState) -> PipelineState:
-    raise NotImplementedError
+    context_block = (
+        "\n".join(f"- {chunk}" for chunk in state.retrieved_chunks)
+        if state.retrieved_chunks
+        else "(no matching knowledge found for this question)"
+    )
+    prompt = (
+        "You are a helpful customer support assistant for a small business, "
+        "replying directly to a customer's DM. Keep it short and natural, "
+        "like a real person texting back — no \"Dear customer\" greeting, "
+        "no signature. Only use the knowledge below if it's actually "
+        "relevant to the question; if it doesn't answer the question, say "
+        "so honestly rather than guessing.\n\n"
+        f"Relevant knowledge:\n{context_block}\n\n"
+        "Customer message (your reply MUST be in this exact same language "
+        f"— do not translate, do not switch languages): {state.incoming_text}"
+    )
+    state.draft_text = generate_text(prompt)
+    return state
 
 
 def escalate_to_human(state: PipelineState) -> PipelineState:
