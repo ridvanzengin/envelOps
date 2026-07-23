@@ -1,12 +1,12 @@
 import uuid
 from unittest.mock import AsyncMock, patch
 
-import pytest
 from langgraph.runtime import Runtime
 
 from app.pipeline.context import PipelineContext
 from app.pipeline.graph import (
     decide_next_step,
+    keep_chatting,
     route_after_decision,
     score_lead,
     search_knowledge,
@@ -127,11 +127,71 @@ class TestDecideNextStepSafetyFloor:
         assert result.escalation_reason is not None
         assert "mad honey" in result.escalation_reason
 
-    async def test_raises_not_implemented_past_the_safety_floor(self) -> None:
+
+class TestDecideNextStepRouting:
+    async def test_keeps_chatting_when_not_hot_purchase_intent(self) -> None:
         state = _make_state("What flavors of honey do you have?")
-        with (
-            patch("app.pipeline.graph.TenantTriggerPhraseRepository") as mock_repo_cls,
-            pytest.raises(NotImplementedError),
-        ):
+        state.detected_intent = "knowledge_question"
+        state.lead_score = "warm"
+        with patch("app.pipeline.graph.TenantTriggerPhraseRepository") as mock_repo_cls:
             mock_repo_cls.return_value.list = AsyncMock(return_value=[])
-            await decide_next_step(state, _make_runtime())
+            result = await decide_next_step(state, _make_runtime())
+        assert result.decision == "keep_chatting"
+
+    async def test_keeps_chatting_when_hot_but_not_purchase_intent(self) -> None:
+        state = _make_state("This arrived broken, I'm furious")
+        state.detected_intent = "complaint_or_problem"
+        state.lead_score = "hot"
+        with patch("app.pipeline.graph.TenantTriggerPhraseRepository") as mock_repo_cls:
+            mock_repo_cls.return_value.list = AsyncMock(return_value=[])
+            result = await decide_next_step(state, _make_runtime())
+        assert result.decision == "keep_chatting"
+
+    async def test_uses_tenant_closing_action_when_hot_purchase_intent(self) -> None:
+        state = _make_state("I want to order 5 jars right now, how do I pay?")
+        state.detected_intent = "purchase_intent"
+        state.lead_score = "hot"
+        fake_tenant = type("Tenant", (), {"closing_action": "book_or_checkout"})()
+        with (
+            patch("app.pipeline.graph.TenantTriggerPhraseRepository") as mock_phrase_repo_cls,
+            patch("app.pipeline.graph.TenantRepository") as mock_tenant_repo_cls,
+        ):
+            mock_phrase_repo_cls.return_value.list = AsyncMock(return_value=[])
+            mock_tenant_repo_cls.return_value.get = AsyncMock(return_value=fake_tenant)
+            result = await decide_next_step(state, _make_runtime())
+        assert result.decision == "book_or_checkout"
+
+    async def test_defaults_to_escalate_when_tenant_row_missing(self) -> None:
+        state = _make_state("I want to order 5 jars right now, how do I pay?")
+        state.detected_intent = "purchase_intent"
+        state.lead_score = "hot"
+        with (
+            patch("app.pipeline.graph.TenantTriggerPhraseRepository") as mock_phrase_repo_cls,
+            patch("app.pipeline.graph.TenantRepository") as mock_tenant_repo_cls,
+        ):
+            mock_phrase_repo_cls.return_value.list = AsyncMock(return_value=[])
+            mock_tenant_repo_cls.return_value.get = AsyncMock(return_value=None)
+            result = await decide_next_step(state, _make_runtime())
+        assert result.decision == "escalate_to_human"
+
+
+class TestKeepChatting:
+    def test_sets_draft_text_from_model_response(self) -> None:
+        state = _make_state("Do you ship internationally?")
+        state.retrieved_chunks = ["We ship worldwide via DHL."]
+        with patch(
+            "app.pipeline.graph.generate_text", return_value="Yes, we ship worldwide!"
+        ):
+            result = keep_chatting(state)
+        assert result.draft_text == "Yes, we ship worldwide!"
+
+    def test_handles_no_retrieved_chunks_without_erroring(self) -> None:
+        state = _make_state("Do you ship internationally?")
+        state.retrieved_chunks = []
+        with patch(
+            "app.pipeline.graph.generate_text", return_value="Let me check on that."
+        ) as mock_gen:
+            result = keep_chatting(state)
+        assert result.draft_text == "Let me check on that."
+        prompt = mock_gen.call_args.args[0]
+        assert "no matching knowledge found" in prompt
