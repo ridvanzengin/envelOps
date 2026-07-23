@@ -8,6 +8,7 @@ from app.pipeline.context import PipelineContext
 from app.pipeline.graph import (
     decide_next_step,
     route_after_decision,
+    score_lead,
     search_knowledge,
     understand_intent,
 )
@@ -84,6 +85,26 @@ class TestSearchKnowledge:
             mock_repo_cls.return_value.search_similar = AsyncMock(return_value=[])
             await search_knowledge(state, _make_runtime())
         mock_embed.assert_called_once_with(state.incoming_text, task_type="RETRIEVAL_QUERY")
+
+
+class TestScoreLead:
+    def test_uses_model_label_when_valid(self) -> None:
+        state = _make_state("I want to order 5 jars right now, how do I pay?")
+        with patch("app.pipeline.graph.generate_text", return_value="hot"):
+            result = score_lead(state)
+        assert result.lead_score == "hot"
+
+    def test_is_case_and_whitespace_insensitive(self) -> None:
+        state = _make_state("Just curious what you sell")
+        with patch("app.pipeline.graph.generate_text", return_value="  Cold  \n"):
+            result = score_lead(state)
+        assert result.lead_score == "cold"
+
+    def test_falls_back_to_cold_on_unrecognized_label(self) -> None:
+        state = _make_state("asdkjasndkjan")
+        with patch("app.pipeline.graph.generate_text", return_value="not a real label"):
+            result = score_lead(state)
+        assert result.lead_score == "cold"
 
 
 class TestDecideNextStepSafetyFloor:

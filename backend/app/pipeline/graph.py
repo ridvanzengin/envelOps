@@ -30,6 +30,13 @@ _INTENT_LABELS = frozenset(
     {"knowledge_question", "purchase_intent", "complaint_or_problem", "small_talk", "other"}
 )
 
+# Also a first-pass default, not tenant-configurable yet (ARCHITECTURE §4:
+# "plain LLM call for now"; REQUIREMENTS §2: "what counts as a hot lead"
+# must eventually be per-business config). "cold" is the fallback on an
+# unrecognized model response, not "warm" — understating a lead's readiness
+# is the safer default than overstating it.
+_LEAD_SCORES = frozenset({"hot", "warm", "cold"})
+
 
 def understand_intent(state: PipelineState) -> PipelineState:
     prompt = (
@@ -60,7 +67,19 @@ async def search_knowledge(
 
 
 def score_lead(state: PipelineState) -> PipelineState:
-    raise NotImplementedError
+    prompt = (
+        "Score how ready-to-buy/book this customer is, as exactly one of: "
+        "hot, warm, cold. hot = clear purchase/booking intent or urgency; "
+        "warm = interested but not decided yet; cold = browsing or a "
+        "general question, no buying signal. The message may be in "
+        "Turkish or English. Reply with only the single label, nothing "
+        "else, no punctuation.\n\n"
+        f"Message: {state.incoming_text}\n"
+        f"Detected intent: {state.detected_intent}"
+    )
+    raw = generate_text(prompt).strip().lower()
+    state.lead_score = raw if raw in _LEAD_SCORES else "cold"
+    return state
 
 
 async def decide_next_step(
