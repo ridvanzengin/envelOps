@@ -1,8 +1,10 @@
 import uuid
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
+from langgraph.runtime import Runtime
 
+from app.pipeline.context import PipelineContext
 from app.pipeline.graph import decide_next_step, route_after_decision, understand_intent
 from app.pipeline.state import PipelineState
 
@@ -11,6 +13,13 @@ def _make_state(text: str) -> PipelineState:
     return PipelineState(
         tenant_id=uuid.uuid4(), conversation_id=uuid.uuid4(), incoming_text=text
     )
+
+
+def _make_runtime() -> Runtime[PipelineContext]:
+    # The session itself is never touched here -- TenantTriggerPhraseRepository
+    # is mocked at the module level in each test below, so this just needs to
+    # satisfy PipelineContext's type, not behave like a real AsyncSession.
+    return Runtime(context=PipelineContext(session=AsyncMock()))
 
 
 class TestUnderstandIntent:
@@ -34,14 +43,30 @@ class TestUnderstandIntent:
 
 
 class TestDecideNextStepSafetyFloor:
-    def test_escalates_on_safety_trigger_without_calling_llm(self) -> None:
+    async def test_escalates_on_system_default_trigger_without_tenant_phrases(self) -> None:
         state = _make_state("Can you guarantee this will definitely cure my condition?")
-        result = decide_next_step(state)
+        with patch("app.pipeline.graph.TenantTriggerPhraseRepository") as mock_repo_cls:
+            mock_repo_cls.return_value.list = AsyncMock(return_value=[])
+            result = await decide_next_step(state, _make_runtime())
         assert result.decision == "escalate_to_human"
         assert result.escalation_reason is not None
         assert route_after_decision(result) == "escalate_to_human"
 
-    def test_raises_not_implemented_past_the_safety_floor(self) -> None:
+    async def test_escalates_on_tenant_added_phrase(self) -> None:
+        state = _make_state("Do you sell mad honey?")
+        fake_row = type("Row", (), {"phrase": "mad honey"})()
+        with patch("app.pipeline.graph.TenantTriggerPhraseRepository") as mock_repo_cls:
+            mock_repo_cls.return_value.list = AsyncMock(return_value=[fake_row])
+            result = await decide_next_step(state, _make_runtime())
+        assert result.decision == "escalate_to_human"
+        assert result.escalation_reason is not None
+        assert "mad honey" in result.escalation_reason
+
+    async def test_raises_not_implemented_past_the_safety_floor(self) -> None:
         state = _make_state("What flavors of honey do you have?")
-        with pytest.raises(NotImplementedError):
-            decide_next_step(state)
+        with (
+            patch("app.pipeline.graph.TenantTriggerPhraseRepository") as mock_repo_cls,
+            pytest.raises(NotImplementedError),
+        ):
+            mock_repo_cls.return_value.list = AsyncMock(return_value=[])
+            await decide_next_step(state, _make_runtime())

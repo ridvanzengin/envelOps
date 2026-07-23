@@ -10,9 +10,12 @@ node in this graph.
 """
 
 from langgraph.graph import END, StateGraph
+from langgraph.runtime import Runtime
 
 from app.core.llm import generate_text
-from app.escalation.safety_gate import check_platform_safety_floor
+from app.escalation.repository import TenantTriggerPhraseRepository
+from app.escalation.safety_gate import check_safety_floor
+from app.pipeline.context import PipelineContext
 from app.pipeline.state import PipelineState
 
 # First-pass taxonomy, not a validated product design (REQUIREMENTS.md §2
@@ -23,14 +26,6 @@ from app.pipeline.state import PipelineState
 _INTENT_LABELS = frozenset(
     {"knowledge_question", "purchase_intent", "complaint_or_problem", "small_talk", "other"}
 )
-
-# decide_next_step only runs the system-default half of the safety floor
-# (check_platform_safety_floor) — the tenant-additions half
-# (check_tenant_trigger_phrases / the combined check_safety_floor) needs a
-# DB-loaded phrase list, and pipeline nodes here are plain functions of
-# PipelineState with no session. Wiring that in is an open item, not
-# forgotten: whoever invokes this graph needs to either load the tenant's
-# phrases into state before this node runs, or thread a session through.
 
 
 def understand_intent(state: PipelineState) -> PipelineState:
@@ -57,8 +52,13 @@ def score_lead(state: PipelineState) -> PipelineState:
     raise NotImplementedError
 
 
-def decide_next_step(state: PipelineState) -> PipelineState:
-    trigger = check_platform_safety_floor(state.incoming_text)
+async def decide_next_step(
+    state: PipelineState, runtime: Runtime[PipelineContext]
+) -> PipelineState:
+    phrase_repo = TenantTriggerPhraseRepository(runtime.context.session)
+    tenant_phrases = [row.phrase for row in await phrase_repo.list(state.tenant_id)]
+
+    trigger = check_safety_floor(state.incoming_text, tenant_phrases)
     if trigger is not None:
         state.decision = "escalate_to_human"
         state.escalation_reason = trigger.reason
@@ -97,8 +97,8 @@ def log_lead_and_notify(state: PipelineState) -> PipelineState:
     raise NotImplementedError
 
 
-def build_pipeline_graph() -> StateGraph:
-    graph = StateGraph(PipelineState)
+def build_pipeline_graph() -> StateGraph[PipelineState, PipelineContext]:
+    graph = StateGraph(PipelineState, context_schema=PipelineContext)
 
     graph.add_node("understand_intent", understand_intent)
     graph.add_node("search_knowledge", search_knowledge)
