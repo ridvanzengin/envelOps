@@ -112,22 +112,35 @@ class TestScoreLead:
 class TestDecideNextStepSafetyFloor:
     async def test_escalates_on_system_default_trigger_without_tenant_phrases(self) -> None:
         state = _make_state("Can you guarantee this will definitely cure my condition?")
-        with patch("app.pipeline.graph.TenantTriggerPhraseRepository") as mock_repo_cls:
-            mock_repo_cls.return_value.list = AsyncMock(return_value=[])
+        with (
+            patch("app.pipeline.graph.TenantTriggerPhraseRepository") as mock_phrase_repo_cls,
+            patch("app.pipeline.graph.EscalationRepository") as mock_escalation_repo_cls,
+        ):
+            mock_phrase_repo_cls.return_value.list = AsyncMock(return_value=[])
+            mock_escalation_repo_cls.return_value.add = AsyncMock()
             result = await decide_next_step(state, _make_runtime())
         assert result.decision == "escalate_to_human"
         assert result.escalation_reason is not None
         assert route_after_decision(result) == "escalate_to_human"
+        mock_escalation_repo_cls.return_value.add.assert_called_once()
+        logged = mock_escalation_repo_cls.return_value.add.call_args.args[0]
+        assert logged.status == "pending"
+        assert logged.layer == "platform_floor"
 
     async def test_escalates_on_tenant_added_phrase(self) -> None:
         state = _make_state("Do you sell mad honey?")
         fake_row = type("Row", (), {"phrase": "mad honey"})()
-        with patch("app.pipeline.graph.TenantTriggerPhraseRepository") as mock_repo_cls:
-            mock_repo_cls.return_value.list = AsyncMock(return_value=[fake_row])
+        with (
+            patch("app.pipeline.graph.TenantTriggerPhraseRepository") as mock_phrase_repo_cls,
+            patch("app.pipeline.graph.EscalationRepository") as mock_escalation_repo_cls,
+        ):
+            mock_phrase_repo_cls.return_value.list = AsyncMock(return_value=[fake_row])
+            mock_escalation_repo_cls.return_value.add = AsyncMock()
             result = await decide_next_step(state, _make_runtime())
         assert result.decision == "escalate_to_human"
         assert result.escalation_reason is not None
         assert "mad honey" in result.escalation_reason
+        mock_escalation_repo_cls.return_value.add.assert_called_once()
 
 
 class TestDecideNextStepRouting:

@@ -143,6 +143,19 @@ lets the tenant append to their own list; there is no code path or API
 endpoint that edits or removes a system default, by design, not just by
 UI omission.
 
+**The Escalation row is logged by `decide_next_step`, before the pause —
+not by `log_lead_and_notify` after a resume.** A human has to be able to
+*see* an escalation to know to resume it; logging it only after something
+resumes it is circular. **Known gap, not yet fixed:** `log_lead_and_notify`
+still also logs an Escalation whenever `decision == escalate_to_human`
+when it runs (needed for `book_or_checkout`'s own, unrelated
+escalate-on-missing-`closing_link` case, which never pauses and so never
+hits `decide_next_step`'s logging) — so a real safety-floor escalation
+that's later resumed gets logged twice. Harmless today, since nothing
+calls `resume_pipeline()` yet (no escalation-resolution UI/API exists);
+needs a real fix (check for an existing row, or a state flag) once
+something does.
+
 ## 6. Knowledge ingestion & retrieval
 
 **Static sources** (URL, PDF, manual entry): fetch/extract text → chunk
@@ -190,25 +203,46 @@ Phase 1 scope question.
 
 ## 8. Channel ingestion & background jobs
 
-Beeper webhook → validate/parse → normalize into `messages` (look up or
-create the conversation by external contact id) → hand off to a Celery task
-(kept out of the webhook handler itself, so Beeper gets a fast response) →
-that task runs the LangGraph pipeline. Telegram Bot API uses the identical
-normalization path as a fallback/lower-risk channel.
+**Telegram is built** (`POST /channels/telegram/{channel_id}/webhook`,
+plain `httpx` against Telegram's Bot API — deliberately not the
+`python-telegram-bot` SDK, whose polling/dispatcher machinery is for a
+different, long-running-process pattern than one-shot webhook receive/
+respond): validate the `X-Telegram-Bot-Api-Secret-Token` header (fails
+closed if the channel has no secret configured, not just on a mismatch) →
+normalize into `messages` (look up or create the conversation by external
+contact id, `app/conversations/repository.py`'s `get_by_external_contact`)
+→ hand off to a Celery task (kept out of the webhook handler itself, so
+Telegram gets a fast response) → that task runs the pipeline and sends the
+reply back via `sendMessage`. `scripts/register_telegram_channel.py`
+creates the `Channel` row and calls `setWebhook` — no API/UI for this yet
+(channel connection isn't part of the API surface until real auth exists).
+**Beeper is not built** — Telegram turned out to be the more useful first
+channel to actually implement (no bridge infrastructure, just a bot
+token), not just a "fallback."
 
 **Background jobs (Celery):**
-- `process_incoming_message` — runs the pipeline for one message
-- `knowledge_resync` — manual trigger now, could become scheduled later
-- `follow_up_check` — periodic scan for quiet conversations, fires
-  step 8 of the pipeline
-- `channel_health_check` — minimal stub only; the real "what happens when
-  Beeper disconnects" design is still an open item (see §11)
+- `process_incoming_message` — **built.** Runs the pipeline for one
+  message; on `__interrupt__` it commits without replying (the escalation
+  was already logged by `decide_next_step` before the pause — see §5);
+  otherwise it logs the outbound message and sends it via Telegram,
+  catching and logging (not swallowing, not raising) a delivery failure so
+  a Telegram outage doesn't lose the Lead/Message rows already written.
+- `knowledge_resync` — not built. Manual trigger now, could become
+  scheduled later.
+- `follow_up_check` — not built. Periodic scan for quiet conversations,
+  fires step 8 of the pipeline.
+- `channel_health_check` — not built, minimal stub only planned; the real
+  "what happens when a channel disconnects" design is still an open item
+  (see §11).
 
 ## 9. API surface (Phase 1)
 
 `/auth`, `/channels`, `/knowledge`, `/conversations`, `/leads`,
 `/escalations`, `/dashboard` — one router per domain module, matching the
-`api.py` per module convention.
+`api.py` per module convention. Only `/channels` has a real endpoint so
+far (`POST /channels/telegram/{channel_id}/webhook`, §8) — the rest are
+empty routers, wired into `main.py` but with nothing behind them yet, not
+even auth.
 
 ## 10. Frontend screens (Phase 1)
 
@@ -228,18 +262,22 @@ No drag-and-drop flow builder in Phase 1.
 
 ## 11. Open items carried forward (non-blocking, not designed yet)
 
-- **`book_or_checkout`'s node body** — every other branch of the pipeline
-  (§4) is implemented and verified; this is the one exception, and it's not
-  a gap so much as correctly-sequenced-later work: `decide_next_step`
-  already routes a hot, purchase-intent lead here correctly (verified), but
-  turning that routing decision into an actual checkout/booking action
-  needs a real connector (Shopify/WooCommerce API, a booking calendar, or
-  the manual CSV/spreadsheet fallback), which is REQUIREMENTS §13's own
-  step 2 ("live data connection... for platforms that support it"), not
-  step 1. Needs a product decision on which connector(s) to build first,
-  not just an engineering pass.
+- **`book_or_checkout` beyond a static link** — implemented and verified
+  with a tenant-configured URL (`Tenant.closing_link`), which is enough for
+  any business regardless of platform. A real Shopify/WooCommerce/Calendly
+  *connector* (auto-generating a checkout/booking link per order rather
+  than sending the same static one) is REQUIREMENTS §13's own step 2
+  ("live data connection... for platforms that support it"), not step 1 —
+  correctly-sequenced-later work, not a gap, and needs a product decision
+  on which connector(s) to build first, not just an engineering pass.
+- **Resuming a paused escalation** — `resume_pipeline()` exists
+  (`app/pipeline/runner.py`) and is verified, but nothing calls it: there's
+  no escalation-resolution UI/API yet (the "Escalation queue" screen, §10,
+  isn't built). Related known gap until that exists: §5's note on
+  `log_lead_and_notify` double-logging a resumed escalation.
 - Channel failure behavior beyond the health-check stub — silent stop vs.
-  detected fallback
+  detected fallback. Telegram (§8) doesn't have even a stub yet, only
+  Beeper was ever planned to.
 - Full observability dashboard (builder's trace view vs. owner's operational
   view — likely two different views, not one)
 - Data retention/deletion policy specifics

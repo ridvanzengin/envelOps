@@ -5,6 +5,19 @@ target-version = "py311"
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
 
+[tool.ruff.lint.flake8-bugbear]
+# FastAPI's own dependency-injection idiom -- Depends(...)/Header(...)/
+# Query(...) etc. as default-arg calls are required, not the general
+# anti-pattern B008 exists to catch.
+extend-immutable-calls = [
+    "fastapi.Depends",
+    "fastapi.Header",
+    "fastapi.Query",
+    "fastapi.Path",
+    "fastapi.Cookie",
+    "fastapi.Body",
+]
+
 [tool.mypy]
 python_version = "3.11"
 warn_unused_configs = true

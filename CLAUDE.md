@@ -54,7 +54,11 @@ forward — this pass doesn't cover anything added after it.
   API/DB/pipeline state, not redefined per layer.
 - Every table and every query gets `tenant_id` scoping. There is no
   code path that reads or writes tenant data without it — see
-  `docs/ARCHITECTURE.md` §2.
+  `docs/ARCHITECTURE.md` §2. One deliberate, narrow exception:
+  `ChannelRepository.get_by_id_unscoped` — a webhook entry point (§8)
+  doesn't know the tenant yet, the channel_id in the URL is how it gets
+  discovered. Named to make the exception obvious, not something to
+  reach for elsewhere.
 - No draft-and-approve queue in Phase 1. The pipeline auto-sends; the only
   pause point is the safety-check escalation gate. Don't reintroduce a
   general approval queue without checking `docs/ARCHITECTURE.md` §5 first.
@@ -91,6 +95,19 @@ discipline above; the existing set doesn't need reinstalling.
 - Celery worker, without Docker: `celery -A app.core.celery_app worker
   --loglevel=info`
 - Health check once running: `curl localhost:8000/healthz`
+- Connecting a real Telegram channel: create a tenant (no API for this
+  yet — insert directly or via a script), get a bot token from
+  @BotFather, expose the local server publicly (ngrok/cloudflared —
+  Telegram needs a real HTTPS URL, localhost doesn't work), then `cd
+  backend && source .venv/bin/activate && python3 -m
+  scripts.register_telegram_channel --tenant-id <uuid> --bot-token
+  <token> --webhook-base-url <your tunnel URL>`. Creates the `Channel`
+  row and calls Telegram's `setWebhook` — validates the token via
+  `getMe` first, so a typo surfaces immediately, not as silent failures
+  later. Not yet tested against a real Telegram round-trip — everything
+  up to and including the actual `sendMessage` call is verified for real
+  (including a genuine delivery failure with a fake token, handled
+  gracefully), but no real bot token has been used end-to-end yet.
 - Synthetic conversation validation (REQUIREMENTS §12 stage 1): `docker
   compose up -d db` + real `ENVELOPS_GEMINI_API_KEY`, then `python3 -m
   scripts.run_synthetic_conversations` from `backend/` — takes ~6 minutes
@@ -108,9 +125,9 @@ discipline above; the existing set doesn't need reinstalling.
   if pytest ever isn't available)
 - Migrations: `alembic revision --autogenerate -m "..."` then `alembic
   upgrade head` — needs a reachable Postgres (`docker compose up -d db`).
-  Four migrations exist (initial schema; embedding dim 1536→768 for
-  Gemini; tenant closing_action; tenant closing_link), all applied, all
-  downgrade→upgrade round-trip verified.
+  Five migrations exist (initial schema; embedding dim 1536→768 for
+  Gemini; tenant closing_action; tenant closing_link; channel telegram
+  fields), all applied, all downgrade→upgrade round-trip verified.
 - LangGraph's own checkpoint tables (`checkpoints`, `checkpoint_blobs`,
   `checkpoint_writes` — the safety-gate pause/resume state, ARCHITECTURE
   §5) are **not** Alembic-managed. `app/pipeline/runner.get_checkpointer()`
