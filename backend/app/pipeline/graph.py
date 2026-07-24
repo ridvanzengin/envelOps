@@ -97,6 +97,29 @@ async def decide_next_step(
     if trigger is not None:
         state.decision = "escalate_to_human"
         state.escalation_reason = trigger.reason
+        # Logged here, immediately -- not left until log_lead_and_notify,
+        # which only runs after this pauses at escalate_to_human's
+        # interrupt() and is later resumed. A human has to be able to SEE
+        # the escalation to know to resume it in the first place, so
+        # logging it can't wait for a step that only runs once someone's
+        # already acted on it.
+        #
+        # KNOWN GAP, not solved here: if/when resume_pipeline() is wired to
+        # a real "resolve escalation" trigger, log_lead_and_notify will try
+        # to log this same escalation again on resume -- its check doesn't
+        # know this one's already recorded. Needs a real fix once that
+        # trigger exists (e.g. check for an existing row, or a state flag),
+        # not solved speculatively here since nothing calls resume yet.
+        escalation_repo = EscalationRepository(runtime.context.session)
+        await escalation_repo.add(
+            Escalation(
+                tenant_id=state.tenant_id,
+                conversation_id=state.conversation_id,
+                reason=trigger.reason,
+                layer=trigger.layer,
+                status="pending",
+            )
+        )
         return state
 
     # Past the safety floor: auto-send is the Phase 1 default (ARCHITECTURE
