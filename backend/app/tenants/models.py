@@ -23,3 +23,14 @@ class Tenant(Base, TimestampMixin):
     # has no other use yet. Defaults to escalate_to_human: a business gets
     # autonomous closing by explicitly opting in, not by default.
     closing_action: Mapped[str] = mapped_column(nullable=False, default="escalate_to_human")
+
+    # The link book_or_checkout sends a hot, ready-to-buy/book customer --
+    # a Stripe Payment Link, a Calendly URL, a WhatsApp catalog link,
+    # whatever the business already uses. Deliberately just a URL, not a
+    # platform-specific connector (REQUIREMENTS §5's "manually-updated
+    # fallback" framing, applied to closing rather than pricing/inventory):
+    # works for any business regardless of what platform they're on, and a
+    # real Shopify/Calendly API integration later is an addition alongside
+    # this, not a replacement of it -- some tenants will never connect a
+    # platform and still need this to work.
+    closing_link: Mapped[str | None] = mapped_column(nullable=True)

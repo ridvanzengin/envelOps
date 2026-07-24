@@ -5,6 +5,7 @@ from langgraph.runtime import Runtime
 
 from app.pipeline.context import PipelineContext
 from app.pipeline.graph import (
+    book_or_checkout,
     decide_next_step,
     keep_chatting,
     log_lead_and_notify,
@@ -255,3 +256,50 @@ class TestLogLeadAndNotify:
             await log_lead_and_notify(state, _make_runtime())
 
         mock_escalation_repo_cls.return_value.add.assert_not_called()
+
+
+class TestBookOrCheckout:
+    async def test_includes_the_tenant_closing_link(self) -> None:
+        state = _make_state("I want to order 5 jars right now, how do I pay?")
+        fake_tenant = type("Tenant", (), {"closing_link": "https://pay.example.com/honey"})()
+        with (
+            patch("app.pipeline.graph.TenantRepository") as mock_repo_cls,
+            patch(
+                "app.pipeline.graph.generate_text",
+                return_value="Here you go! https://pay.example.com/honey",
+            ) as mock_gen,
+        ):
+            mock_repo_cls.return_value.get = AsyncMock(return_value=fake_tenant)
+            result = await book_or_checkout(state, _make_runtime())
+
+        assert result.draft_text == "Here you go! https://pay.example.com/honey"
+        assert result.decision != "escalate_to_human"
+        prompt = mock_gen.call_args.args[0]
+        assert "https://pay.example.com/honey" in prompt
+
+    async def test_downgrades_to_escalation_when_no_link_configured(self) -> None:
+        state = _make_state("I want to order 5 jars right now, how do I pay?")
+        fake_tenant = type("Tenant", (), {"closing_link": None})()
+        with (
+            patch("app.pipeline.graph.TenantRepository") as mock_repo_cls,
+            patch("app.pipeline.graph.generate_text", return_value="Someone will follow up!"),
+        ):
+            mock_repo_cls.return_value.get = AsyncMock(return_value=fake_tenant)
+            result = await book_or_checkout(state, _make_runtime())
+
+        assert result.decision == "escalate_to_human"
+        assert result.escalation_reason is not None
+        assert "closing_link" in result.escalation_reason
+        assert result.draft_text == "Someone will follow up!"
+
+    async def test_downgrades_to_escalation_when_tenant_row_missing(self) -> None:
+        state = _make_state("I want to order 5 jars right now, how do I pay?")
+        with (
+            patch("app.pipeline.graph.TenantRepository") as mock_repo_cls,
+            patch("app.pipeline.graph.generate_text", return_value="Someone will follow up!"),
+        ):
+            mock_repo_cls.return_value.get = AsyncMock(return_value=None)
+            result = await book_or_checkout(state, _make_runtime())
+
+        assert result.decision == "escalate_to_human"
+        assert result.escalation_reason is not None

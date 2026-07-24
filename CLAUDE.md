@@ -99,9 +99,9 @@ discipline above; the existing set doesn't need reinstalling.
   if pytest ever isn't available)
 - Migrations: `alembic revision --autogenerate -m "..."` then `alembic
   upgrade head` — needs a reachable Postgres (`docker compose up -d db`).
-  Three migrations exist (initial schema; embedding dim 1536→768 for
-  Gemini; tenant closing_action), all applied, all downgrade→upgrade
-  round-trip verified.
+  Four migrations exist (initial schema; embedding dim 1536→768 for
+  Gemini; tenant closing_action; tenant closing_link), all applied, all
+  downgrade→upgrade round-trip verified.
 - LangGraph's own checkpoint tables (`checkpoints`, `checkpoint_blobs`,
   `checkpoint_writes` — the safety-gate pause/resume state, ARCHITECTURE
   §5) are **not** Alembic-managed. `app/pipeline/runner.get_checkpointer()`
@@ -116,6 +116,16 @@ migration touches a `Vector(...)` column:** the generated file references
 fails at import time. A `render_item` hook in `alembic/env.py` would fix
 this at the root; hasn't been worth it for two migrations, reconsider if a
 third hits the same thing.
+
+**Alembic autogenerate gotcha #2 — check for it any time you run
+autogenerate in a dev DB that's had the checkpointer's `.setup()` called
+against it:** the `checkpoint*` tables aren't in our SQLAlchemy metadata by
+design (they're LangGraph's own, not Alembic-managed — see the checkpointer
+bullet above), so autogenerate sees them as "removed" and will generate
+`DROP TABLE`/`DROP INDEX` ops for all four of them. Strip those out by hand
+before applying — applying them for real would delete the safety-gate
+pause/resume state. Always read a freshly generated migration before
+running it, don't assume it's only the change you asked for.
 
 **Checkpointer gotcha already hit once — commit before invoking a
 checkpointed graph run, don't leave the session's setup writes

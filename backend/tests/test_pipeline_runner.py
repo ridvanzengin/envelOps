@@ -36,6 +36,40 @@ class TestRunPipelinePauses:
         assert interrupt.value["conversation_id"] == str(state.conversation_id)
         assert interrupt.value["escalation_reason"] is not None
 
+    async def test_book_or_checkout_with_no_link_does_not_pause(self) -> None:
+        # Real distinction worth pinning down: book_or_checkout downgrading
+        # to decision=escalate_to_human on a missing closing_link is NOT
+        # the same as a real safety-floor pause -- routing already happened
+        # at decide_next_step, so this proceeds straight to
+        # log_lead_and_notify (which logs a real Escalation row) instead of
+        # interrupt()-pausing like the actual escalate_to_human node does.
+        state = _make_state("I want to order 5 jars right now, how do I pay?")
+        fake_tenant = type(
+            "Tenant", (), {"closing_action": "book_or_checkout", "closing_link": None}
+        )()
+        with (
+            patch(
+                "app.pipeline.graph.generate_text",
+                side_effect=["purchase_intent", "hot", "Someone will follow up soon!"],
+            ),
+            patch("app.pipeline.graph.embed_text", return_value=[0.1]),
+            patch("app.pipeline.graph.KnowledgeChunkRepository") as mock_knowledge_repo_cls,
+            patch("app.pipeline.graph.TenantTriggerPhraseRepository") as mock_phrase_repo_cls,
+            patch("app.pipeline.graph.TenantRepository") as mock_tenant_repo_cls,
+            patch("app.pipeline.graph.LeadRepository") as mock_lead_repo_cls,
+            patch("app.pipeline.graph.EscalationRepository") as mock_escalation_repo_cls,
+        ):
+            mock_knowledge_repo_cls.return_value.search_similar = AsyncMock(return_value=[])
+            mock_phrase_repo_cls.return_value.list = AsyncMock(return_value=[])
+            mock_tenant_repo_cls.return_value.get = AsyncMock(return_value=fake_tenant)
+            mock_lead_repo_cls.return_value.add = AsyncMock()
+            mock_escalation_repo_cls.return_value.add = AsyncMock()
+            result = await run_pipeline(state, AsyncMock(), InMemorySaver())
+
+        assert "__interrupt__" not in result
+        assert result["decision"] == "escalate_to_human"
+        mock_escalation_repo_cls.return_value.add.assert_called_once()
+
     async def test_does_not_pause_on_an_ordinary_message(self) -> None:
         state = _make_state("What flavors do you have?")
         with (

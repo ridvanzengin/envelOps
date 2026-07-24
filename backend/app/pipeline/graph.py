@@ -163,8 +163,52 @@ def escalate_to_human(state: PipelineState) -> PipelineState:
     return state
 
 
-def book_or_checkout(state: PipelineState) -> PipelineState:
-    raise NotImplementedError
+async def book_or_checkout(
+    state: PipelineState, runtime: Runtime[PipelineContext]
+) -> PipelineState:
+    tenant_repo = TenantRepository(runtime.context.session)
+    tenant = await tenant_repo.get(state.tenant_id)
+    closing_link = tenant.closing_link if tenant is not None else None
+
+    if not closing_link:
+        # A real operational gap (tenant set closing_action=book_or_checkout
+        # but never configured a link), not a code bug. Setting
+        # decision=escalate_to_human here does NOT pause the conversation
+        # the way a real safety-floor escalation does -- routing already
+        # happened at decide_next_step's conditional edge, so this node
+        # still proceeds straight to log_lead_and_notify next, not to
+        # escalate_to_human's interrupt(). What it does do: makes
+        # log_lead_and_notify (which reads state.decision fresh) log this
+        # as a real Escalation row for the business owner to notice and
+        # fix, while still auto-sending the customer an honest holding
+        # reply instead of leaving them hanging over what's just a config
+        # issue, not a safety one -- deliberately different tradeoff than
+        # the safety floor, which must never auto-send.
+        state.decision = "escalate_to_human"
+        state.escalation_reason = "book_or_checkout: tenant has no closing_link configured"
+        state.draft_text = generate_text(
+            "You are a helpful customer support assistant for a small "
+            "business, replying directly to a customer's DM. The customer "
+            "wants to buy/book right now but you don't have a direct link "
+            "to send them — let them know briefly and naturally (not "
+            "apologetic or corporate-sounding) that someone from the team "
+            "will follow up shortly to complete this.\n\n"
+            "Customer message (your reply MUST be in this exact same "
+            f"language — do not translate): {state.incoming_text}"
+        )
+        return state
+
+    prompt = (
+        "You are a helpful customer support assistant for a small business, "
+        "replying directly to a customer's DM. The customer is ready to "
+        "buy/book right now. Reply naturally and briefly, like a real "
+        "person texting back, and include this exact link so they can "
+        f"complete it themselves: {closing_link}\n\n"
+        "Customer message (your reply MUST be in this exact same language "
+        f"— do not translate, do not switch languages): {state.incoming_text}"
+    )
+    state.draft_text = generate_text(prompt)
+    return state
 
 
 async def log_lead_and_notify(
