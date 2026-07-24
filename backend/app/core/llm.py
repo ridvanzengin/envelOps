@@ -27,7 +27,12 @@ GENERATION_MODEL = "gemini-flash-lite-latest"
 # with gemini-2.0-flash/gemini-2.5-flash and settled on this model instead.
 # If this model's quota ever changes, check what's actually available via
 # `GET https://generativelanguage.googleapis.com/v1beta/models?key=...`
-# rather than assuming any particular model name works.
+# rather than assuming any particular model name works. Once it does work,
+# it's still tight: this alias currently resolves to gemini-3.5-flash-lite,
+# whose free tier caps at 15 requests/minute (measured live via
+# scripts/run_synthetic_conversations.py) -- fine for one inbound DM at a
+# time, but real batch/test usage needs deliberate pacing, not just "it
+# has quota" being enough.
 EMBEDDING_MODEL = "gemini-embedding-001"
 EMBEDDING_DIM = 768
 

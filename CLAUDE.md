@@ -91,9 +91,18 @@ discipline above; the existing set doesn't need reinstalling.
 - Celery worker, without Docker: `celery -A app.core.celery_app worker
   --loglevel=info`
 - Health check once running: `curl localhost:8000/healthz`
-- Lint: `ruff check app/ tests/` — Format-on-save equivalent: `ruff format`
-  (not yet run repo-wide, safe to use)
-- Type-check: `mypy app/`
+- Synthetic conversation validation (REQUIREMENTS §12 stage 1): `docker
+  compose up -d db` + real `ENVELOPS_GEMINI_API_KEY`, then `python3 -m
+  scripts.run_synthetic_conversations` from `backend/` — takes ~6 minutes
+  (16 messages, 20s apart to stay under the 15 req/min free-tier cap, see
+  `core/llm.py`). Leaves real rows in the DB tagged "Synthetic Test — Honey
+  Co" for inspection; doesn't clean up after itself. First full run found
+  two real quality gaps (language-inconsistent intent classification, a
+  Turkish-only pricing hallucination) — see `docs/ARCHITECTURE.md` §11,
+  neither fixed yet.
+- Lint: `ruff check app/ tests/ scripts/` — Format-on-save equivalent:
+  `ruff format` (not yet run repo-wide, safe to use)
+- Type-check: `mypy app/ scripts/`
 - Tests: `python -m pytest -q` (pytest is installed now; the older stdlib
   `python3 -m unittest discover -s tests -v` still works with zero installs
   if pytest ever isn't available)

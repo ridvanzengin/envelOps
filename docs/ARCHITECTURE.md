@@ -247,9 +247,21 @@ No drag-and-drop flow builder in Phase 1.
   certain categories "graduate" to auto-send based on approval history (the
   data hook for this — approved-as-is vs. edited vs. rejected — should still
   be captured wherever it's cheap to log, even without the feature)
-- A synthetic-message test harness for pipeline validation (REQUIREMENTS
-  §12) — how fabricated conversations get fed through the graph without a
-  real channel behind them isn't designed yet
+- ~~A synthetic-message test harness for pipeline validation~~ — built:
+  `backend/scripts/run_synthetic_conversations.py` runs a fixed set of
+  fabricated DMs (REQUIREMENTS §12 stage 1's list — order/shipping/returns/
+  price + safety-floor edge cases, Turkish and English) through the real
+  pipeline against a synthetic tenant, for manual review. First full run
+  surfaced two real gaps, not yet fixed, worth knowing before treating
+  REQUIREMENTS §12's synthetic-testing gate as cleared: (1) the same
+  question can classify to a different intent/score depending on language
+  (a Turkish return question came back `knowledge_question`/cold, the
+  English equivalent `complaint_or_problem`/warm — both got the right
+  answer, but the classification itself isn't language-stable), and (2) a
+  real hallucination — a Turkish price question got told prices are fixed,
+  which isn't in the knowledge base at all, while the English equivalent
+  correctly declined to guess. Both are prompt/grounding quality issues,
+  not pipeline-structure bugs.
 
 ## 12. Explicitly deferred to later phases
 
