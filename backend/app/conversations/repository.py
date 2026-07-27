@@ -53,6 +53,34 @@ class ConversationRepository(TenantScopedRepository[Conversation]):
         result = await self.session.scalars(stmt)
         return list(result)
 
+    async def list_with_last_message(
+        self, tenant_id: uuid.UUID
+    ) -> list[tuple[Conversation, Message | None]]:
+        """Inbox list view -- one query, not list-then-fetch-per-conversation,
+        same reasoning as KnowledgeSourceRepository.list_with_chunk_counts.
+        Outer join: a conversation with no messages yet (shouldn't happen in
+        practice -- every conversation is created alongside its first
+        inbound message, ARCHITECTURE §8) still shows up, just with a null
+        preview, rather than silently disappearing from the list."""
+        latest_message_at = (
+            select(func.max(Message.created_at))
+            .where(Message.conversation_id == Conversation.id)
+            .correlate(Conversation)
+            .scalar_subquery()
+        )
+        stmt = (
+            select(Conversation, Message)
+            .outerjoin(
+                Message,
+                (Message.conversation_id == Conversation.id)
+                & (Message.created_at == latest_message_at),
+            )
+            .where(Conversation.tenant_id == tenant_id)
+            .order_by(Message.created_at.desc())
+        )
+        result = await self.session.execute(stmt)
+        return [(row[0], row[1]) for row in result.all()]
+
 
 class MessageRepository(TenantScopedRepository[Message]):
     model = Message
@@ -67,3 +95,14 @@ class MessageRepository(TenantScopedRepository[Message]):
             .limit(1)
         )
         return await self.session.scalar(stmt)
+
+    async def list_by_conversation(
+        self, tenant_id: uuid.UUID, conversation_id: uuid.UUID
+    ) -> list[Message]:
+        stmt = (
+            select(Message)
+            .where(Message.tenant_id == tenant_id, Message.conversation_id == conversation_id)
+            .order_by(Message.created_at.asc())
+        )
+        result = await self.session.scalars(stmt)
+        return list(result)

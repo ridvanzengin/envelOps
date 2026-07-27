@@ -301,9 +301,15 @@ have nothing to list here since they're compiled regex in
 `safety_gate.py`, not DB rows — the frontend shows those as static,
 translated copy instead (§10).
 
+`/conversations` is real now too: `GET /conversations` (list, with each
+conversation's most recent message as a preview — one query via
+`ConversationRepository.list_with_last_message`, same "one query, not
+list-then-fetch-per-row" reasoning as `KnowledgeSourceRepository.
+list_with_chunk_counts`) and `GET /conversations/{id}/messages` (full
+thread, oldest first).
+
 Still empty routers, wired into `main.py` but with nothing behind them:
-`/channels` (besides the webhook, §8), `/conversations`, `/leads`,
-`/dashboard`.
+`/channels` (besides the webhook, §8), `/leads`, `/dashboard`.
 
 ## 10. Frontend screens (Phase 1)
 
@@ -313,7 +319,12 @@ Still empty routers, wired into `main.py` but with nothing behind them:
   language switcher deliberately lives outside this gate (`App.tsx`), not
   inside the post-login nav — a Turkish-speaking owner needs it to read
   the login screen itself, not just the app after logging in (§7).
-- **Inbox** — still a placeholder.
+- **Inbox** — real now: conversation list with a last-message preview on
+  the left, click one to load its full thread (`GET /conversations`,
+  `GET /conversations/{id}/messages`, §9) on the right. Two-pane, no
+  routing added for this — a single page managing which conversation is
+  selected as local state, same minimal-surface reasoning as everything
+  else in Phase 1's frontend.
 - **Escalation queue** — real now: lists `GET /escalations`, resolves via
   `POST /escalations/{id}/resolve` (§9) with an optimistic-ish update (the
   resolved row's response replaces it in place, no refetch). The primary

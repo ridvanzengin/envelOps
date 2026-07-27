@@ -7,7 +7,7 @@
     "dashboard": "Dashboard"
   },
   "pages": {
-    "inbox": "Conversation list and thread view go here.",
+    "inbox": "Conversation list and thread view.",
     "escalations": "Conversations waiting on a human — the primary action screen, since auto-send is the Phase 1 default.",
     "knowledge": "Add (URL/PDF/manual), list, and refresh knowledge sources.",
     "settings": "Safety trigger phrases (system defaults locked, add your own below). Channel connection status isn't shown here yet.",
@@ -70,5 +70,14 @@
     "loading": "Loading trigger phrases…",
     "empty": "No added phrases yet.",
     "loadError": "Couldn't load trigger phrases. Try again."
+  },
+  "inbox": {
+    "loading": "Loading conversations…",
+    "empty": "No conversations yet.",
+    "loadError": "Couldn't load conversations. Try again.",
+    "noMessages": "(no messages)",
+    "selectAConversation": "Select a conversation to see its messages.",
+    "threadLoading": "Loading messages…",
+    "threadLoadError": "Couldn't load this conversation's messages. Try again."
   }
 }

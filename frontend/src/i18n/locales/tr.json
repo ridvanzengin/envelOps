@@ -7,7 +7,7 @@
     "dashboard": "Panel"
   },
   "pages": {
-    "inbox": "Konuşma listesi ve mesaj görünümü burada olacak.",
+    "inbox": "Konuşma listesi ve mesaj görünümü.",
     "escalations": "İnsan onayı bekleyen konuşmalar — otomatik gönderim Faz 1 varsayılanı olduğu için birincil eylem ekranı.",
     "knowledge": "Bilgi kaynağı ekle (URL/PDF/manuel), listele ve yenile.",
     "settings": "Güvenlik tetikleyici ifadeleri (sistem varsayılanları kilitli, kendi ifadelerinizi aşağıya ekleyin). Kanal bağlantı durumu henüz burada gösterilmiyor.",
@@ -70,5 +70,14 @@
     "loading": "Tetikleyici ifadeler yükleniyor…",
     "empty": "Henüz eklenen ifade yok.",
     "loadError": "Tetikleyici ifadeler yüklenemedi. Tekrar deneyin."
+  },
+  "inbox": {
+    "loading": "Konuşmalar yükleniyor…",
+    "empty": "Henüz konuşma yok.",
+    "loadError": "Konuşmalar yüklenemedi. Tekrar deneyin.",
+    "noMessages": "(mesaj yok)",
+    "selectAConversation": "Mesajlarını görmek için bir konuşma seçin.",
+    "threadLoading": "Mesajlar yükleniyor…",
+    "threadLoadError": "Bu konuşmanın mesajları yüklenemedi. Tekrar deneyin."
   }
 }
