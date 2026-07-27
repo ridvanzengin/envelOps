@@ -280,8 +280,16 @@ here does **not** send anything to the customer; the human handles the
 actual reply outside the tool. 409s if the escalation isn't `pending`
 (prevents resuming an already-resumed thread twice).
 
-`/knowledge` is real now too (§6: create/list/refresh a source). Still
-empty routers, wired into `main.py` but with nothing behind them:
+`/knowledge` is real now too (§6: create/list/refresh a source).
+
+`GET`/`POST /escalations/trigger-phrases` — the tenant-additions half of
+§5's Layer 1 trigger phrases. List-and-add only, no delete/edit endpoint
+(`TenantTriggerPhrase`'s own docstring: additive only). System defaults
+have nothing to list here since they're compiled regex in
+`safety_gate.py`, not DB rows — the frontend shows those as static,
+translated copy instead (§10).
+
+Still empty routers, wired into `main.py` but with nothing behind them:
 `/channels` (besides the webhook, §8), `/conversations`, `/leads`,
 `/dashboard`.
 
@@ -304,10 +312,13 @@ empty routers, wired into `main.py` but with nothing behind them:
   chunk counts, refresh (url only; no button shown for manual rows,
   matching the backend's 400). Same fetch/update pattern as the
   Escalation queue — in-place update on the response, no refetch.
-- **Settings** — still a placeholder. Eventually: channel connection
-  status; a safety trigger phrase list (§5) showing system defaults
-  disabled/locked with an "add your own phrase" input — no edit/delete
-  control on defaults, ever.
+- **Settings** — partially real: the safety trigger phrase list (§5) is
+  built — three static, translated category labels for the system
+  defaults (disabled checkboxes, no edit/delete control, ever — there's
+  nothing to fetch for them, they're not DB rows) plus a real
+  list-and-add form for the tenant's own additions (§9). Channel
+  connection status is not built — no `GET /channels` endpoint exists
+  yet to show it.
 - **Dashboard** — still a placeholder; minimal for Phase 1 (leads today,
   escalations today, response times) once built. The full two-audience
   observability design is still an open item (see §11).

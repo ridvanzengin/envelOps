@@ -7,7 +7,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import CurrentUser, get_current_user
 from app.core.db import get_session
-from app.escalation.repository import EscalationRepository
+from app.escalation.models import TenantTriggerPhrase
+from app.escalation.repository import EscalationRepository, TenantTriggerPhraseRepository
 from app.pipeline.runner import get_checkpointer, resume_pipeline
 
 router = APIRouter(prefix="/escalations", tags=["escalations"])
@@ -22,6 +23,17 @@ class EscalationResponse(BaseModel):
     created_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class TriggerPhraseResponse(BaseModel):
+    id: uuid.UUID
+    phrase: str
+
+    model_config = {"from_attributes": True}
+
+
+class CreateTriggerPhraseRequest(BaseModel):
+    phrase: str
 
 
 @router.get("")
@@ -78,3 +90,38 @@ async def resolve_escalation(
     await session.commit()
 
     return EscalationResponse.model_validate(escalation)
+
+
+@router.get("/trigger-phrases")
+async def list_trigger_phrases(
+    current_user: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> list[TriggerPhraseResponse]:
+    """Only the tenant's own additions -- system defaults (docs/
+    ARCHITECTURE.md §5) are compiled regex in safety_gate.py, not DB rows,
+    so there's nothing here to list for them; the frontend shows those as
+    static, locked copy instead."""
+    phrase_repo = TenantTriggerPhraseRepository(session)
+    phrases = await phrase_repo.list(current_user.tenant_id)
+    return [TriggerPhraseResponse.model_validate(phrase) for phrase in phrases]
+
+
+@router.post("/trigger-phrases")
+async def add_trigger_phrase(
+    body: CreateTriggerPhraseRequest,
+    current_user: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> TriggerPhraseResponse:
+    """Additive only (TenantTriggerPhrase's own docstring) -- no delete/
+    edit endpoint, matching REQUIREMENTS.md §6's framing of tenant
+    additions to the safety floor as something that only grows."""
+    stripped = body.phrase.strip()
+    if not stripped:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "phrase must not be blank")
+
+    phrase_repo = TenantTriggerPhraseRepository(session)
+    phrase = await phrase_repo.add(
+        TenantTriggerPhrase(tenant_id=current_user.tenant_id, phrase=stripped)
+    )
+    await session.commit()
+    return TriggerPhraseResponse.model_validate(phrase)

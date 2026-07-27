@@ -10,7 +10,7 @@
     "inbox": "Konuşma listesi ve mesaj görünümü burada olacak.",
     "escalations": "İnsan onayı bekleyen konuşmalar — otomatik gönderim Faz 1 varsayılanı olduğu için birincil eylem ekranı.",
     "knowledge": "Bilgi kaynağı ekle (URL/PDF/manuel), listele ve yenile.",
-    "settings": "Kanal bağlantı durumu ve güvenlik tetikleyici ifadeleri (sistem varsayılanları kilitli, kiracı yenilerini ekleyebilir).",
+    "settings": "Güvenlik tetikleyici ifadeleri (sistem varsayılanları kilitli, kendi ifadelerinizi aşağıya ekleyin). Kanal bağlantı durumu henüz burada gösterilmiyor.",
     "dashboard": "Bugünkü potansiyel müşteriler, bugünkü yükseltmeler, yanıt süreleri."
   },
   "auth": {
@@ -53,5 +53,22 @@
     "lastSynced": "Son senkronizasyon",
     "refresh": "Yenile",
     "refreshing": "Yenileniyor…"
+  },
+  "settings": {
+    "safetyTriggersTitle": "Güvenlik tetikleyici ifadeleri",
+    "systemDefaultsTitle": "Sistem varsayılanları (kilitli)",
+    "systemDefaultCategories": {
+      "contraindication": "Kontrendikasyon dili (örn. ilaç etkileşimleri, alerjiler)",
+      "symptom": "Semptom veya şikayet dili (örn. ağrı, kanama, yan etkiler)",
+      "outcomeGuarantee": "Sonuç garantisi talepleri (örn. \"bunun iyileştireceğini garanti eder misiniz\")"
+    },
+    "tenantPhrasesTitle": "Eklediğiniz ifadeler",
+    "newPhrase": "Yeni ifade",
+    "add": "İfade ekle",
+    "adding": "Ekleniyor…",
+    "addError": "Bu ifade eklenemedi. Tekrar deneyin.",
+    "loading": "Tetikleyici ifadeler yükleniyor…",
+    "empty": "Henüz eklenen ifade yok.",
+    "loadError": "Tetikleyici ifadeler yüklenemedi. Tekrar deneyin."
   }
 }
