@@ -239,10 +239,26 @@ token), not just a "fallback."
 
 `/auth`, `/channels`, `/knowledge`, `/conversations`, `/leads`,
 `/escalations`, `/dashboard` — one router per domain module, matching the
-`api.py` per module convention. Only `/channels` has a real endpoint so
-far (`POST /channels/telegram/{channel_id}/webhook`, §8) — the rest are
-empty routers, wired into `main.py` but with nothing behind them yet, not
-even auth.
+`api.py` per module convention.
+
+**Auth is real now:** `POST /auth/login` (email + password → JWT, tenant id
+and role embedded per §2) and `GET /escalations` (the first real protected
+endpoint, gated by `app.auth.dependencies.get_current_user` — a Bearer JWT
+dependency that trusts the signature/expiry rather than re-querying the
+user per request, since Phase 1 has no revocation list and only one role).
+`users.email` is globally unique, not per-tenant scoped — login has no
+tenant selector, so email is how the tenant gets discovered, the same
+reasoning as `ChannelRepository.get_by_id_unscoped` (CLAUDE.md), landed
+here as `UserRepository.get_by_email_unscoped`.
+
+`GET /escalations` is read-only (list pending + resolved for the caller's
+tenant). Resolving one — the natural next step, which would finally give
+`resume_pipeline()` (built in §5, still unused) a real caller — is not
+built yet.
+
+Still empty routers, wired into `main.py` but with nothing behind them:
+`/channels` (besides the webhook, §8), `/knowledge`, `/conversations`,
+`/leads`, `/dashboard`.
 
 ## 10. Frontend screens (Phase 1)
 

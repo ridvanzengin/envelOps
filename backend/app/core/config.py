@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6379/0"
     jwt_secret: str = "change-me"
     jwt_algorithm: str = "HS256"
+    jwt_expires_minutes: int = 60 * 24
     gemini_api_key: str = ""  # covers both generation and embeddings
 
     model_config = SettingsConfigDict(env_file=_ENV_FILE, env_prefix="ENVELOPS_")

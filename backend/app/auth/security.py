@@ -1,10 +1,16 @@
 """Password hashing via stdlib PBKDF2-HMAC — no third-party crypto library
-needed. JWT issuing/verification is a separate, not-yet-built piece: use a
-vetted library (pyjwt) for that when it lands, don't hand-roll it."""
+needed. JWT issuing/verification uses pyjwt (docs/ARCHITECTURE.md §2:
+tenant id embedded in the token), not hand-rolled."""
 
 import hashlib
 import hmac
 import secrets
+import uuid
+from datetime import UTC, datetime, timedelta
+
+import jwt
+
+from app.core.config import settings
 
 _ALGORITHM = "sha256"
 _ITERATIONS = 600_000  # OWASP 2023 minimum recommendation for PBKDF2-HMAC-SHA256
@@ -30,3 +36,31 @@ def verify_password(password: str, encoded: str) -> bool:
     iterations = int(iterations_str)
     actual = hashlib.pbkdf2_hmac(algorithm, password.encode("utf-8"), salt, iterations)
     return hmac.compare_digest(actual, expected)
+
+
+class InvalidTokenError(Exception):
+    """Raised for any token that fails to decode/verify — expired, wrong
+    signature, or malformed. Callers don't need to distinguish which; all
+    three are the same "not authenticated" outcome."""
+
+
+def create_access_token(*, user_id: uuid.UUID, tenant_id: uuid.UUID, role: str) -> str:
+    now = datetime.now(UTC)
+    payload = {
+        "sub": str(user_id),
+        "tenant_id": str(tenant_id),
+        "role": role,
+        "iat": now,
+        "exp": now + timedelta(minutes=settings.jwt_expires_minutes),
+    }
+    return jwt.encode(payload, settings.jwt_secret, algorithm=settings.jwt_algorithm)
+
+
+def decode_access_token(token: str) -> dict[str, str]:
+    try:
+        payload = jwt.decode(token, settings.jwt_secret, algorithms=[settings.jwt_algorithm])
+    except jwt.PyJWTError as exc:
+        raise InvalidTokenError(str(exc)) from exc
+    if "sub" not in payload or "tenant_id" not in payload or "role" not in payload:
+        raise InvalidTokenError("missing required claim")
+    return payload
