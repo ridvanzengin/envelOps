@@ -299,8 +299,11 @@ empty routers, wired into `main.py` but with nothing behind them:
   resolved row's response replaces it in place, no refetch). The primary
   "action needed" screen, since auto-send is the default and escalations
   are the one thing routinely waiting on a human.
-- **Knowledge sources** — still a placeholder; the API (§9) exists, the
-  screen doesn't yet.
+- **Knowledge sources** — real now: add (manual or url — pdf isn't built
+  on the backend yet, §6, so there's no third form option), list with
+  chunk counts, refresh (url only; no button shown for manual rows,
+  matching the backend's 400). Same fetch/update pattern as the
+  Escalation queue — in-place update on the response, no refetch.
 - **Settings** — still a placeholder. Eventually: channel connection
   status; a safety trigger phrase list (§5) showing system defaults
   disabled/locked with an "add your own phrase" input — no edit/delete

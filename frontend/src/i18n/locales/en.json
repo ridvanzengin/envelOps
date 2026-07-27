@@ -33,5 +33,25 @@
     "createdAt": "Created",
     "resolve": "Resolve",
     "resolving": "Resolving…"
+  },
+  "knowledgeSources": {
+    "type": "Source type",
+    "typeManual": "Manual entry",
+    "typeUrl": "URL",
+    "content": "Content",
+    "url": "URL",
+    "add": "Add source",
+    "adding": "Adding…",
+    "addError": "Couldn't add this source. Try again.",
+    "loading": "Loading knowledge sources…",
+    "empty": "No knowledge sources yet.",
+    "loadError": "Couldn't load knowledge sources. Try again.",
+    "refreshError": "Couldn't refresh this source. Try again.",
+    "sourceType": "Type",
+    "sourceUri": "URL",
+    "chunkCount": "Chunks",
+    "lastSynced": "Last synced",
+    "refresh": "Refresh",
+    "refreshing": "Refreshing…"
   }
 }
