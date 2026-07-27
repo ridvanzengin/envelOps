@@ -11,13 +11,16 @@ workaround.
 import asyncio
 import logging
 import uuid
+from datetime import UTC, datetime, timedelta
 
 from app.channels.repository import ChannelRepository
 from app.channels.telegram_client import send_message
-from app.conversations.models import Message
+from app.conversations.models import Conversation, Message
 from app.conversations.repository import ConversationRepository, MessageRepository
 from app.core.celery_app import celery_app
+from app.core.config import settings
 from app.core.db import async_session
+from app.core.llm import generate_text
 from app.pipeline.runner import get_checkpointer, run_pipeline
 from app.pipeline.state import PipelineState
 
@@ -96,3 +99,87 @@ async def _process_incoming_message(
                     )
 
         await session.commit()
+
+
+@celery_app.task(name="follow_up_check")
+def follow_up_check() -> None:
+    """Step 8 of the pipeline (docs/ARCHITECTURE.md §4): periodic scan for
+    quiet conversations, run on Celery Beat's schedule
+    (app/core/celery_app.py), not triggered per-message like
+    process_incoming_message above. Sends at most one follow-up ever per
+    conversation (ConversationRepository.list_quiet_unscoped only matches
+    ones that haven't been followed up yet) -- if the lead replies after
+    that, it's a normal inbound message through the usual channel-ingestion
+    path, re-entering the pipeline at step 2 same as any other reply.
+    """
+    asyncio.run(_follow_up_check())
+
+
+async def _follow_up_check() -> None:
+    cutoff = datetime.now(UTC) - timedelta(hours=settings.follow_up_delay_hours)
+    async with async_session() as session:
+        conversation_repo = ConversationRepository(session)
+        quiet_conversations = await conversation_repo.list_quiet_unscoped(cutoff)
+
+        message_repo = MessageRepository(session)
+        channel_repo = ChannelRepository(session)
+        for conversation in quiet_conversations:
+            await _send_follow_up(conversation, message_repo, channel_repo)
+            # Committed per-conversation, not once at the end of the batch
+            # -- a failure partway through this loop (a bad LLM/network
+            # call for one tenant) shouldn't roll back follow-ups already
+            # sent for others, and followed_up_at needs to be durable
+            # before the next scan runs regardless of what happens later
+            # in this loop.
+            await session.commit()
+
+
+async def _send_follow_up(
+    conversation: Conversation,
+    message_repo: MessageRepository,
+    channel_repo: ChannelRepository,
+) -> None:
+    last_message = await message_repo.get_latest(conversation.tenant_id, conversation.id)
+    if last_message is None:
+        return
+
+    try:
+        follow_up_text = generate_text(
+            "You are a helpful customer support assistant for a small "
+            "business. The customer went quiet after your last message to "
+            "them -- write a short, natural, friendly check-in, not "
+            "pushy, like a real person texting back. Reply in the exact "
+            "same language as your last message below (do not translate, "
+            "do not switch languages).\n\n"
+            f"Your last message to them was: {last_message.text}"
+        )
+    except Exception:
+        logger.exception(
+            "Failed to generate a follow-up for conversation %s", conversation.id
+        )
+        return
+
+    await message_repo.add(
+        Message(
+            tenant_id=conversation.tenant_id,
+            conversation_id=conversation.id,
+            direction="outbound",
+            text=follow_up_text,
+        )
+    )
+    conversation.followed_up_at = datetime.now(UTC)
+
+    channel = await channel_repo.get(conversation.tenant_id, conversation.channel_id)
+    if channel is not None and channel.bot_token:
+        try:
+            await send_message(
+                channel.bot_token, conversation.external_contact_id, follow_up_text
+            )
+        except Exception:
+            # Same reasoning as process_incoming_message's own delivery
+            # try/except above: the follow-up is still worth recording
+            # (and followed_up_at still worth setting, so we don't retry
+            # it forever) even if this particular send fails.
+            logger.exception(
+                "Failed to deliver follow-up for conversation %s", conversation.id
+            )
