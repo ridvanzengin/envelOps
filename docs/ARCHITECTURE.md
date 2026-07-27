@@ -165,6 +165,23 @@ calls-resume gap; it isn't anymore.
 `knowledge_chunks` (tenant-scoped, pgvector). A manual "refresh this source"
 action deletes and re-embeds a source's chunks — no silent staleness.
 
+**API-reachable now** (`POST /knowledge/sources`, `GET /knowledge/sources`,
+`POST /knowledge/sources/{id}/refresh`, all auth-gated): `manual` (owner
+pastes text directly) and `url` (fetched via a plain httpx GET,
+`app/knowledge/web_fetch.py` — same "thin client, not a heavier SDK"
+reasoning as the Telegram client) both work end to end with zero new
+dependencies — `app/knowledge/html_text.py` strips HTML to plain text
+using stdlib `html.parser`, not a new parsing library. Deliberately not
+attempted: schema.org FAQPage structured Q&A parsing (§5's "parsed as
+clean Q&A pairs where available" — text-only fallback is what's built).
+Refresh only makes sense for `url` sources (400 for `manual` — nothing
+external to re-fetch; delete and re-add instead).
+
+**`pdf` is not built** — the model's `type` column already anticipates it,
+but ingesting one needs a real PDF-parsing library (pypdf or similar), a
+new dependency deliberately deferred to its own follow-up rather than
+bundled with the zero-new-dependency `manual`/`url` work above.
+
 **Live data** (inventory, pricing): explicitly not embedded. Deferred past
 Phase 1 in practice — Phase 1 ships static knowledge only; live-data
 connectors (platform API or manual CSV fallback) are a later addition, per
@@ -263,9 +280,10 @@ here does **not** send anything to the customer; the human handles the
 actual reply outside the tool. 409s if the escalation isn't `pending`
 (prevents resuming an already-resumed thread twice).
 
-Still empty routers, wired into `main.py` but with nothing behind them:
-`/channels` (besides the webhook, §8), `/knowledge`, `/conversations`,
-`/leads`, `/dashboard`.
+`/knowledge` is real now too (§6: create/list/refresh a source). Still
+empty routers, wired into `main.py` but with nothing behind them:
+`/channels` (besides the webhook, §8), `/conversations`, `/leads`,
+`/dashboard`.
 
 ## 10. Frontend screens (Phase 1)
 

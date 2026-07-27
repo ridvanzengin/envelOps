@@ -1,0 +1,211 @@
+import uuid
+from datetime import UTC, datetime
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import httpx
+import pytest
+
+from app.auth.security import create_access_token
+from app.core.db import get_session
+from app.main import app
+
+
+def _fake_source(tenant_id: uuid.UUID, **overrides: object) -> MagicMock:
+    source = MagicMock()
+    source.id = uuid.uuid4()
+    source.tenant_id = tenant_id
+    source.type = "manual"
+    source.source_uri = None
+    source.last_synced_at = datetime.now(UTC)
+    for key, value in overrides.items():
+        setattr(source, key, value)
+    return source
+
+
+@pytest.fixture(autouse=True)
+def _override_session() -> object:
+    app.dependency_overrides[get_session] = lambda: AsyncMock()
+    yield
+    app.dependency_overrides.pop(get_session, None)
+
+
+def _token(tenant_id: uuid.UUID | None = None) -> str:
+    return create_access_token(
+        user_id=uuid.uuid4(), tenant_id=tenant_id or uuid.uuid4(), role="owner"
+    )
+
+
+async def _post(path: str, body: dict, token: str | None) -> httpx.Response:
+    headers = {"Authorization": f"Bearer {token}"} if token else {}
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        return await client.post(path, json=body, headers=headers)
+
+
+async def _get(path: str, token: str | None) -> httpx.Response:
+    headers = {"Authorization": f"Bearer {token}"} if token else {}
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        return await client.get(path, headers=headers)
+
+
+class TestCreateKnowledgeSource:
+    async def test_rejects_missing_token(self) -> None:
+        response = await _post("/knowledge/sources", {"type": "manual", "content": "x"}, None)
+        assert response.status_code == 401
+
+    async def test_manual_entry_chunks_and_embeds(self) -> None:
+        tenant_id = uuid.uuid4()
+        token = _token(tenant_id)
+        source = _fake_source(tenant_id)
+        with (
+            patch("app.knowledge.api.KnowledgeSourceRepository") as mock_source_repo_cls,
+            patch("app.knowledge.api.KnowledgeChunkRepository") as mock_chunk_repo_cls,
+            patch("app.knowledge.api.embed_text", return_value=[0.1, 0.2]),
+        ):
+            mock_source_repo_cls.return_value.add = AsyncMock(return_value=source)
+            mock_chunk_repo_cls.return_value.add = AsyncMock()
+            response = await _post(
+                "/knowledge/sources",
+                {"type": "manual", "content": "We ship worldwide via DHL."},
+                token,
+            )
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["id"] == str(source.id)
+        assert body["type"] == "manual"
+        assert body["source_uri"] is None
+        assert body["chunk_count"] == 1
+        mock_chunk_repo_cls.return_value.add.assert_called_once()
+        stored_chunk = mock_chunk_repo_cls.return_value.add.call_args.args[0]
+        assert stored_chunk.content == "We ship worldwide via DHL."
+        assert stored_chunk.tenant_id == tenant_id
+
+    async def test_manual_entry_requires_content(self) -> None:
+        response = await _post("/knowledge/sources", {"type": "manual"}, _token())
+        assert response.status_code == 400
+
+    async def test_manual_entry_rejects_blank_content(self) -> None:
+        response = await _post(
+            "/knowledge/sources", {"type": "manual", "content": "   "}, _token()
+        )
+        assert response.status_code == 400
+
+    async def test_url_entry_requires_url(self) -> None:
+        response = await _post("/knowledge/sources", {"type": "url"}, _token())
+        assert response.status_code == 400
+
+    async def test_url_entry_fetches_and_extracts_text(self) -> None:
+        tenant_id = uuid.uuid4()
+        token = _token(tenant_id)
+        source = _fake_source(tenant_id, type="url", source_uri="https://example.com/faq")
+        with (
+            patch("app.knowledge.api.KnowledgeSourceRepository") as mock_source_repo_cls,
+            patch("app.knowledge.api.KnowledgeChunkRepository") as mock_chunk_repo_cls,
+            patch("app.knowledge.api.embed_text", return_value=[0.1]),
+            patch(
+                "app.knowledge.api.fetch_url",
+                AsyncMock(return_value="<html><body><p>Shipping info here.</p></body></html>"),
+            ),
+        ):
+            mock_source_repo_cls.return_value.add = AsyncMock(return_value=source)
+            mock_chunk_repo_cls.return_value.add = AsyncMock()
+            response = await _post(
+                "/knowledge/sources",
+                {"type": "url", "url": "https://example.com/faq"},
+                token,
+            )
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["source_uri"] == "https://example.com/faq"
+        stored_chunk = mock_chunk_repo_cls.return_value.add.call_args.args[0]
+        assert stored_chunk.content == "Shipping info here."
+
+    async def test_url_fetch_failure_is_a_400_not_a_500(self) -> None:
+        with patch(
+            "app.knowledge.api.fetch_url",
+            AsyncMock(side_effect=httpx.ConnectError("connection refused")),
+        ):
+            response = await _post(
+                "/knowledge/sources",
+                {"type": "url", "url": "https://nope.example.com"},
+                _token(),
+            )
+        assert response.status_code == 400
+
+    async def test_url_with_no_extractable_text_is_a_400(self) -> None:
+        with patch(
+            "app.knowledge.api.fetch_url",
+            AsyncMock(return_value="<html><body><script>noop()</script></body></html>"),
+        ):
+            response = await _post(
+                "/knowledge/sources", {"type": "url", "url": "https://example.com"}, _token()
+            )
+        assert response.status_code == 400
+
+
+class TestListKnowledgeSources:
+    async def test_returns_only_the_callers_tenant_sources_with_counts(self) -> None:
+        tenant_id = uuid.uuid4()
+        token = _token(tenant_id)
+        source = _fake_source(tenant_id)
+        with patch("app.knowledge.api.KnowledgeSourceRepository") as mock_repo_cls:
+            mock_repo_cls.return_value.list_with_chunk_counts = AsyncMock(
+                return_value=[(source, 3)]
+            )
+            response = await _get("/knowledge/sources", token)
+
+        assert response.status_code == 200
+        body = response.json()
+        assert len(body) == 1
+        assert body[0]["id"] == str(source.id)
+        assert body[0]["chunk_count"] == 3
+        mock_repo_cls.return_value.list_with_chunk_counts.assert_called_once_with(tenant_id)
+
+
+class TestRefreshKnowledgeSource:
+    async def test_404_when_not_found(self) -> None:
+        with patch("app.knowledge.api.KnowledgeSourceRepository") as mock_repo_cls:
+            mock_repo_cls.return_value.get = AsyncMock(return_value=None)
+            response = await _post(f"/knowledge/sources/{uuid.uuid4()}/refresh", {}, _token())
+        assert response.status_code == 404
+
+    async def test_400_when_source_is_manual(self) -> None:
+        tenant_id = uuid.uuid4()
+        token = _token(tenant_id)
+        source = _fake_source(tenant_id, type="manual")
+        with patch("app.knowledge.api.KnowledgeSourceRepository") as mock_repo_cls:
+            mock_repo_cls.return_value.get = AsyncMock(return_value=source)
+            response = await _post(f"/knowledge/sources/{source.id}/refresh", {}, token)
+        assert response.status_code == 400
+
+    async def test_refetches_deletes_old_chunks_and_reembeds(self) -> None:
+        tenant_id = uuid.uuid4()
+        token = _token(tenant_id)
+        source = _fake_source(
+            tenant_id, type="url", source_uri="https://example.com/faq"
+        )
+        with (
+            patch("app.knowledge.api.KnowledgeSourceRepository") as mock_source_repo_cls,
+            patch("app.knowledge.api.KnowledgeChunkRepository") as mock_chunk_repo_cls,
+            patch("app.knowledge.api.embed_text", return_value=[0.1]),
+            patch(
+                "app.knowledge.api.fetch_url",
+                AsyncMock(return_value="<html><body><p>Updated info.</p></body></html>"),
+            ),
+        ):
+            mock_source_repo_cls.return_value.get = AsyncMock(return_value=source)
+            mock_chunk_repo_cls.return_value.delete_by_source = AsyncMock()
+            mock_chunk_repo_cls.return_value.add = AsyncMock()
+            response = await _post(f"/knowledge/sources/{source.id}/refresh", {}, token)
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["chunk_count"] == 1
+        mock_chunk_repo_cls.return_value.delete_by_source.assert_called_once_with(
+            tenant_id, source.id
+        )
+        stored_chunk = mock_chunk_repo_cls.return_value.add.call_args.args[0]
+        assert stored_chunk.content == "Updated info."
