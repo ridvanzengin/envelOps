@@ -119,13 +119,11 @@ class TestResumePipeline:
 
         assert "__interrupt__" not in resumed
         mock_lead_repo_cls.return_value.add.assert_called_once()
-        # KNOWN GAP (see decide_next_step's own comment): logged twice --
-        # once by decide_next_step at pause time (so it's visible before
-        # anyone could act on it), once more by log_lead_and_notify on
-        # resume (its check doesn't know the first one already happened).
-        # Harmless with nothing wired to resume_pipeline() yet; needs a
-        # real fix once something is.
-        assert mock_escalation_repo_cls.return_value.add.call_count == 2
+        # Logged once, by decide_next_step at pause time -- log_lead_and_notify
+        # sees state.escalation_logged=True on resume and skips its own add
+        # (PipelineState.escalation_logged's own docstring; fixes the
+        # double-log gap this test used to pin).
+        mock_escalation_repo_cls.return_value.add.assert_called_once()
         logged_escalation = mock_escalation_repo_cls.return_value.add.call_args.args[0]
         assert logged_escalation.status == "pending"
 

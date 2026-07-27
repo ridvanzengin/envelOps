@@ -125,9 +125,10 @@ discipline above; the existing set doesn't need reinstalling.
   if pytest ever isn't available)
 - Migrations: `alembic revision --autogenerate -m "..."` then `alembic
   upgrade head` — needs a reachable Postgres (`docker compose up -d db`).
-  Five migrations exist (initial schema; embedding dim 1536→768 for
+  Six migrations exist (initial schema; embedding dim 1536→768 for
   Gemini; tenant closing_action; tenant closing_link; channel telegram
-  fields), all applied, all downgrade→upgrade round-trip verified.
+  fields; users.email unique), all applied, all downgrade→upgrade
+  round-trip verified.
 - LangGraph's own checkpoint tables (`checkpoints`, `checkpoint_blobs`,
   `checkpoint_writes` — the safety-gate pause/resume state, ARCHITECTURE
   §5) are **not** Alembic-managed. `app/pipeline/runner.get_checkpointer()`
@@ -164,6 +165,18 @@ setup rows (tenant/channel/conversation) before calling `run_pipeline`
 fixed it. Root cause not fully isolated — treat "commit before invoking,
 don't hold a long-open write transaction across a checkpointed run" as the
 working rule either way.
+
+**LangGraph gotcha already hit once — never call `resume_pipeline()`/
+`Command(resume=...)` with `None`:** raises `UnboundLocalError:
+resume_is_map` from inside langgraph's own `_loop.py` (`resume_is_map` is
+only assigned when `resume is not None`, then read unconditionally a few
+lines later — a real bug in langgraph 0.2.x, not app code). Only surfaced
+running `POST /escalations/{id}/resolve` against a real
+`AsyncPostgresSaver` — the unit tests never caught it because they always
+passed a dict resume value. `escalate_to_human`'s `interrupt()` doesn't
+read the resume value for anything, so any non-None value works; the
+resolve endpoint passes `{"resolved_by": <user id>}`. Applies to any future
+caller of `resume_pipeline()`, not just this one.
 
 **Docker networking gotcha already hit and fixed once — don't reintroduce
 it:** `.env`/`.env.example` use `localhost` for `ENVELOPS_DATABASE_URL`/

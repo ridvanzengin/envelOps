@@ -103,7 +103,8 @@ builder in Phase 1 — see REQUIREMENTS §3):
 
 State object carried through the run: `tenant_id`, `conversation_id`,
 `incoming_text`, `detected_intent`, `retrieved_chunks`, `lead_score`,
-`decision`, `draft_text`, `escalation_reason` (if any). This state is what
+`decision`, `draft_text`, `escalation_reason` (if any), `escalation_logged`
+(§5's double-log guard). This state is what
 gets checkpointed at the pause point (§5) and is most of what a
 `pipeline_traces` row records — the future observability dashboard can
 largely be built by surfacing this object rather than inventing new logging.
@@ -146,15 +147,16 @@ UI omission.
 **The Escalation row is logged by `decide_next_step`, before the pause —
 not by `log_lead_and_notify` after a resume.** A human has to be able to
 *see* an escalation to know to resume it; logging it only after something
-resumes it is circular. **Known gap, not yet fixed:** `log_lead_and_notify`
-still also logs an Escalation whenever `decision == escalate_to_human`
-when it runs (needed for `book_or_checkout`'s own, unrelated
-escalate-on-missing-`closing_link` case, which never pauses and so never
-hits `decide_next_step`'s logging) — so a real safety-floor escalation
-that's later resumed gets logged twice. Harmless today, since nothing
-calls `resume_pipeline()` yet (no escalation-resolution UI/API exists);
-needs a real fix (check for an existing row, or a state flag) once
-something does.
+resumes it is circular. `log_lead_and_notify` also logs an Escalation
+whenever `decision == escalate_to_human` when it runs (needed for
+`book_or_checkout`'s own, unrelated escalate-on-missing-`closing_link`
+case, which never pauses and so never hits `decide_next_step`'s logging)
+— `PipelineState.escalation_logged` (set by `decide_next_step`'s
+safety-floor branch, right after it logs the row) is what tells
+`log_lead_and_notify` not to log the same one again on resume. Fixed once
+`POST /escalations/{id}/resolve` (§9) landed and gave `resume_pipeline()`
+its first real caller — this used to be a known, harmless-until-something-
+calls-resume gap; it isn't anymore.
 
 ## 6. Knowledge ingestion & retrieval
 
@@ -251,10 +253,15 @@ tenant selector, so email is how the tenant gets discovered, the same
 reasoning as `ChannelRepository.get_by_id_unscoped` (CLAUDE.md), landed
 here as `UserRepository.get_by_email_unscoped`.
 
-`GET /escalations` is read-only (list pending + resolved for the caller's
-tenant). Resolving one — the natural next step, which would finally give
-`resume_pipeline()` (built in §5, still unused) a real caller — is not
-built yet.
+`GET /escalations` lists pending + resolved rows for the caller's tenant.
+`POST /escalations/{id}/resolve` marks one resolved and calls
+`resume_pipeline()` (§5) to unpause its checkpointed thread — no request
+body: Phase 1 has no draft-and-approve mechanism (§5), and
+`escalate_to_human`'s `interrupt()` doesn't consume a resume value for
+anything, so there's nothing for a reply-text field to do yet. Resolving
+here does **not** send anything to the customer; the human handles the
+actual reply outside the tool. 409s if the escalation isn't `pending`
+(prevents resuming an already-resumed thread twice).
 
 Still empty routers, wired into `main.py` but with nothing behind them:
 `/channels` (besides the webhook, §8), `/knowledge`, `/conversations`,
@@ -286,11 +293,10 @@ No drag-and-drop flow builder in Phase 1.
   ("live data connection... for platforms that support it"), not step 1 —
   correctly-sequenced-later work, not a gap, and needs a product decision
   on which connector(s) to build first, not just an engineering pass.
-- **Resuming a paused escalation** — `resume_pipeline()` exists
-  (`app/pipeline/runner.py`) and is verified, but nothing calls it: there's
-  no escalation-resolution UI/API yet (the "Escalation queue" screen, §10,
-  isn't built). Related known gap until that exists: §5's note on
-  `log_lead_and_notify` double-logging a resumed escalation.
+- **Resuming a paused escalation** — the API side is built (`POST
+  /escalations/{id}/resolve`, §9, calling `resume_pipeline()`); the
+  "Escalation queue" screen (§10) that would actually call it is still
+  not built.
 - Channel failure behavior beyond the health-check stub — silent stop vs.
   detected fallback. Telegram (§8) doesn't have even a stub yet, only
   Beeper was ever planned to.

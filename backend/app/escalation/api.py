@@ -1,13 +1,14 @@
 import uuid
 from datetime import datetime
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import CurrentUser, get_current_user
 from app.core.db import get_session
 from app.escalation.repository import EscalationRepository
+from app.pipeline.runner import get_checkpointer, resume_pipeline
 
 router = APIRouter(prefix="/escalations", tags=["escalations"])
 
@@ -31,3 +32,49 @@ async def list_escalations(
     escalation_repo = EscalationRepository(session)
     escalations = await escalation_repo.list(current_user.tenant_id)
     return [EscalationResponse.model_validate(escalation) for escalation in escalations]
+
+
+@router.post("/{escalation_id}/resolve")
+async def resolve_escalation(
+    escalation_id: uuid.UUID,
+    current_user: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> EscalationResponse:
+    """No request body: resolving here only clears the queue and unpauses
+    the checkpointed pipeline thread (docs/ARCHITECTURE.md §5) so the
+    conversation can continue on the next inbound message -- it does not
+    submit a reply. Phase 1 has no draft-and-approve mechanism (§5), and
+    escalate_to_human's interrupt() doesn't consume a resume value for
+    anything, so there's nothing for a reply-text field to do yet; the
+    human handles the actual customer-facing reply outside the tool.
+    """
+    escalation_repo = EscalationRepository(session)
+    escalation = await escalation_repo.get(current_user.tenant_id, escalation_id)
+    if escalation is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "escalation not found")
+    if escalation.status != "pending":
+        raise HTTPException(status.HTTP_409_CONFLICT, "escalation is not pending")
+
+    escalation.status = "resolved"
+    # Commit before resume_pipeline -- the checkpointer writes over a
+    # separate psycopg connection from this session's asyncpg one, and an
+    # open transaction here has hung a checkpointed run indefinitely
+    # before (CLAUDE.md's checkpointer gotcha).
+    await session.commit()
+
+    async with get_checkpointer() as checkpointer:
+        # Must be non-None -- Command(resume=None) hits an UnboundLocalError
+        # inside langgraph's own loop internals (resume_is_map only gets
+        # assigned when `resume is not None`, then gets read unconditionally
+        # a few lines later). Found by running this against a real
+        # AsyncPostgresSaver, not the mocked/InMemorySaver unit tests, which
+        # only ever passed dict resume values. The value itself is never
+        # read by escalate_to_human -- content doesn't matter, truthiness does.
+        resume_value = {"resolved_by": str(current_user.user_id)}
+        await resume_pipeline(escalation.conversation_id, resume_value, session, checkpointer)
+    # log_lead_and_notify runs as part of the resume above and flushes a
+    # Lead row on this same session -- commit it, same as every other
+    # caller of run_pipeline/resume_pipeline owns its own commit.
+    await session.commit()
+
+    return EscalationResponse.model_validate(escalation)

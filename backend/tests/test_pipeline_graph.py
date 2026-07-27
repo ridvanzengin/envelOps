@@ -121,6 +121,7 @@ class TestDecideNextStepSafetyFloor:
             result = await decide_next_step(state, _make_runtime())
         assert result.decision == "escalate_to_human"
         assert result.escalation_reason is not None
+        assert result.escalation_logged is True
         assert route_after_decision(result) == "escalate_to_human"
         mock_escalation_repo_cls.return_value.add.assert_called_once()
         logged = mock_escalation_repo_cls.return_value.add.call_args.args[0]
@@ -140,6 +141,7 @@ class TestDecideNextStepSafetyFloor:
         assert result.decision == "escalate_to_human"
         assert result.escalation_reason is not None
         assert "mad honey" in result.escalation_reason
+        assert result.escalation_logged is True
         mock_escalation_repo_cls.return_value.add.assert_called_once()
 
 
@@ -251,6 +253,27 @@ class TestLogLeadAndNotify:
         assert logged_escalation.reason == state.escalation_reason
         assert logged_escalation.layer == "platform_floor"
         assert logged_escalation.status == "pending"
+
+    async def test_does_not_log_escalation_again_when_already_logged(self) -> None:
+        # decide_next_step's safety-floor branch logs the Escalation itself
+        # and sets escalation_logged=True before the pause; resuming past
+        # that pause (POST /escalations/{id}/resolve) must not log it a
+        # second time here.
+        state = _make_state("Can you guarantee this will definitely cure my condition?")
+        state.lead_score = "warm"
+        state.decision = "escalate_to_human"
+        state.escalation_reason = "contraindication language (matched 'allerg')"
+        state.escalation_logged = True
+        with (
+            patch("app.pipeline.graph.LeadRepository") as mock_lead_repo_cls,
+            patch("app.pipeline.graph.EscalationRepository") as mock_escalation_repo_cls,
+        ):
+            mock_lead_repo_cls.return_value.add = AsyncMock()
+            mock_escalation_repo_cls.return_value.add = AsyncMock()
+            await log_lead_and_notify(state, _make_runtime())
+
+        mock_lead_repo_cls.return_value.add.assert_called_once()
+        mock_escalation_repo_cls.return_value.add.assert_not_called()
 
     async def test_does_not_log_escalation_without_a_reason(self) -> None:
         # Shouldn't happen in practice (decide_next_step always sets a
