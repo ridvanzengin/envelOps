@@ -36,6 +36,13 @@ async def _list_escalations(token: str | None) -> httpx.Response:
         return await client.get("/escalations", headers=headers)
 
 
+async def _resolve_escalation(escalation_id: uuid.UUID, token: str) -> httpx.Response:
+    headers = {"Authorization": f"Bearer {token}"}
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        return await client.post(f"/escalations/{escalation_id}/resolve", headers=headers)
+
+
 class TestListEscalations:
     async def test_rejects_missing_token(self) -> None:
         response = await _list_escalations(None)
@@ -62,3 +69,62 @@ class TestListEscalations:
         assert body[0]["status"] == "pending"
         # list() was called scoped to the token's tenant, not a caller-supplied one
         mock_repo_cls.return_value.list.assert_called_once_with(tenant_id)
+
+
+class TestResolveEscalation:
+    async def test_rejects_missing_token(self) -> None:
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.post(f"/escalations/{uuid.uuid4()}/resolve")
+        assert response.status_code == 401
+
+    async def test_404_when_not_found_or_wrong_tenant(self) -> None:
+        token = create_access_token(
+            user_id=uuid.uuid4(), tenant_id=uuid.uuid4(), role="owner"
+        )
+        with patch("app.escalation.api.EscalationRepository") as mock_repo_cls:
+            mock_repo_cls.return_value.get = AsyncMock(return_value=None)
+            response = await _resolve_escalation(uuid.uuid4(), token)
+        assert response.status_code == 404
+
+    async def test_409_when_already_resolved(self) -> None:
+        tenant_id = uuid.uuid4()
+        token = create_access_token(user_id=uuid.uuid4(), tenant_id=tenant_id, role="owner")
+        escalation = _fake_escalation(tenant_id)
+        escalation.status = "resolved"
+        with patch("app.escalation.api.EscalationRepository") as mock_repo_cls:
+            mock_repo_cls.return_value.get = AsyncMock(return_value=escalation)
+            response = await _resolve_escalation(escalation.id, token)
+        assert response.status_code == 409
+
+    async def test_marks_resolved_and_resumes_the_pipeline_thread(self) -> None:
+        tenant_id = uuid.uuid4()
+        token = create_access_token(user_id=uuid.uuid4(), tenant_id=tenant_id, role="owner")
+        escalation = _fake_escalation(tenant_id)
+        mock_checkpointer_cm = MagicMock()
+        mock_checkpointer_cm.__aenter__ = AsyncMock(return_value="checkpointer")
+        mock_checkpointer_cm.__aexit__ = AsyncMock(return_value=False)
+        with (
+            patch("app.escalation.api.EscalationRepository") as mock_repo_cls,
+            patch(
+                "app.escalation.api.get_checkpointer", return_value=mock_checkpointer_cm
+            ),
+            patch(
+                "app.escalation.api.resume_pipeline",
+                AsyncMock(return_value={"decision": "escalate_to_human"}),
+            ) as mock_resume,
+        ):
+            mock_repo_cls.return_value.get = AsyncMock(return_value=escalation)
+            response = await _resolve_escalation(escalation.id, token)
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["status"] == "resolved"
+        assert escalation.status == "resolved"
+        args = mock_resume.call_args.args
+        assert args[0] == escalation.conversation_id
+        # Must be non-None -- Command(resume=None) breaks inside langgraph's
+        # own internals (see app/escalation/api.py's comment); this is a
+        # regression guard for that, not a check on what the value is.
+        assert args[1] is not None
+        assert args[3] == "checkpointer"
