@@ -10,7 +10,7 @@
     "inbox": "Conversation list and thread view go here.",
     "escalations": "Conversations waiting on a human — the primary action screen, since auto-send is the Phase 1 default.",
     "knowledge": "Add (URL/PDF/manual), list, and refresh knowledge sources.",
-    "settings": "Channel connection status and safety trigger phrases (system defaults locked, tenant can add more).",
+    "settings": "Safety trigger phrases (system defaults locked, add your own below). Channel connection status isn't shown here yet.",
     "dashboard": "Leads today, escalations today, response times."
   },
   "auth": {
@@ -53,5 +53,22 @@
     "lastSynced": "Last synced",
     "refresh": "Refresh",
     "refreshing": "Refreshing…"
+  },
+  "settings": {
+    "safetyTriggersTitle": "Safety trigger phrases",
+    "systemDefaultsTitle": "System defaults (locked)",
+    "systemDefaultCategories": {
+      "contraindication": "Contraindication language (e.g. drug interactions, allergies)",
+      "symptom": "Symptom or complaint language (e.g. pain, bleeding, side effects)",
+      "outcomeGuarantee": "Outcome-guarantee requests (e.g. \"guarantee this will cure it\")"
+    },
+    "tenantPhrasesTitle": "Your added phrases",
+    "newPhrase": "New phrase",
+    "add": "Add phrase",
+    "adding": "Adding…",
+    "addError": "Couldn't add this phrase. Try again.",
+    "loading": "Loading trigger phrases…",
+    "empty": "No added phrases yet.",
+    "loadError": "Couldn't load trigger phrases. Try again."
   }
 }

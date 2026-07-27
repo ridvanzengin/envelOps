@@ -43,6 +43,30 @@ async def _resolve_escalation(escalation_id: uuid.UUID, token: str) -> httpx.Res
         return await client.post(f"/escalations/{escalation_id}/resolve", headers=headers)
 
 
+def _fake_trigger_phrase(tenant_id: uuid.UUID, phrase: str = "mad honey") -> MagicMock:
+    row = MagicMock()
+    row.id = uuid.uuid4()
+    row.tenant_id = tenant_id
+    row.phrase = phrase
+    return row
+
+
+async def _list_trigger_phrases(token: str | None) -> httpx.Response:
+    headers = {"Authorization": f"Bearer {token}"} if token else {}
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        return await client.get("/escalations/trigger-phrases", headers=headers)
+
+
+async def _add_trigger_phrase(phrase: str, token: str | None) -> httpx.Response:
+    headers = {"Authorization": f"Bearer {token}"} if token else {}
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        return await client.post(
+            "/escalations/trigger-phrases", json={"phrase": phrase}, headers=headers
+        )
+
+
 class TestListEscalations:
     async def test_rejects_missing_token(self) -> None:
         response = await _list_escalations(None)
@@ -128,3 +152,49 @@ class TestResolveEscalation:
         # regression guard for that, not a check on what the value is.
         assert args[1] is not None
         assert args[3] == "checkpointer"
+
+
+class TestListTriggerPhrases:
+    async def test_rejects_missing_token(self) -> None:
+        response = await _list_trigger_phrases(None)
+        assert response.status_code == 401
+
+    async def test_returns_only_the_callers_tenant_phrases(self) -> None:
+        tenant_id = uuid.uuid4()
+        token = create_access_token(user_id=uuid.uuid4(), tenant_id=tenant_id, role="owner")
+        row = _fake_trigger_phrase(tenant_id)
+        with patch("app.escalation.api.TenantTriggerPhraseRepository") as mock_repo_cls:
+            mock_repo_cls.return_value.list = AsyncMock(return_value=[row])
+            response = await _list_trigger_phrases(token)
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body == [{"id": str(row.id), "phrase": "mad honey"}]
+        mock_repo_cls.return_value.list.assert_called_once_with(tenant_id)
+
+
+class TestAddTriggerPhrase:
+    async def test_rejects_missing_token(self) -> None:
+        response = await _add_trigger_phrase("mad honey", None)
+        assert response.status_code == 401
+
+    async def test_rejects_blank_phrase(self) -> None:
+        response = await _add_trigger_phrase("   ", create_access_token(
+            user_id=uuid.uuid4(), tenant_id=uuid.uuid4(), role="owner"
+        ))
+        assert response.status_code == 400
+
+    async def test_adds_a_stripped_phrase_scoped_to_the_callers_tenant(self) -> None:
+        tenant_id = uuid.uuid4()
+        token = create_access_token(user_id=uuid.uuid4(), tenant_id=tenant_id, role="owner")
+        row = _fake_trigger_phrase(tenant_id, phrase="mad honey")
+        with patch("app.escalation.api.TenantTriggerPhraseRepository") as mock_repo_cls:
+            mock_repo_cls.return_value.add = AsyncMock(return_value=row)
+            response = await _add_trigger_phrase("  mad honey  ", token)
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["phrase"] == "mad honey"
+        added = mock_repo_cls.return_value.add.call_args.args[0]
+        assert added.tenant_id == tenant_id
+        assert added.phrase == "mad honey"
