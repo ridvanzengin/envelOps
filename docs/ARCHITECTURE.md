@@ -287,17 +287,33 @@ empty routers, wired into `main.py` but with nothing behind them:
 
 ## 10. Frontend screens (Phase 1)
 
-- **Inbox** — conversation list + thread view
-- **Escalation queue** — the primary "action needed" screen, since auto-send
-  is the default and escalations are the one thing routinely waiting on a
-  human
-- **Knowledge sources** — add (URL/PDF/manual), list, refresh
-- **Settings** — channel connection status; a safety trigger phrase list
-  (§5) showing system defaults disabled/locked with an "add your own
-  phrase" input — no edit/delete control on defaults, ever
-- **Dashboard** — minimal for Phase 1 (leads today, escalations today,
-  response times); the full two-audience observability design is still an
-  open item (see §11)
+- **Login** — real now: email/password against `POST /auth/login` (§9),
+  token kept in `localStorage`, gates the whole app (single owner role,
+  §2 — one gate is enough, no per-route permission model needed yet). The
+  language switcher deliberately lives outside this gate (`App.tsx`), not
+  inside the post-login nav — a Turkish-speaking owner needs it to read
+  the login screen itself, not just the app after logging in (§7).
+- **Inbox** — still a placeholder.
+- **Escalation queue** — real now: lists `GET /escalations`, resolves via
+  `POST /escalations/{id}/resolve` (§9) with an optimistic-ish update (the
+  resolved row's response replaces it in place, no refetch). The primary
+  "action needed" screen, since auto-send is the default and escalations
+  are the one thing routinely waiting on a human.
+- **Knowledge sources** — still a placeholder; the API (§9) exists, the
+  screen doesn't yet.
+- **Settings** — still a placeholder. Eventually: channel connection
+  status; a safety trigger phrase list (§5) showing system defaults
+  disabled/locked with an "add your own phrase" input — no edit/delete
+  control on defaults, ever.
+- **Dashboard** — still a placeholder; minimal for Phase 1 (leads today,
+  escalations today, response times) once built. The full two-audience
+  observability design is still an open item (see §11).
+
+Dev-only CORS avoidance: `frontend/vite.config.ts` proxies each backend
+router prefix (`/auth`, `/escalations`, ...) to `localhost:8000` so the
+frontend can call relative paths without the browser treating it as
+cross-origin. No CORS middleware on the backend, and no production
+frontend-origin story yet — neither is designed.
 
 No drag-and-drop flow builder in Phase 1.
 
