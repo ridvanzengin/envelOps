@@ -94,6 +94,11 @@ discipline above; the existing set doesn't need reinstalling.
   uvicorn app.main:app --reload`
 - Celery worker, without Docker: `celery -A app.core.celery_app worker
   --loglevel=info`
+- Celery beat (periodic jobs — currently just `follow_up_check`, every 30
+  minutes), without Docker: `celery -A app.core.celery_app beat
+  --loglevel=info` — a separate process from the worker above, both need
+  to be running for `follow_up_check` to actually fire. `docker compose
+  up` starts both (`worker` + `beat` services) already.
 - Health check once running: `curl localhost:8000/healthz`
 - Connecting a real Telegram channel: create a tenant (no API for this
   yet — insert directly or via a script), get a bot token from
@@ -125,10 +130,10 @@ discipline above; the existing set doesn't need reinstalling.
   if pytest ever isn't available)
 - Migrations: `alembic revision --autogenerate -m "..."` then `alembic
   upgrade head` — needs a reachable Postgres (`docker compose up -d db`).
-  Six migrations exist (initial schema; embedding dim 1536→768 for
+  Seven migrations exist (initial schema; embedding dim 1536→768 for
   Gemini; tenant closing_action; tenant closing_link; channel telegram
-  fields; users.email unique), all applied, all downgrade→upgrade
-  round-trip verified.
+  fields; users.email unique; conversation followed_up_at), all applied,
+  all downgrade→upgrade round-trip verified.
 - LangGraph's own checkpoint tables (`checkpoints`, `checkpoint_blobs`,
   `checkpoint_writes` — the safety-gate pause/resume state, ARCHITECTURE
   §5) are **not** Alembic-managed. `app/pipeline/runner.get_checkpointer()`

@@ -18,6 +18,12 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     jwt_expires_minutes: int = 60 * 24
     gemini_api_key: str = ""  # covers both generation and embeddings
+    # REQUIREMENTS.md §3 step 8: how long a conversation has to sit with no
+    # reply after our last outbound message before follow_up_check treats
+    # it as "gone quiet". A single platform-wide default, not yet
+    # tenant-configurable (same "fixed pipeline" reasoning as the rest of
+    # the pipeline's business-rule constants).
+    follow_up_delay_hours: int = 24
 
     model_config = SettingsConfigDict(env_file=_ENV_FILE, env_prefix="ENVELOPS_")
 

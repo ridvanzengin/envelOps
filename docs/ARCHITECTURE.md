@@ -246,10 +246,22 @@ token), not just a "fallback."
   otherwise it logs the outbound message and sends it via Telegram,
   catching and logging (not swallowing, not raising) a delivery failure so
   a Telegram outage doesn't lose the Lead/Message rows already written.
-- `knowledge_resync` — not built. Manual trigger now, could become
-  scheduled later.
-- `follow_up_check` — not built. Periodic scan for quiet conversations,
-  fires step 8 of the pipeline.
+- `knowledge_resync` — not built. Manual trigger now (`POST
+  /knowledge/sources/{id}/refresh`, §6/§9), could become scheduled later.
+- `follow_up_check` — **built.** The only periodic job so far, run by
+  Celery Beat (`docker-compose.yml`'s `beat` service; a separate
+  process from the `worker` — both must be running) every 30 minutes.
+  Scans across *all* tenants (`ConversationRepository.list_quiet_unscoped`
+  — a deliberate, narrow exception to tenant-scoped queries, same
+  reasoning as `ChannelRepository.get_by_id_unscoped`: a periodic
+  background job has no per-request tenant context to scope by) for
+  conversations whose most recent message is outbound, more than
+  `settings.follow_up_delay_hours` (default 24) old, and not yet
+  followed up. Sends exactly one generated check-in message ever per
+  conversation — `Conversation.followed_up_at` caps it; if the lead
+  replies at any point, that's a normal inbound message through the
+  usual channel-ingestion path, re-entering the pipeline at step 2 like
+  any other reply, not something this job needs to handle itself.
 - `channel_health_check` — not built, minimal stub only planned; the real
   "what happens when a channel disconnects" design is still an open item
   (see §11).

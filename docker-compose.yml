@@ -45,5 +45,18 @@ services:
     volumes:
       - ./backend/app:/app/app
 
+  beat:
+    build: ./backend
+    env_file: .env
+    environment:
+      ENVELOPS_DATABASE_URL: postgresql+asyncpg://envelops:envelops@db:5432/envelops
+      ENVELOPS_REDIS_URL: redis://redis:6379/0
+    command: celery -A app.core.celery_app beat --loglevel=info
+    depends_on:
+      - db
+      - redis
+    volumes:
+      - ./backend/app:/app/app
+
 volumes:
   db_data:
