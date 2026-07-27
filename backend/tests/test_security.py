@@ -57,10 +57,21 @@ class AccessTokenTests(unittest.TestCase):
                 decode_access_token(token)
 
     def test_tampered_signature_fails_closed(self) -> None:
+        # Flaky before this fix: the *last* base64url character of a
+        # signature can have unused low bits (padding, not real signature
+        # bytes) -- 'a'/'b' happen to share their top 4 bits (011010 vs
+        # 011011), so swapping between exactly those two at the last
+        # position could silently decode to the same signature bytes on
+        # ~1/16 of random tokens, not actually tampering with anything.
+        # Flipping a character in the middle avoids that edge case: every
+        # non-final base64 character is fully packed, so any change there
+        # is guaranteed to change the decoded bytes.
         token = create_access_token(
             user_id=uuid.uuid4(), tenant_id=uuid.uuid4(), role="owner"
         )
-        tampered = token[:-1] + ("a" if token[-1] != "a" else "b")
+        middle = len(token) // 2
+        replacement = "a" if token[middle] != "a" else "b"
+        tampered = token[:middle] + replacement + token[middle + 1 :]
         with self.assertRaises(InvalidTokenError):
             decode_access_token(tampered)
 
