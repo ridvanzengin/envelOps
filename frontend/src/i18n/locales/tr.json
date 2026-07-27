@@ -33,5 +33,25 @@
     "createdAt": "Oluşturulma",
     "resolve": "Çöz",
     "resolving": "Çözülüyor…"
+  },
+  "knowledgeSources": {
+    "type": "Kaynak türü",
+    "typeManual": "Manuel giriş",
+    "typeUrl": "URL",
+    "content": "İçerik",
+    "url": "URL",
+    "add": "Kaynak ekle",
+    "adding": "Ekleniyor…",
+    "addError": "Bu kaynak eklenemedi. Tekrar deneyin.",
+    "loading": "Bilgi kaynakları yükleniyor…",
+    "empty": "Henüz bilgi kaynağı yok.",
+    "loadError": "Bilgi kaynakları yüklenemedi. Tekrar deneyin.",
+    "refreshError": "Bu kaynak yenilenemedi. Tekrar deneyin.",
+    "sourceType": "Tür",
+    "sourceUri": "URL",
+    "chunkCount": "Parça",
+    "lastSynced": "Son senkronizasyon",
+    "refresh": "Yenile",
+    "refreshing": "Yenileniyor…"
   }
 }
