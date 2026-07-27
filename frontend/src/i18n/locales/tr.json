@@ -12,5 +12,26 @@
     "knowledge": "Bilgi kaynağı ekle (URL/PDF/manuel), listele ve yenile.",
     "settings": "Kanal bağlantı durumu ve güvenlik tetikleyici ifadeleri (sistem varsayılanları kilitli, kiracı yenilerini ekleyebilir).",
     "dashboard": "Bugünkü potansiyel müşteriler, bugünkü yükseltmeler, yanıt süreleri."
+  },
+  "auth": {
+    "loginTitle": "Giriş yap",
+    "email": "E-posta",
+    "password": "Şifre",
+    "login": "Giriş yap",
+    "loggingIn": "Giriş yapılıyor…",
+    "logout": "Çıkış yap",
+    "invalidCredentials": "E-posta veya şifre hatalı."
+  },
+  "escalations": {
+    "loading": "Yükseltmeler yükleniyor…",
+    "empty": "Yükseltme yok.",
+    "loadError": "Yükseltmeler yüklenemedi. Tekrar deneyin.",
+    "resolveError": "Bu yükseltme çözülemedi. Tekrar deneyin.",
+    "reason": "Neden",
+    "layer": "Katman",
+    "status": "Durum",
+    "createdAt": "Oluşturulma",
+    "resolve": "Çöz",
+    "resolving": "Çözülüyor…"
   }
 }

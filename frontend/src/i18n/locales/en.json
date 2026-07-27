@@ -12,5 +12,26 @@
     "knowledge": "Add (URL/PDF/manual), list, and refresh knowledge sources.",
     "settings": "Channel connection status and safety trigger phrases (system defaults locked, tenant can add more).",
     "dashboard": "Leads today, escalations today, response times."
+  },
+  "auth": {
+    "loginTitle": "Log in",
+    "email": "Email",
+    "password": "Password",
+    "login": "Log in",
+    "loggingIn": "Logging in…",
+    "logout": "Log out",
+    "invalidCredentials": "Invalid email or password."
+  },
+  "escalations": {
+    "loading": "Loading escalations…",
+    "empty": "No escalations.",
+    "loadError": "Couldn't load escalations. Try again.",
+    "resolveError": "Couldn't resolve this escalation. Try again.",
+    "reason": "Reason",
+    "layer": "Layer",
+    "status": "Status",
+    "createdAt": "Created",
+    "resolve": "Resolve",
+    "resolving": "Resolving…"
   }
 }
