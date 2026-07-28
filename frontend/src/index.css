@@ -46,5 +46,6 @@ body { margin: 0; }
 h1, h2, h3 { font-family: var(--sans); font-weight: 600; color: var(--text-h); }
 h1 { font-size: 28px; letter-spacing: -0.3px; margin: 0 0 8px; }
 h2 { font-size: 18px; margin: 0 0 8px; }
+h3 { font-size: 14px; margin: 24px 0 8px; }
 p { margin: 0; }
 button, input, select, textarea { font-family: inherit; }

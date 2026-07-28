@@ -77,37 +77,51 @@ export default function Settings() {
 
   return (
     <section className="page">
-      <h1>{t("nav.settings")}</h1>
-      <p>{t("pages.settings")}</p>
+      <div className="page__header">
+        <h1>{t("nav.settings")}</h1>
+      </div>
+      <p className="page__description">{t("pages.settings")}</p>
 
       <h2>{t("settings.safetyTriggersTitle")}</h2>
 
       <h3>{t("settings.systemDefaultsTitle")}</h3>
-      <ul>
-        {SYSTEM_DEFAULT_CATEGORY_KEYS.map((key) => (
-          <li key={key}>
-            <label>
-              <input type="checkbox" checked disabled />
-              {t(`settings.systemDefaultCategories.${key}`)}
-            </label>
-          </li>
-        ))}
-      </ul>
-
-      <h3>{t("settings.tenantPhrasesTitle")}</h3>
-      {error && <p role="alert">{error}</p>}
-      {phrases === null && !error && <p>{t("settings.loading")}</p>}
-      {phrases !== null && phrases.length === 0 && <p>{t("settings.empty")}</p>}
-      {phrases !== null && phrases.length > 0 && (
-        <ul>
-          {phrases.map((phrase) => (
-            <li key={phrase.id}>{phrase.phrase}</li>
+      <div className="card">
+        <ul className="list">
+          {SYSTEM_DEFAULT_CATEGORY_KEYS.map((key) => (
+            <li key={key} className="list__item">
+              <label>
+                <input type="checkbox" checked disabled />
+                {t(`settings.systemDefaultCategories.${key}`)}
+              </label>
+            </li>
           ))}
         </ul>
+      </div>
+
+      <h3>{t("settings.tenantPhrasesTitle")}</h3>
+      {error && (
+        <p className="error-message" role="alert">
+          {error}
+        </p>
+      )}
+      {phrases === null && !error && <p>{t("settings.loading")}</p>}
+      {phrases !== null && phrases.length === 0 && (
+        <div className="empty-state">{t("settings.empty")}</div>
+      )}
+      {phrases !== null && phrases.length > 0 && (
+        <div className="card">
+          <ul className="list">
+            {phrases.map((phrase) => (
+              <li key={phrase.id} className="list__item">
+                {phrase.phrase}
+              </li>
+            ))}
+          </ul>
+        </div>
       )}
 
-      <form onSubmit={(event) => void handleSubmit(event)}>
-        <label>
+      <form className="form" onSubmit={(event) => void handleSubmit(event)}>
+        <label className="form__field">
           {t("settings.newPhrase")}
           <input
             type="text"
@@ -116,10 +130,14 @@ export default function Settings() {
             required
           />
         </label>
-        <button type="submit" disabled={submitting}>
+        <button type="submit" className="button button--primary" disabled={submitting}>
           {submitting ? t("settings.adding") : t("settings.add")}
         </button>
-        {formError && <p role="alert">{formError}</p>}
+        {formError && (
+          <p className="error-message" role="alert">
+            {formError}
+          </p>
+        )}
       </form>
     </section>
   );
