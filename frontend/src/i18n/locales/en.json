@@ -115,7 +115,14 @@
     "refreshing": "Refreshing…",
     "delete": "Delete",
     "deleteConfirm": "Delete this knowledge source and all its content? This can't be undone.",
-    "deleteError": "Couldn't delete this source. Try again."
+    "deleteError": "Couldn't delete this source. Try again.",
+    "view": "View content",
+    "hide": "Hide content",
+    "edit": "Edit",
+    "save": "Save",
+    "saving": "Saving…",
+    "cancel": "Cancel",
+    "editError": "Couldn't save this source. Try again."
   },
   "settings": {
     "safetyTriggersTitle": "Safety trigger phrases",

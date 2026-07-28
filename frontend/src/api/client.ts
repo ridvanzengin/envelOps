@@ -66,3 +66,11 @@ export function apiPost<T>(
 export function apiDelete(path: string, token: string | null): Promise<void> {
   return request<void>(path, { method: "DELETE", token });
 }
+
+export function apiPut<T>(
+  path: string,
+  body: unknown,
+  token: string | null,
+): Promise<T> {
+  return request<T>(path, { method: "PUT", token, body });
+}

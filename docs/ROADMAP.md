@@ -432,7 +432,7 @@ authenticated.
 disabled, both work correctly when enabled, and an unknown `user_id`
 still 404s even with the bypass on.
 
-### 5.5 Knowledge source + trigger phrase delete — done (2026-07-29)
+### 5.5 Knowledge source + trigger phrase CRUD — done (2026-07-29)
 User-flagged gap: knowledge sources and escalation trigger phrases had
 create/list (and refresh, for knowledge sources) but no delete.
 
@@ -478,6 +478,39 @@ with the confirm dialog accepted.
 
 11 new backend tests across `test_knowledge_api.py`/`test_escalation_api.py`
 (401/404/success for both new endpoints).
+
+**Follow-up, same session: "delete" alone wasn't the whole gap.** After
+merging the above, the user reported not being able to *see or edit*
+knowledge sources at all — seeded ones or ones they'd added themselves.
+Checking the API directly (bypassing the browser) confirmed the data was
+always there; the actual bug was that the UI never rendered a source's
+own content anywhere — the table only ever showed type/source_uri/
+chunk_count/last_synced, never what was actually *in* it — and there was
+no edit endpoint at all, so the only "correction" path was delete + re-add.
+
+Fixed both, scoped after confirming with the user that URL sources
+should stay view-only (their content comes from the URL; refresh already
+re-fetches it, so hand-editing would just be silently overwritten):
+- `KnowledgeSourceResponse` now includes `content` — the source's chunks
+  rejoined with `"\n\n"`. Nothing new stored: `KnowledgeSourceRepository
+  .list_with_chunks` (replaces the old `list_with_chunk_counts`) fetches
+  each source's chunks directly rather than just a count, two queries
+  total regardless of source count, not N+1.
+- `PUT /knowledge/sources/{id}` — manual sources only (400 for `url`,
+  symmetric with `refresh`'s existing url-only restriction) — replaces
+  the source's chunks with newly-chunked/re-embedded text, the same
+  delete-then-reingest shape `refresh` already uses.
+- Frontend: each row gets a chevron to expand/collapse its content
+  read-only, and manual rows additionally get a pencil button that turns
+  the same expanded area into a textarea with Save/Cancel.
+
+**Verified live**, twice — once via direct API calls (to isolate
+backend vs. frontend before assuming which was broken), once through
+the actual browser: expanded a seeded source's content, edited a manual
+source's text, saved, and confirmed the new text round-tripped correctly.
+
+5 more backend tests for the new `PUT` endpoint (401/404/400-wrong-type/
+400-blank/success).
 
 ### Updated sequencing given 5.1–5.3
 1. ~~§3.4 (Test Console diagnostics)~~ / ~~§3.3 (rail badges)~~ /

@@ -1,6 +1,7 @@
 import uuid
+from collections import defaultdict
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, select
 
 from app.core.repository import TenantScopedRepository
 from app.knowledge.models import KnowledgeChunk, KnowledgeSource
@@ -9,22 +10,34 @@ from app.knowledge.models import KnowledgeChunk, KnowledgeSource
 class KnowledgeSourceRepository(TenantScopedRepository[KnowledgeSource]):
     model = KnowledgeSource
 
-    async def list_with_chunk_counts(
+    async def list_with_chunks(
         self, tenant_id: uuid.UUID
-    ) -> list[tuple[KnowledgeSource, int]]:
-        """One query, not the list-then-count-per-source N+1 -- there's no
-        real reason to prefer that shape once a single grouped query does
-        it directly."""
-        stmt = (
-            select(KnowledgeSource, func.count(KnowledgeChunk.id))
-            .outerjoin(
-                KnowledgeChunk, KnowledgeChunk.knowledge_source_id == KnowledgeSource.id
+    ) -> list[tuple[KnowledgeSource, list[KnowledgeChunk]]]:
+        """One query for sources, one query for every one of their chunks --
+        two queries total regardless of source count, not a
+        list-then-fetch-chunks-per-source N+1. Chunks ordered by
+        created_at, the order _ingest_chunks (app/knowledge/api.py)
+        originally inserted them in -- good enough to reconstruct a
+        manual source's original text for viewing/editing, not a strict
+        guarantee for ties within the same millisecond.
+        """
+        sources = await self.list(tenant_id)
+        if not sources:
+            return []
+        source_ids = [source.id for source in sources]
+        chunks_stmt = (
+            select(KnowledgeChunk)
+            .where(
+                KnowledgeChunk.tenant_id == tenant_id,
+                KnowledgeChunk.knowledge_source_id.in_(source_ids),
             )
-            .where(KnowledgeSource.tenant_id == tenant_id)
-            .group_by(KnowledgeSource.id)
+            .order_by(KnowledgeChunk.created_at.asc())
         )
-        result = await self.session.execute(stmt)
-        return [(row[0], row[1]) for row in result.all()]
+        chunks = list(await self.session.scalars(chunks_stmt))
+        chunks_by_source: dict[uuid.UUID, list[KnowledgeChunk]] = defaultdict(list)
+        for chunk in chunks:
+            chunks_by_source[chunk.knowledge_source_id].append(chunk)
+        return [(source, chunks_by_source.get(source.id, [])) for source in sources]
 
 
 class KnowledgeChunkRepository(TenantScopedRepository[KnowledgeChunk]):

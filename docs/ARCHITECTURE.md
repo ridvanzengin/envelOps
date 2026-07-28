@@ -206,7 +206,7 @@ safety-floor branch.
 `knowledge_chunks` (tenant-scoped, pgvector). A manual "refresh this source"
 action deletes and re-embeds a source's chunks — no silent staleness.
 
-**API-reachable now** (`POST /knowledge/sources`, `GET /knowledge/sources`,
+**API-reachable now** (`POST`/`GET`/`PUT`/`DELETE /knowledge/sources`,
 `POST /knowledge/sources/{id}/refresh`, all auth-gated): `manual` (owner
 pastes text directly) and `url` (fetched via a plain httpx GET,
 `app/knowledge/web_fetch.py` — same "thin client, not a heavier SDK"
@@ -215,8 +215,15 @@ dependencies — `app/knowledge/html_text.py` strips HTML to plain text
 using stdlib `html.parser`, not a new parsing library. Deliberately not
 attempted: schema.org FAQPage structured Q&A parsing (§5's "parsed as
 clean Q&A pairs where available" — text-only fallback is what's built).
-Refresh only makes sense for `url` sources (400 for `manual` — nothing
-external to re-fetch; delete and re-add instead).
+Refresh only makes sense for `url` sources (400 for `manual`). `PUT`
+(added 2026-07-29, docs/ROADMAP.md §5.5) is refresh's manual-only mirror
+— replaces a source's chunks with newly-chunked/re-embedded
+user-submitted text; 400s for `url` sources for the same reason refresh
+400s for `manual` ones, so editing a url source's fetched content by hand
+can't be silently clobbered by the next refresh. `GET` now also returns
+each source's `content` (its chunks rejoined with `"\n\n"`, not a second
+copy of the text stored anywhere) — before this, a source's actual
+content was never visible anywhere in the API, only its metadata.
 
 **`pdf` is not built** — the model's `type` column already anticipates it,
 but ingesting one needs a real PDF-parsing library (pypdf or similar), a
@@ -446,7 +453,13 @@ isn't repeated here.
   matching the backend's 400), and delete (any type, added 2026-07-29 —
   in-place removal from the list, same as everything else here, no
   refetch). Same fetch/update pattern used for escalation resolution
-  (§10 above).
+  (§10 above). Each row also has a chevron toggle (added 2026-07-29,
+  alongside delete) that expands/collapses the source's actual content
+  read-only — before this, a source's content was never shown anywhere
+  in the UI, only its metadata (a real gap, found via live use, not by
+  design). Manual rows additionally get a pencil button turning that same
+  expanded area into an editable textarea (Save calls the new `PUT`);
+  url rows stay view-only, matching the backend's url/manual split.
 - **Settings** — partially real: the safety trigger phrase list (§5) is
   built — three static, translated category labels for the system
   defaults (disabled checkboxes, no edit/delete control, ever — there's
