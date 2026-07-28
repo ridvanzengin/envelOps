@@ -3,6 +3,7 @@ import uuid
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.auth.models import User
 from app.tenants.models import Tenant
 
 
@@ -19,3 +20,20 @@ class TenantRepository:
         self.session.add(tenant)
         await self.session.flush()
         return tenant
+
+    async def list_with_owner_unscoped(self) -> list[tuple[Tenant, User]]:
+        """Dev-only tenant switcher (docs/ROADMAP.md, app/auth/api.py's
+        GET /auth/dev-tenants) -- every tenant alongside one of its users,
+        for a testing dropdown. Cross-tenant by design, same reasoning as
+        every other *_unscoped method (CLAUDE.md's tenant-scoping section);
+        gated by settings.dev_auth_bypass_enabled at the API layer, not
+        here. An inner join, not outer -- a tenant with no user yet (e.g.
+        scripts/run_synthetic_conversations.py's tenant, which creates no
+        User row) can't be logged into anyway, so it's correctly absent
+        from this list. Phase 1's single-owner-role model (ARCHITECTURE
+        §2) means one row per tenant in practice, not a real multi-user
+        fan-out to worry about yet.
+        """
+        stmt = select(Tenant, User).join(User, User.tenant_id == Tenant.id)
+        result = await self.session.execute(stmt)
+        return [(row[0], row[1]) for row in result.all()]

@@ -16,22 +16,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     localStorage.getItem(TOKEN_STORAGE_KEY),
   );
 
-  const login = useCallback(async (email: string, password: string) => {
-    const response = await apiPost<LoginResponse>(
-      "/auth/login",
-      { email, password },
-      null,
-    );
-    localStorage.setItem(TOKEN_STORAGE_KEY, response.access_token);
-    setToken(response.access_token);
+  const loginWithToken = useCallback((accessToken: string) => {
+    localStorage.setItem(TOKEN_STORAGE_KEY, accessToken);
+    setToken(accessToken);
   }, []);
+
+  const login = useCallback(
+    async (email: string, password: string) => {
+      const response = await apiPost<LoginResponse>(
+        "/auth/login",
+        { email, password },
+        null,
+      );
+      loginWithToken(response.access_token);
+    },
+    [loginWithToken],
+  );
 
   const logout = useCallback(() => {
     localStorage.removeItem(TOKEN_STORAGE_KEY);
     setToken(null);
   }, []);
 
-  const value = useMemo(() => ({ token, login, logout }), [token, login, logout]);
+  const value = useMemo(
+    () => ({ token, login, loginWithToken, logout }),
+    [token, login, loginWithToken, logout],
+  );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

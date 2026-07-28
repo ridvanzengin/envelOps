@@ -84,7 +84,10 @@
     "login": "Giriş yap",
     "loggingIn": "Giriş yapılıyor…",
     "logout": "Çıkış yap",
-    "invalidCredentials": "E-posta veya şifre hatalı."
+    "invalidCredentials": "E-posta veya şifre hatalı.",
+    "devBadge": "Sadece geliştirme",
+    "devTenantSwitch": "Kiracı değiştir (şifresiz)",
+    "devTenantSwitchPlaceholder": "Bir kiracı seçin…"
   },
   "escalations": {
     "resolveError": "Bu yükseltme çözülemedi. Tekrar deneyin.",

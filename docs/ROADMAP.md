@@ -390,6 +390,48 @@ Flagging before any design starts:
 - Not designed at all yet — this entry exists so the ambition is on
   record, not as a spec to start building from.
 
+### 5.4 Dev-only tenant switcher — done (2026-07-29)
+A login dropdown that switches between any seeded tenant with zero
+credentials, to actually use §5.1's showcase tenants for testing without
+re-typing email/password each time.
+
+**Built, deliberately gated at both layers, not just one:**
+- `settings.dev_auth_bypass_enabled` (`ENVELOPS_DEV_AUTH_BYPASS_ENABLED`,
+  default `false`) — a new `GET /auth/dev-tenants` (lists every tenant
+  with a login) and `POST /auth/dev-login` (mints a real token for a
+  chosen `user_id`, no password check at all) both **404, not 403**,
+  when this is off, so a real deployment doesn't even reveal the feature
+  exists. `.env.example` documents it with an explicit "never true
+  outside your own local machine" warning; enabled in the local `.env`
+  right now for this session's multi-tenant testing.
+- Frontend: `Login.tsx` fetches `GET /auth/dev-tenants` on mount; the
+  dropdown only renders at all if that call actually returns rows (a
+  real deployment with the flag off renders nothing, silently — no error
+  shown either way, since this is an optional convenience). Visually
+  separated from the real login form with a red "DEV ONLY" badge, not
+  just appended underneath it.
+- `AuthContext` gained `loginWithToken(token)`, refactored out of the
+  existing `login()` so both paths store a token the same way.
+
+**Real gotcha hit while verifying:** `docker compose restart backend`
+does *not* reload `env_file` values for an already-running container —
+needed `docker compose up -d backend` (recreate) to actually pick up the
+new env var. Also caught a real bug before it shipped: the env var was
+initially named `ENVELOPS_DEV_AUTH_BYPASS` (missing `_ENABLED`), which
+doesn't match `Settings.dev_auth_bypass_enabled` — pydantic-settings
+doesn't warn about an unmapped var, it fails *all* settings validation
+with "extra_forbidden," which would have broken the entire app at
+import time. Existing test coverage caught this immediately (collection
+errors across every test file), before it reached a real run.
+
+**Verified live:** selected a seeded tenant from the dropdown with no
+email/password entered, landed straight on its dashboard, fully
+authenticated.
+
+5 new backend tests (`test_auth_api.py`): both endpoints 404 when
+disabled, both work correctly when enabled, and an unknown `user_id`
+still 404s even with the bypass on.
+
 ### Updated sequencing given 5.1–5.3
 1. ~~§3.4 (Test Console diagnostics)~~ / ~~§3.3 (rail badges)~~ /
    ~~§5.1 (multi-tenant seed + showcase scenarios)~~ /
