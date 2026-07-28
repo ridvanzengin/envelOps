@@ -96,11 +96,13 @@ export default function KnowledgeSources() {
 
   return (
     <section className="page">
-      <h1>{t("nav.knowledge")}</h1>
-      <p>{t("pages.knowledge")}</p>
+      <div className="page__header">
+        <h1>{t("nav.knowledge")}</h1>
+      </div>
+      <p className="page__description">{t("pages.knowledge")}</p>
 
-      <form onSubmit={(event) => void handleSubmit(event)}>
-        <label>
+      <form className="form" onSubmit={(event) => void handleSubmit(event)}>
+        <label className="form__field">
           {t("knowledgeSources.type")}
           <select value={type} onChange={(e) => setType(e.target.value as SourceType)}>
             <option value="manual">{t("knowledgeSources.typeManual")}</option>
@@ -108,7 +110,7 @@ export default function KnowledgeSources() {
           </select>
         </label>
         {type === "manual" ? (
-          <label>
+          <label className="form__field">
             {t("knowledgeSources.content")}
             <textarea
               value={content}
@@ -117,59 +119,74 @@ export default function KnowledgeSources() {
             />
           </label>
         ) : (
-          <label>
+          <label className="form__field">
             {t("knowledgeSources.url")}
             <input type="url" value={url} onChange={(e) => setUrl(e.target.value)} required />
           </label>
         )}
-        <button type="submit" disabled={submitting}>
+        <button type="submit" className="button button--primary" disabled={submitting}>
           {submitting ? t("knowledgeSources.adding") : t("knowledgeSources.add")}
         </button>
-        {formError && <p role="alert">{formError}</p>}
+        {formError && (
+          <p className="error-message" role="alert">
+            {formError}
+          </p>
+        )}
       </form>
 
-      {error && <p role="alert">{error}</p>}
+      {error && (
+        <p className="error-message" role="alert">
+          {error}
+        </p>
+      )}
       {sources === null && !error && <p>{t("knowledgeSources.loading")}</p>}
-      {sources !== null && sources.length === 0 && <p>{t("knowledgeSources.empty")}</p>}
+      {sources !== null && sources.length === 0 && (
+        <div className="empty-state">{t("knowledgeSources.empty")}</div>
+      )}
       {sources !== null && sources.length > 0 && (
-        <table>
-          <thead>
-            <tr>
-              <th>{t("knowledgeSources.sourceType")}</th>
-              <th>{t("knowledgeSources.sourceUri")}</th>
-              <th>{t("knowledgeSources.chunkCount")}</th>
-              <th>{t("knowledgeSources.lastSynced")}</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>
-            {sources.map((source) => (
-              <tr key={source.id}>
-                <td>{source.type}</td>
-                <td>{source.source_uri ?? "—"}</td>
-                <td>{source.chunk_count}</td>
-                <td>
-                  {source.last_synced_at
-                    ? new Date(source.last_synced_at).toLocaleString()
-                    : "—"}
-                </td>
-                <td>
-                  {source.type === "url" && (
-                    <button
-                      type="button"
-                      disabled={refreshingId === source.id}
-                      onClick={() => void handleRefresh(source.id)}
-                    >
-                      {refreshingId === source.id
-                        ? t("knowledgeSources.refreshing")
-                        : t("knowledgeSources.refresh")}
-                    </button>
-                  )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <div className="card">
+          <div className="table-wrapper">
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>{t("knowledgeSources.sourceType")}</th>
+                  <th>{t("knowledgeSources.sourceUri")}</th>
+                  <th>{t("knowledgeSources.chunkCount")}</th>
+                  <th>{t("knowledgeSources.lastSynced")}</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {sources.map((source) => (
+                  <tr key={source.id}>
+                    <td>{source.type}</td>
+                    <td>{source.source_uri ?? "—"}</td>
+                    <td>{source.chunk_count}</td>
+                    <td>
+                      {source.last_synced_at
+                        ? new Date(source.last_synced_at).toLocaleString()
+                        : "—"}
+                    </td>
+                    <td>
+                      {source.type === "url" && (
+                        <button
+                          type="button"
+                          className="button button--primary"
+                          disabled={refreshingId === source.id}
+                          onClick={() => void handleRefresh(source.id)}
+                        >
+                          {refreshingId === source.id
+                            ? t("knowledgeSources.refreshing")
+                            : t("knowledgeSources.refresh")}
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
       )}
     </section>
   );
