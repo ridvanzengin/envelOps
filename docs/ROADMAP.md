@@ -11,12 +11,19 @@
 
 ---
 
-## 1. Status as of 2026-07-28
+## 1. Status as of 2026-07-29
 
-**PR #23 — Test Console** (branch `feature/test-console`) is built and
-pushed but **not merged** — the user is deliberately doing a manual testing
-pass before merging. Check `gh pr view 23 --json state` before assuming
-anything in it is "in main."
+**PR #23 (Test Console, §3.3/§3.4) and PR #24 (multi-tenant showcase
+seed script, §5.1) are both merged into `main`.** **PR #25
+(conversation-history threading, §2) is open, not yet merged** (branch
+`feature/conversation-history`). Check `gh pr view <n> --json state`
+before assuming it's "in main" by the time this is read again.
+
+**The §5.1 safety-floor finding (outcome-guarantee check missing
+safety/risk-absence language) is explicitly postponed to a later
+session, by direct instruction — not forgotten, not silently deprioritized.**
+Still recorded in full under §5.1 below; don't fix it without it being
+raised again.
 
 Two real pipeline bugs were found and fixed via live Test Console use
 (both predate the PR itself):
@@ -251,7 +258,7 @@ onboarding, and a self-improving layer on top of the pipeline, not a
 single feature. Captured here so the ambition doesn't live only in chat
 history; none of this is designed in detail yet.
 
-### 5.1 Multi-tenant synthetic seed script with showcase scenarios visible in the rail
+### 5.1 Multi-tenant synthetic seed script with showcase scenarios visible in the rail — done (2026-07-29)
 Turn the existing single-tenant synthetic harness
 (`scripts/run_synthetic_conversations.py` — one tenant, "Synthetic Test —
 Honey Co") into a proper seed script covering multiple fake tenants
@@ -297,6 +304,56 @@ meaningfully testable than the current single honey-seller harness. Worth
 deciding explicitly whether this comes before or after §2, rather than
 defaulting to whatever order this document happened to list things in.
 
+**Built:** `backend/scripts/seed_showcase_tenants.py` — a new, separate
+script (the existing `run_synthetic_conversations.py` is untouched and
+still owns REQUIREMENTS §12 stage 1's pilot-validation gate specifically;
+this one is occasional/on-demand demo-data generation, explicitly not
+meant to run like a test suite). Seeds 4 tenants across the four
+REQUIREMENTS §2 verticals (Aurora Aesthetics Clinic / service-appointment,
+Meadow & Jar Honey Co / product-e-commerce, Luna Hair Studio /
+local-booking, Vertex Growth Partners / B2B-high-ticket), each with its
+own `closing_action`, knowledge chunks, a login-able `User`
+(`owner@<slug>.demo` / shared password printed by the script — the
+"no User row" gap above, fixed), and two `is_test=True` channels (one
+chat platform + email) so channel-tone differences are visible too. 13
+scenario messages total, run through the real pipeline exactly like Test
+Console does (including writing `pipeline_traces`), kept small
+deliberately to stay well inside Gemini's free-tier throughput. Verified
+live: logged in as the Honey Co tenant, saw its Telegram conversation in
+the rail with correct "Purchase intent"/"Hot" badges and the real
+multi-message thread, not just a DB row.
+
+**Two real findings from actually running diverse verticals, not new
+work in themselves — recorded here rather than silently fixed:**
+1. **Live re-confirmation of §2's known language-consistency bug**, from
+   an entirely different vertical: Aurora Aesthetics Clinic's Turkish
+   question ("Merhaba, burun estetiği için fiyat aralığı nedir?") got an
+   English reply ("Rhinoplasty consultations are free... I don't have
+   that information and a person will confirm."). Confirms this bug
+   isn't honey/Turkish-specific — it's a general `keep_chatting`
+   disclaimer-path issue, exactly the kind of validation this seed script
+   was for.
+2. **A new, real safety-floor gap, found because a health-adjacent
+   vertical was tested at all**: "Can you guarantee this procedure has
+   zero risk of complications?" did *not* trip the outcome-guarantee
+   check (`escalation/safety_gate.py`) and got a normal `keep_chatting`
+   reply. Root cause: the check deliberately requires a certainty word
+   ("guarantee") *and* an efficacy word ("work"/"cure"/"heal"/"fix"/
+   "help" — `_EFFICACY_CUES`) in the same message, by design (to avoid
+   honey's own "ürün garantisi" shipping-guarantee false positives,
+   already documented). `_EFFICACY_CUES` covers functional-efficacy
+   language but not safety/risk-absence language ("risk," "complication,"
+   "safe," "side-effect-free") — a real coverage gap for exactly the kind
+   of business (health tourism/aesthetic clinics) REQUIREMENTS §1 names
+   as a primary use case, not a hypothetical one. **Explicitly postponed
+   to a later session (2026-07-29 instruction)** — not fixed here, since
+   it's a change to the safety-critical gate itself, not a routine bug.
+   Don't pick this up without it being raised again. The
+   module's own docstring already flagged this class of gap ("a plain
+   regex list will miss plenty of real phrasing... treat expanding this
+   as required before relying on it for real health-related tenants, not
+   a nice-to-have") — this is concrete evidence for that, not a surprise.
+
 ### 5.2 Template gallery, built from the battle-tested seed scenarios
 Once 5.1's tenant/knowledge/settings configurations have been exercised
 enough to trust, turn them into REQUIREMENTS §10's already-deferred
@@ -336,7 +393,8 @@ Flagging before any design starts:
 ### Updated sequencing given 5.1–5.3
 1. ~~§3.4 (Test Console diagnostics)~~ / ~~§3.3 (rail badges)~~ /
    ~~§5.1 (multi-tenant seed + showcase scenarios)~~ /
-   ~~§2 (conversation-history threading)~~ — all done.
+   ~~§2 (conversation-history threading)~~ — all done. §5.1's
+   safety-floor finding explicitly postponed, see §1/§5.1 above.
 2. **§3.2** (clarifying question) — its blocking dependency (§2) is now
    satisfied; a reasonable next pick.
 3. **§3.5** (SSE) — independent infrastructure, can slot in anytime.
