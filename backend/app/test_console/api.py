@@ -15,6 +15,7 @@ reply, and there's no webhook needing a fast response to hand off from.
 """
 
 import uuid
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
@@ -23,19 +24,75 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth.dependencies import CurrentUser, get_current_user
 from app.channels.models import Channel
 from app.channels.repository import ChannelRepository
-from app.conversations.api import MessageResponse
 from app.conversations.models import Conversation, Message
 from app.conversations.repository import ConversationRepository, MessageRepository
 from app.core.db import get_session
+from app.pipeline.models import PipelineTrace
+from app.pipeline.repository import PipelineTraceRepository
 from app.pipeline.runner import get_checkpointer, run_pipeline
 from app.pipeline.state import PipelineState
 
 router = APIRouter(prefix="/test", tags=["test"])
 
 
+class MessageDiagnostics(BaseModel):
+    """The per-message pipeline reasoning (docs/ROADMAP.md §3.4) -- lets the
+    tenant owner see *why* the pipeline replied the way it did for each
+    inbound message, not just the final reply. Only ever set for inbound
+    messages (a pipeline run's own `PipelineState`, ARCHITECTURE §4, doesn't
+    exist for an outbound one)."""
+
+    detected_intent: str | None
+    lead_score: str | None
+    decision: str | None
+
+
+class TestMessageResponse(BaseModel):
+    id: uuid.UUID
+    direction: str
+    text: str
+    created_at: datetime
+    diagnostics: MessageDiagnostics | None = None
+
+
+def _to_response(
+    message: Message, trace_by_message_id: dict[uuid.UUID, PipelineTrace]
+) -> TestMessageResponse:
+    trace = trace_by_message_id.get(message.id)
+    diagnostics = (
+        MessageDiagnostics(
+            detected_intent=trace.state.get("detected_intent"),
+            lead_score=trace.state.get("lead_score"),
+            decision=trace.state.get("decision"),
+        )
+        if trace is not None
+        else None
+    )
+    return TestMessageResponse(
+        id=message.id,
+        direction=message.direction,
+        text=message.text,
+        created_at=message.created_at,
+        diagnostics=diagnostics,
+    )
+
+
+async def _list_messages_with_diagnostics(
+    session: AsyncSession, tenant_id: uuid.UUID, conversation_id: uuid.UUID
+) -> list[TestMessageResponse]:
+    messages = await MessageRepository(session).list_by_conversation(
+        tenant_id, conversation_id
+    )
+    traces = await PipelineTraceRepository(session).list_by_conversation(
+        tenant_id, conversation_id
+    )
+    trace_by_message_id = {trace.message_id: trace for trace in traces}
+    return [_to_response(message, trace_by_message_id) for message in messages]
+
+
 class TestConversationResponse(BaseModel):
     conversation_id: uuid.UUID | None
-    messages: list[MessageResponse]
+    messages: list[TestMessageResponse]
 
 
 class SendTestMessageRequest(BaseModel):
@@ -54,7 +111,7 @@ class SendTestMessageRequest(BaseModel):
 
 class SendTestMessageResponse(BaseModel):
     conversation_id: uuid.UUID
-    messages: list[MessageResponse]
+    messages: list[TestMessageResponse]
     escalated: bool
     escalation_reason: str | None
 
@@ -78,12 +135,10 @@ async def get_test_conversation(
     if conversation is None:
         return TestConversationResponse(conversation_id=None, messages=[])
 
-    message_repo = MessageRepository(session)
-    messages = await message_repo.list_by_conversation(current_user.tenant_id, conversation.id)
-    return TestConversationResponse(
-        conversation_id=conversation.id,
-        messages=[MessageResponse.model_validate(message) for message in messages],
+    messages = await _list_messages_with_diagnostics(
+        session, current_user.tenant_id, conversation.id
     )
+    return TestConversationResponse(conversation_id=conversation.id, messages=messages)
 
 
 @router.post("/conversations/messages")
@@ -127,7 +182,7 @@ async def send_test_message(
         )
 
     message_repo = MessageRepository(session)
-    await message_repo.add(
+    inbound_message = await message_repo.add(
         Message(
             tenant_id=current_user.tenant_id,
             conversation_id=conversation.id,
@@ -166,12 +221,32 @@ async def send_test_message(
                     text=draft_text,
                 )
             )
+    # One trace row per inbound message, keyed by message_id -- surfaced
+    # back in both this response and GET /test/conversations
+    # (_list_messages_with_diagnostics) so the per-message reasoning
+    # (docs/ROADMAP.md §3.4) survives a platform switch/page reload, not
+    # just the message just sent.
+    await PipelineTraceRepository(session).add(
+        PipelineTrace(
+            tenant_id=current_user.tenant_id,
+            conversation_id=conversation.id,
+            message_id=inbound_message.id,
+            step="result",
+            state={
+                "detected_intent": result.get("detected_intent"),
+                "lead_score": result.get("lead_score"),
+                "decision": result.get("decision"),
+            },
+        )
+    )
     await session.commit()
 
-    messages = await message_repo.list_by_conversation(current_user.tenant_id, conversation.id)
+    messages = await _list_messages_with_diagnostics(
+        session, current_user.tenant_id, conversation.id
+    )
     return SendTestMessageResponse(
         conversation_id=conversation.id,
-        messages=[MessageResponse.model_validate(message) for message in messages],
+        messages=messages,
         escalated=escalated,
         escalation_reason=escalation_reason,
     )

@@ -10,11 +10,21 @@ export interface Conversation {
   is_test: boolean;
 }
 
+// Only ever populated for Test Console messages (docs/ROADMAP.md §3.4) --
+// a real channel's messages never carry this, so MessageThread's rendering
+// of it is a no-op for ConversationPanel.
+export interface MessageDiagnostics {
+  detected_intent: string | null;
+  lead_score: string | null;
+  decision: string | null;
+}
+
 export interface Message {
   id: string;
   direction: string;
   text: string;
   created_at: string;
+  diagnostics?: MessageDiagnostics | null;
 }
 
 export interface Escalation {

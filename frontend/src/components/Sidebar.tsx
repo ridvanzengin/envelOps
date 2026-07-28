@@ -17,7 +17,7 @@ export function Sidebar() {
   const navItems: NavItem[] = [
     { label: t("nav.dashboard"), to: "/", icon: DashboardIcon, end: true },
     { label: t("nav.knowledge"), to: "/knowledge", icon: KnowledgeIcon },
-    { label: t("nav.testConsole"), to: "/test", icon: FlaskIcon },
+    { label: t("nav.testConsole"), to: "/test-console", icon: FlaskIcon },
     { label: t("nav.settings"), to: "/settings", icon: SettingsIcon },
   ];
 

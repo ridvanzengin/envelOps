@@ -105,9 +105,13 @@ State object carried through the run: `tenant_id`, `conversation_id`,
 `incoming_text`, `channel_type`, `detected_intent`, `retrieved_chunks`,
 `lead_score`, `decision`, `draft_text`, `escalation_reason` (if any),
 `escalation_logged` (§5's double-log guard). This state is what
-gets checkpointed at the pause point (§5) and is most of what a
-`pipeline_traces` row records — the future observability dashboard can
-largely be built by surfacing this object rather than inventing new logging.
+gets checkpointed at the pause point (§5). `pipeline_traces` (defined
+alongside the rest of the data model but unused for a while) now gets one
+row per inbound Test Console message (`detected_intent`/`lead_score`/
+`decision` only, not the full state) — `app/test_console/api.py`, see
+`docs/ROADMAP.md` §3.4. Not yet written for real (Telegram) messages; the
+future observability dashboard can still largely be built by widening
+this same mechanism rather than inventing new logging.
 
 `channel_type` drives reply tone/structure in steps 6's `keep_chatting`/
 `book_or_checkout` branches (`app/pipeline/graph.py`'s

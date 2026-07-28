@@ -35,7 +35,7 @@ function AppShell() {
             <Routes>
               <Route path="/" element={<Dashboard />} />
               <Route path="/knowledge" element={<KnowledgeSources />} />
-              <Route path="/test" element={<TestConsole />} />
+              <Route path="/test-console" element={<TestConsole />} />
               <Route path="/settings" element={<Settings />} />
             </Routes>
           </div>

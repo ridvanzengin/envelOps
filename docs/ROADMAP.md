@@ -94,7 +94,7 @@ Show intent classification and lead score as badges/colors directly on
 the ChannelRail conversation list, updating live as a conversation
 progresses (not just inside a single conversation's thread).
 
-### 3.4 Per-message pipeline diagnostics in Test Console
+### 3.4 Per-message pipeline diagnostics in Test Console — done (2026-07-28)
 For debugging/experimentation: show intent classification, lead score,
 and next-step decision for *every message* in the Test Console, not just
 the final reply. Example shape:
@@ -110,6 +110,35 @@ change, just surfacing state that mostly already exists in
 `PipelineState`/`pipeline_traces` (ARCHITECTURE §4) in the Test Console
 UI. Good candidate to build first: it directly helps debug §2.1's
 outstanding language-consistency bug.
+
+**Built:** `pipeline_traces` (previously defined but never written to,
+ARCHITECTURE §4) now gets one row per inbound test message, keyed by
+`message_id`, storing `detected_intent`/`lead_score`/`decision`
+(`app/test_console/api.py`). Both `GET /test/conversations` and
+`POST /test/conversations/messages` return each message with an optional
+`diagnostics` field; `MessageThread.tsx` (shared with ConversationPanel)
+renders it as small badges above the bubble it describes, only when
+present — a real conversation's messages never carry it, so
+ConversationPanel is unaffected. Verified live: badges render correctly,
+color-code by intent/score/decision (e.g. hot + escalate_to_human shows
+red), and **persist across a platform switch and back** — confirmed via
+the actual `pipeline_traces` round-trip, not just the in-memory response
+from the message just sent.
+
+**Bug found and fixed during verification, unrelated to the feature
+itself but blocking testing it:** `frontend/vite.config.ts`'s dev proxy
+used plain-string prefix matching (`url.startsWith(key)`), so a hard
+reload of the `/knowledge` page (and, before a rename, the Test Console's
+own `/test` page) was silently routed to the backend's same-prefixed API
+router instead of the frontend's SPA shell, showing a raw `{"detail":"Not
+Found"}` instead of the app. Fixed by switching every proxy key to an
+anchored regex requiring a real path-segment boundary after the prefix
+(`/conversations` and `/escalations` keep matching bare, since those two
+routers genuinely have a bare `GET` route; the rest now require a
+trailing slash). The Test Console's own frontend route was also renamed
+from `/test` to `/test-console` while investigating, to stop it sharing
+a bare prefix with its own API path — not the actual fix, but removes the
+coincidental-looking overlap for whoever reads this next.
 
 ### 3.5 Live updates via SSE + activity-bar escalation notifications
 The conversation rail should update immediately when a new message
