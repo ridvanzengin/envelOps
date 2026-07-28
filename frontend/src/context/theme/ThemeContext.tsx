@@ -15,16 +15,15 @@ function currentTheme(): Theme {
 }
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
-  const [theme, setTheme] = useState<Theme>(currentTheme);
+  const [theme, setThemeState] = useState<Theme>(currentTheme);
 
-  function toggleTheme() {
-    const next: Theme = theme === "dark" ? "light" : "dark";
+  function setTheme(next: Theme) {
     document.documentElement.dataset.theme = next;
     localStorage.setItem(STORAGE_KEY, next);
-    setTheme(next);
+    setThemeState(next);
   }
 
   return (
-    <ThemeContext.Provider value={{ theme, toggleTheme }}>{children}</ThemeContext.Provider>
+    <ThemeContext.Provider value={{ theme, setTheme }}>{children}</ThemeContext.Provider>
   );
 }

@@ -101,6 +101,14 @@ export function MoonIcon(props: SVGProps<SVGSVGElement>) {
   );
 }
 
+export function ChevronIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <Icon {...props}>
+      <path d="m9 6 6 6-6 6" />
+    </Icon>
+  );
+}
+
 export function ChevronLeftIcon(props: SVGProps<SVGSVGElement>) {
   return (
     <Icon {...props}>
@@ -122,7 +130,7 @@ export function MoreIcon(props: SVGProps<SVGSVGElement>) {
 export function SendIcon(props: SVGProps<SVGSVGElement>) {
   return (
     <Icon {...props}>
-      <path d="m3 12 18-9-5 9 5 9-18-9Z" />
+      <path d="M21 12 3 3l5 9-5 9Z" />
     </Icon>
   );
 }

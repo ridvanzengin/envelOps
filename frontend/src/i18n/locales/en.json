@@ -10,8 +10,12 @@
     "dashboard": "Leads today, escalations today, response times."
   },
   "theme": {
-    "switchToLight": "Switch to light theme",
-    "switchToDark": "Switch to dark theme"
+    "light": "Light theme",
+    "dark": "Dark theme"
+  },
+  "menu": {
+    "language": "Language",
+    "theme": "Theme"
   },
   "channelRail": {
     "telegram": "Telegram",

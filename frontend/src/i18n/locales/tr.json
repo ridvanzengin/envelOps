@@ -10,8 +10,12 @@
     "dashboard": "Bugünkü potansiyel müşteriler, bugünkü yükseltmeler, yanıt süreleri."
   },
   "theme": {
-    "switchToLight": "Açık temaya geç",
-    "switchToDark": "Koyu temaya geç"
+    "light": "Açık tema",
+    "dark": "Koyu tema"
+  },
+  "menu": {
+    "language": "Dil",
+    "theme": "Tema"
   },
   "channelRail": {
     "telegram": "Telegram",

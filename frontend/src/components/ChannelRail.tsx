@@ -5,10 +5,16 @@ import { useAuth } from "../auth/useAuth";
 import { useConversationPanel } from "../context/conversationPanel/useConversationPanel";
 import { useTheme } from "../context/theme/useTheme";
 import {
+  CheckIcon,
+  ChevronIcon,
   EmailIcon,
   FacebookIcon,
+  GlobeIcon,
   InstagramIcon,
+  LogoutIcon,
+  MoonIcon,
   MoreIcon,
+  SunIcon,
   TelegramIcon,
   WhatsAppIcon,
 } from "./icons";
@@ -28,10 +34,18 @@ const DISABLED_CHANNELS = [
 
 export function ChannelRail() {
   const { t, i18n } = useTranslation();
-  const { theme, toggleTheme } = useTheme();
+  const { theme, setTheme } = useTheme();
   const { logout } = useAuth();
   const { isOpen, openPanel, closePanel, pendingEscalationCount } = useConversationPanel();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [langSubmenuOpen, setLangSubmenuOpen] = useState(false);
+  const [themeSubmenuOpen, setThemeSubmenuOpen] = useState(false);
+
+  function closeMenu() {
+    setMenuOpen(false);
+    setLangSubmenuOpen(false);
+    setThemeSubmenuOpen(false);
+  }
 
   // Same click-outside convention as every other .dropdown-menu consumer
   // in the sibling reference project -- a mousedown anywhere outside the
@@ -39,7 +53,7 @@ export function ChannelRail() {
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
       if (!(event.target instanceof Element) || !event.target.closest(".dropdown-menu")) {
-        setMenuOpen(false);
+        closeMenu();
       }
     }
     document.addEventListener("mousedown", handleClickOutside);
@@ -56,7 +70,7 @@ export function ChannelRail() {
           className="channel-rail__icon"
           aria-label={t("channelRail.menu")}
           aria-expanded={menuOpen}
-          onClick={() => setMenuOpen((value) => !value)}
+          onClick={() => (menuOpen ? closeMenu() : setMenuOpen(true))}
         >
           <MoreIcon className="channel-rail__svg" />
         </button>
@@ -64,32 +78,99 @@ export function ChannelRail() {
           <div className="dropdown-menu__list">
             <button
               type="button"
-              className="dropdown-menu__item"
-              onClick={() => {
-                setMenuOpen(false);
-                void i18n.changeLanguage(isEnglish ? "tr" : "en");
-              }}
+              className="dropdown-menu__item dropdown-menu__item--parent"
+              aria-expanded={langSubmenuOpen}
+              onClick={() => setLangSubmenuOpen((value) => !value)}
             >
-              {isEnglish ? "Türkçe" : "English"}
+              <GlobeIcon className="dropdown-menu__item-icon" />
+              {t("menu.language")}
+              <ChevronIcon
+                className={`chevron dropdown-menu__item-chevron${
+                  langSubmenuOpen ? " chevron--expanded" : ""
+                }`}
+              />
             </button>
+            {langSubmenuOpen && (
+              <div className="dropdown-menu__submenu">
+                <button
+                  type="button"
+                  className="dropdown-menu__item dropdown-menu__item--sub"
+                  onClick={() => {
+                    closeMenu();
+                    void i18n.changeLanguage("en");
+                  }}
+                >
+                  English
+                  {isEnglish && <CheckIcon className="dropdown-menu__item-icon" />}
+                </button>
+                <button
+                  type="button"
+                  className="dropdown-menu__item dropdown-menu__item--sub"
+                  onClick={() => {
+                    closeMenu();
+                    void i18n.changeLanguage("tr");
+                  }}
+                >
+                  Türkçe
+                  {!isEnglish && <CheckIcon className="dropdown-menu__item-icon" />}
+                </button>
+              </div>
+            )}
+
             <button
               type="button"
-              className="dropdown-menu__item"
-              onClick={() => {
-                setMenuOpen(false);
-                toggleTheme();
-              }}
+              className="dropdown-menu__item dropdown-menu__item--parent"
+              aria-expanded={themeSubmenuOpen}
+              onClick={() => setThemeSubmenuOpen((value) => !value)}
             >
-              {theme === "dark" ? t("theme.switchToLight") : t("theme.switchToDark")}
+              {theme === "dark" ? (
+                <MoonIcon className="dropdown-menu__item-icon" />
+              ) : (
+                <SunIcon className="dropdown-menu__item-icon" />
+              )}
+              {t("menu.theme")}
+              <ChevronIcon
+                className={`chevron dropdown-menu__item-chevron${
+                  themeSubmenuOpen ? " chevron--expanded" : ""
+                }`}
+              />
             </button>
+            {themeSubmenuOpen && (
+              <div className="dropdown-menu__submenu">
+                <button
+                  type="button"
+                  className="dropdown-menu__item dropdown-menu__item--sub"
+                  onClick={() => {
+                    closeMenu();
+                    setTheme("light");
+                  }}
+                >
+                  {t("theme.light")}
+                  {theme === "light" && <CheckIcon className="dropdown-menu__item-icon" />}
+                </button>
+                <button
+                  type="button"
+                  className="dropdown-menu__item dropdown-menu__item--sub"
+                  onClick={() => {
+                    closeMenu();
+                    setTheme("dark");
+                  }}
+                >
+                  {t("theme.dark")}
+                  {theme === "dark" && <CheckIcon className="dropdown-menu__item-icon" />}
+                </button>
+              </div>
+            )}
+
             <button
               type="button"
               className="dropdown-menu__item dropdown-menu__item--danger"
               onClick={() => {
-                setMenuOpen(false);
+                closeMenu();
                 logout();
               }}
             >
+              <LogoutIcon className="dropdown-menu__item-icon" />
               {t("auth.logout")}
             </button>
           </div>
