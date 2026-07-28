@@ -22,6 +22,15 @@ def _fake_escalation(tenant_id: uuid.UUID) -> MagicMock:
     return escalation
 
 
+def _fake_channel(**overrides: object) -> MagicMock:
+    channel = MagicMock()
+    channel.type = "telegram"
+    channel.is_test = False
+    for key, value in overrides.items():
+        setattr(channel, key, value)
+    return channel
+
+
 @pytest.fixture(autouse=True)
 def _override_session() -> object:
     app.dependency_overrides[get_session] = lambda: AsyncMock()
@@ -81,9 +90,12 @@ class TestListEscalations:
         user_id = uuid.uuid4()
         token = create_access_token(user_id=user_id, tenant_id=tenant_id, role="owner")
         escalation = _fake_escalation(tenant_id)
+        channel = _fake_channel()
 
         with patch("app.escalation.api.EscalationRepository") as mock_repo_cls:
-            mock_repo_cls.return_value.list = AsyncMock(return_value=[escalation])
+            mock_repo_cls.return_value.list_with_channel_info = AsyncMock(
+                return_value=[(escalation, channel)]
+            )
             response = await _list_escalations(token)
 
         assert response.status_code == 200
@@ -91,8 +103,11 @@ class TestListEscalations:
         assert len(body) == 1
         assert body[0]["id"] == str(escalation.id)
         assert body[0]["status"] == "pending"
-        # list() was called scoped to the token's tenant, not a caller-supplied one
-        mock_repo_cls.return_value.list.assert_called_once_with(tenant_id)
+        assert body[0]["channel_type"] == "telegram"
+        assert body[0]["is_test"] is False
+        # list_with_channel_info() was called scoped to the token's tenant,
+        # not a caller-supplied one
+        mock_repo_cls.return_value.list_with_channel_info.assert_called_once_with(tenant_id)
 
 
 class TestResolveEscalation:
@@ -125,11 +140,16 @@ class TestResolveEscalation:
         tenant_id = uuid.uuid4()
         token = create_access_token(user_id=uuid.uuid4(), tenant_id=tenant_id, role="owner")
         escalation = _fake_escalation(tenant_id)
+        conversation = MagicMock()
+        conversation.channel_id = uuid.uuid4()
+        channel = _fake_channel()
         mock_checkpointer_cm = MagicMock()
         mock_checkpointer_cm.__aenter__ = AsyncMock(return_value="checkpointer")
         mock_checkpointer_cm.__aexit__ = AsyncMock(return_value=False)
         with (
             patch("app.escalation.api.EscalationRepository") as mock_repo_cls,
+            patch("app.escalation.api.ConversationRepository") as mock_conv_repo_cls,
+            patch("app.escalation.api.ChannelRepository") as mock_channel_repo_cls,
             patch(
                 "app.escalation.api.get_checkpointer", return_value=mock_checkpointer_cm
             ),
@@ -139,6 +159,8 @@ class TestResolveEscalation:
             ) as mock_resume,
         ):
             mock_repo_cls.return_value.get = AsyncMock(return_value=escalation)
+            mock_conv_repo_cls.return_value.get = AsyncMock(return_value=conversation)
+            mock_channel_repo_cls.return_value.get = AsyncMock(return_value=channel)
             response = await _resolve_escalation(escalation.id, token)
 
         assert response.status_code == 200

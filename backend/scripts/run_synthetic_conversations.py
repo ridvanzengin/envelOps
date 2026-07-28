@@ -183,6 +183,7 @@ async def main() -> None:
                     tenant_id=tenant.id,
                     conversation_id=conversation.id,
                     incoming_text=message.text,
+                    channel_type=channel.type,
                 )
                 try:
                     result = await run_pipeline(state, session, checkpointer)

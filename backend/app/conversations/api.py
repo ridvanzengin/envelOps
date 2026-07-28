@@ -18,6 +18,8 @@ class ConversationResponse(BaseModel):
     status: str
     last_message_text: str | None
     last_message_at: datetime | None
+    channel_type: str
+    is_test: bool
 
 
 class MessageResponse(BaseModel):
@@ -31,11 +33,12 @@ class MessageResponse(BaseModel):
 
 @router.get("")
 async def list_conversations(
+    channel_type: str | None = None,
     current_user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> list[ConversationResponse]:
     conversation_repo = ConversationRepository(session)
-    rows = await conversation_repo.list_with_last_message(current_user.tenant_id)
+    rows = await conversation_repo.list_with_last_message(current_user.tenant_id, channel_type)
     return [
         ConversationResponse(
             id=conversation.id,
@@ -43,8 +46,10 @@ async def list_conversations(
             status=conversation.status,
             last_message_text=message.text if message else None,
             last_message_at=message.created_at if message else None,
+            channel_type=channel.type,
+            is_test=channel.is_test,
         )
-        for conversation, message in rows
+        for conversation, message, channel in rows
     ]
 
 

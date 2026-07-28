@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 
 import { useConversationPanel } from "../context/conversationPanel/useConversationPanel";
 import { ChevronLeftIcon, CheckIcon, SendIcon } from "./icons";
+import { MessageThread } from "./MessageThread";
 import { StatusBadge } from "./StatusBadge";
 import "./ConversationPanel.css";
 
@@ -21,6 +22,7 @@ export function ConversationPanel() {
   const { t } = useTranslation();
   const {
     isOpen,
+    activeChannelType,
     closePanel,
     conversations,
     conversationsError,
@@ -82,6 +84,14 @@ export function ConversationPanel() {
     ? (escalationByConversationId.get(selectedConversationId) ?? null)
     : null;
 
+  // Counts escalations within the currently loaded (single-channel)
+  // conversation list, not escalationByConversationId.size tenant-wide --
+  // those matched before multiple channel types existed, but would now
+  // show a number bigger than what the filter actually reveals.
+  const escalatedCountInList =
+    conversations?.filter((conversation) => escalationByConversationId.has(conversation.id))
+      .length ?? 0;
+
   const visibleConversations = escalatedOnly
     ? (conversations?.filter((conversation) =>
         escalationByConversationId.has(conversation.id),
@@ -104,8 +114,8 @@ export function ConversationPanel() {
         )}
         <span className="conversation-panel__title">
           {selectedConversationId !== null
-            ? (selectedConversation?.external_contact_id ?? t("channelRail.telegram"))
-            : t("channelRail.telegram")}
+            ? (selectedConversation?.external_contact_id ?? t(`channelRail.${activeChannelType}`))
+            : t(`channelRail.${activeChannelType}`)}
         </span>
         <button
           type="button"
@@ -119,7 +129,7 @@ export function ConversationPanel() {
 
       {selectedConversationId === null ? (
         <div className="conversation-panel__body">
-          {escalationByConversationId.size > 0 && (
+          {escalatedCountInList > 0 && (
             <button
               type="button"
               className={`conversation-panel__filter${
@@ -128,9 +138,7 @@ export function ConversationPanel() {
               onClick={() => setEscalatedOnly(!escalatedOnly)}
             >
               {t("conversationPanel.filterEscalated")}
-              <span className="conversation-panel__filter-count">
-                {escalationByConversationId.size}
-              </span>
+              <span className="conversation-panel__filter-count">{escalatedCountInList}</span>
             </button>
           )}
 
@@ -152,7 +160,12 @@ export function ConversationPanel() {
                   >
                     <div className="conversation-panel__row-top">
                       <strong>{conversation.external_contact_id}</strong>
-                      <StatusBadge status={conversation.status} />
+                      <span className="conversation-panel__row-badges">
+                        {conversation.is_test && (
+                          <span className="test-badge">{t("common.testBadge")}</span>
+                        )}
+                        <StatusBadge status={conversation.status} />
+                      </span>
                     </div>
                     <div className="conversation-panel__row-preview">
                       {conversation.last_message_text ?? t("conversationPanel.noMessages")}
@@ -190,18 +203,7 @@ export function ConversationPanel() {
             {messages === null && !threadError && (
               <p className="conversation-panel__hint">{t("conversationPanel.threadLoading")}</p>
             )}
-            {messages !== null && (
-              <ul className="conversation-panel__thread">
-                {messages.map((message) => (
-                  <li
-                    key={message.id}
-                    className={`conversation-panel__message conversation-panel__message--${message.direction}`}
-                  >
-                    {message.text}
-                  </li>
-                ))}
-              </ul>
-            )}
+            {messages !== null && <MessageThread messages={messages} />}
           </div>
 
           {/* Placeholder only -- no backend capability yet for a human to

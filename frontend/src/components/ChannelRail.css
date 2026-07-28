@@ -56,11 +56,6 @@
   color: white;
 }
 
-.channel-rail__icon--disabled {
-  color: color-mix(in srgb, var(--text) 45%, transparent);
-  cursor: default;
-}
-
 .channel-rail__svg {
   width: 18px;
   height: 18px;

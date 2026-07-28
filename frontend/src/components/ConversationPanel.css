@@ -157,6 +157,13 @@
   color: var(--text-h);
 }
 
+.conversation-panel__row-badges {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
 .conversation-panel__row-preview {
   font-size: 12px;
   color: var(--text);

@@ -16,7 +16,10 @@ from app.pipeline.state import PipelineState
 
 def _make_state(text: str) -> PipelineState:
     return PipelineState(
-        tenant_id=uuid.uuid4(), conversation_id=uuid.uuid4(), incoming_text=text
+        tenant_id=uuid.uuid4(),
+        conversation_id=uuid.uuid4(),
+        incoming_text=text,
+        channel_type="telegram",
     )
 
 

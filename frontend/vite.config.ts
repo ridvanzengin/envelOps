@@ -20,6 +20,7 @@ export default defineConfig({
       '/leads': 'http://localhost:8000',
       '/escalations': 'http://localhost:8000',
       '/dashboard': 'http://localhost:8000',
+      '/test': 'http://localhost:8000',
     },
   },
 })

@@ -6,6 +6,8 @@ export interface Conversation {
   status: string;
   last_message_text: string | null;
   last_message_at: string | null;
+  channel_type: string;
+  is_test: boolean;
 }
 
 export interface Message {
@@ -22,11 +24,14 @@ export interface Escalation {
   layer: string;
   status: string;
   created_at: string;
+  channel_type: string;
+  is_test: boolean;
 }
 
 export interface ConversationPanelContextValue {
   isOpen: boolean;
-  openPanel: () => void;
+  activeChannelType: string | null;
+  openPanel: (channelType: string) => void;
   closePanel: () => void;
 
   conversations: Conversation[] | null;
@@ -34,10 +39,12 @@ export interface ConversationPanelContextValue {
 
   // Pending escalations keyed by conversation_id -- a conversation shows up
   // here only while it has an unresolved escalation (docs/ARCHITECTURE.md
-  // §5), which is also what ChannelRail's badge count and the panel's
-  // "escalated only" filter both read from.
+  // §5), which is also what the panel's "escalated only" filter reads from.
   escalationByConversationId: Map<string, Escalation>;
-  pendingEscalationCount: number;
+  // ChannelRail's per-icon badge -- one count per channel_type, not a
+  // single tenant-wide number, now that Test Console channels mean more
+  // than one channel type can be live at once.
+  pendingEscalationCountByChannelType: Record<string, number>;
 
   escalatedOnly: boolean;
   setEscalatedOnly: (value: boolean) => void;

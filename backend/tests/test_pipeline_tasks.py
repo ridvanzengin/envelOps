@@ -49,8 +49,10 @@ class TestProcessIncomingMessageAsync:
                 AsyncMock(return_value={"__interrupt__": []}),
             ),
             patch("app.pipeline.tasks.MessageRepository") as mock_message_repo_cls,
+            patch("app.pipeline.tasks.ChannelRepository") as mock_channel_repo_cls,
             patch("app.pipeline.tasks.send_message") as mock_send,
         ):
+            mock_channel_repo_cls.return_value.get = AsyncMock(return_value=None)
             await _process_incoming_message(
                 uuid.uuid4(),
                 uuid.uuid4(),
@@ -66,6 +68,7 @@ class TestProcessIncomingMessageAsync:
         session = AsyncMock()
         channel = MagicMock()
         channel.bot_token = "test-bot-token"
+        channel.type = "telegram"
         conversation = MagicMock()
         conversation.external_contact_id = "999"
         with (
@@ -102,6 +105,7 @@ class TestProcessIncomingMessageAsync:
         session = AsyncMock()
         channel = MagicMock()
         channel.bot_token = "test-bot-token"
+        channel.type = "telegram"
         conversation = MagicMock()
         conversation.external_contact_id = "999"
         with (
@@ -137,6 +141,7 @@ class TestProcessIncomingMessageAsync:
         session = AsyncMock()
         channel = MagicMock()
         channel.bot_token = None
+        channel.type = "telegram"
         conversation = MagicMock()
         conversation.external_contact_id = "999"
         with (

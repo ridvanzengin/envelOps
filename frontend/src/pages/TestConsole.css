@@ -1,0 +1,58 @@
+.test-console__platform {
+  max-width: 280px;
+  margin-bottom: 16px;
+}
+
+.test-console__thread-card {
+  padding: 16px;
+  margin-bottom: 16px;
+  min-height: 200px;
+}
+
+.test-console__hint {
+  color: var(--text);
+  font-size: 13px;
+  text-align: center;
+  padding: 24px 8px;
+}
+
+.test-console__thread {
+  display: flex;
+  flex-direction: column;
+}
+
+.test-console__escalated-notice {
+  margin-top: 12px;
+  padding: 10px 14px;
+  border-radius: 6px;
+  background: var(--accent-bg);
+  color: var(--accent-h);
+  font-size: 13px;
+}
+
+.test-console__input-row {
+  display: flex;
+  gap: 8px;
+}
+
+.test-console__input {
+  flex: 1;
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-subtle);
+  color: var(--text-h);
+  font: inherit;
+  font-size: 14px;
+}
+
+.test-console__input:focus {
+  outline: 2px solid var(--accent-border);
+  outline-offset: 0;
+  border-color: var(--accent);
+}
+
+.test-console__input:disabled {
+  opacity: 0.7;
+}

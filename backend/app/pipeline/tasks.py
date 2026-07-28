@@ -48,8 +48,17 @@ async def _process_incoming_message(
     incoming_text: str,
 ) -> None:
     async with async_session() as session:
+        # Fetched up front (not just later for bot_token/send below) so its
+        # type can drive channel_type -- keep_chatting/book_or_checkout's
+        # reply tone (app/pipeline/graph.py) needs to know which channel
+        # this is before the pipeline runs, not after.
+        channel_repo = ChannelRepository(session)
+        channel = await channel_repo.get(tenant_id, channel_id)
         state = PipelineState(
-            tenant_id=tenant_id, conversation_id=conversation_id, incoming_text=incoming_text
+            tenant_id=tenant_id,
+            conversation_id=conversation_id,
+            incoming_text=incoming_text,
+            channel_type=channel.type if channel is not None else "telegram",
         )
         async with get_checkpointer() as checkpointer:
             result = await run_pipeline(state, session, checkpointer)
@@ -76,8 +85,6 @@ async def _process_incoming_message(
 
             conversation_repo = ConversationRepository(session)
             conversation = await conversation_repo.get(tenant_id, conversation_id)
-            channel_repo = ChannelRepository(session)
-            channel = await channel_repo.get(tenant_id, channel_id)
             if conversation is not None and channel is not None and channel.bot_token:
                 try:
                     await send_message(

@@ -42,6 +42,43 @@ _INTENT_LABELS = frozenset(
 # is the safer default than overstating it.
 _LEAD_SCORES = frozenset({"hot", "warm", "cold"})
 
+# First-pass, generic, not tenant-configurable yet -- same "revisit once
+# real usage shows what's missing" status as _INTENT_LABELS/_LEAD_SCORES
+# above. Drives keep_chatting/book_or_checkout's reply tone; validated via
+# the Test Console (frontend TestConsole.tsx), not synthetic messages,
+# since tone is a presentational property the synthetic harness's own
+# "does this look right to a human" standard doesn't really cover on its
+# own -- send the same question through multiple channels and compare.
+_CHANNEL_TONE_GUIDANCE: dict[str, str] = {
+    "email": (
+        "This reply is an EMAIL. Use a brief greeting, complete sentences, "
+        "a slightly more formal/professional register than a chat message, "
+        "and a short sign-off. It's fine for this to run a few sentences "
+        "if the question needs it."
+    ),
+    "telegram": (
+        "This reply is a TELEGRAM message. Keep it short and casual, like "
+        "a real person texting back -- no greeting, no sign-off."
+    ),
+    "whatsapp": (
+        "This reply is a WHATSAPP message. Keep it short and casual, like "
+        "a real person texting back -- no greeting, no sign-off."
+    ),
+    "instagram": (
+        "This reply is an INSTAGRAM DM. Keep it short and casual, like a "
+        "real person texting back -- no greeting, no sign-off."
+    ),
+    "facebook": (
+        "This reply is a FACEBOOK MESSENGER DM. Keep it short and casual, "
+        "like a real person texting back -- no greeting, no sign-off."
+    ),
+}
+# Chat-style, not email-style -- matches every real channel built so far
+# (Telegram) and every disabled-rail channel besides email, so an
+# unrecognized channel_type reads the same way those already do rather
+# than silently turning formal.
+_DEFAULT_CHANNEL_TONE = _CHANNEL_TONE_GUIDANCE["telegram"]
+
 
 def understand_intent(state: PipelineState) -> PipelineState:
     # Explicit per-label definitions, not just the label names -- found via
@@ -180,11 +217,10 @@ def keep_chatting(state: PipelineState) -> PipelineState:
     # to guess. The original single soft "say so honestly" line wasn't
     # forceful enough for the model to hold the line equally well in both
     # languages.
+    tone_guidance = _CHANNEL_TONE_GUIDANCE.get(state.channel_type, _DEFAULT_CHANNEL_TONE)
     prompt = (
         "You are a helpful customer support assistant for a small business, "
-        "replying directly to a customer's DM. Keep it short and natural, "
-        "like a real person texting back — no \"Dear customer\" greeting, "
-        "no signature.\n\n"
+        f"replying directly to a customer's message. {tone_guidance}\n\n"
         "Ground your reply ONLY in the knowledge listed below. If it does "
         "not explicitly contain the answer — including specific facts like "
         "prices, policies, or guarantees — you MUST say you don't have "
@@ -240,26 +276,28 @@ async def book_or_checkout(
         # reply instead of leaving them hanging over what's just a config
         # issue, not a safety one -- deliberately different tradeoff than
         # the safety floor, which must never auto-send.
+        tone_guidance = _CHANNEL_TONE_GUIDANCE.get(state.channel_type, _DEFAULT_CHANNEL_TONE)
         state.decision = "escalate_to_human"
         state.escalation_reason = "book_or_checkout: tenant has no closing_link configured"
         state.draft_text = generate_text(
             "You are a helpful customer support assistant for a small "
-            "business, replying directly to a customer's DM. The customer "
-            "wants to buy/book right now but you don't have a direct link "
-            "to send them — let them know briefly and naturally (not "
-            "apologetic or corporate-sounding) that someone from the team "
-            "will follow up shortly to complete this.\n\n"
+            f"business, replying directly to a customer's message. "
+            f"{tone_guidance} The customer wants to buy/book right now but "
+            "you don't have a direct link to send them — let them know "
+            "briefly (not apologetic or corporate-sounding) that someone "
+            "from the team will follow up shortly to complete this.\n\n"
             "Customer message (your reply MUST be in this exact same "
             f"language — do not translate): {state.incoming_text}"
         )
         return state
 
+    tone_guidance = _CHANNEL_TONE_GUIDANCE.get(state.channel_type, _DEFAULT_CHANNEL_TONE)
     prompt = (
         "You are a helpful customer support assistant for a small business, "
-        "replying directly to a customer's DM. The customer is ready to "
-        "buy/book right now. Reply naturally and briefly, like a real "
-        "person texting back, and include this exact link so they can "
-        f"complete it themselves: {closing_link}\n\n"
+        f"replying directly to a customer's message. {tone_guidance} The "
+        "customer is ready to buy/book right now — reply naturally and "
+        "include this exact link so they can complete it themselves: "
+        f"{closing_link}\n\n"
         "Customer message (your reply MUST be in this exact same language "
         f"— do not translate, do not switch languages): {state.incoming_text}"
     )

@@ -7,6 +7,7 @@ from app.dashboard.api import router as dashboard_router
 from app.escalation.api import router as escalation_router
 from app.knowledge.api import router as knowledge_router
 from app.leads.api import router as leads_router
+from app.test_console.api import router as test_console_router
 
 app = FastAPI(title="EnvelOps")
 
@@ -17,6 +18,7 @@ app.include_router(conversations_router)
 app.include_router(leads_router)
 app.include_router(escalation_router)
 app.include_router(dashboard_router)
+app.include_router(test_console_router)
 
 
 @app.get("/healthz")

@@ -10,6 +10,12 @@ class Channel(Base, TenantScopedMixin):
     type: Mapped[str] = mapped_column(nullable=False)  # beeper | telegram
     external_account_id: Mapped[str] = mapped_column(nullable=False)
     status: Mapped[str] = mapped_column(nullable=False, default="connected")
+    # Test Console channels (app/test_console/api.py) -- one per (tenant,
+    # type), lazily created on first test message. Lets a conversation's
+    # real-vs-test status be derived transitively (Conversation.channel_id
+    # -> Channel.is_test) rather than duplicated onto Conversation/Lead/
+    # Escalation rows.
+    is_test: Mapped[bool] = mapped_column(nullable=False, default=False)
 
     # Telegram-specific for now (type == "telegram"); null for other channel
     # types. Stored in plaintext -- a real Phase 1 simplification, not a

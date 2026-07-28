@@ -32,6 +32,15 @@ def _fake_message(**overrides: object) -> MagicMock:
     return message
 
 
+def _fake_channel(**overrides: object) -> MagicMock:
+    channel = MagicMock()
+    channel.type = "telegram"
+    channel.is_test = False
+    for key, value in overrides.items():
+        setattr(channel, key, value)
+    return channel
+
+
 @pytest.fixture(autouse=True)
 def _override_session() -> object:
     app.dependency_overrides[get_session] = lambda: AsyncMock()
@@ -69,9 +78,10 @@ class TestListConversations:
         token = _token(tenant_id)
         conversation = _fake_conversation(tenant_id)
         message = _fake_message(text="Yes, we ship worldwide!")
+        channel = _fake_channel()
         with patch("app.conversations.api.ConversationRepository") as mock_repo_cls:
             mock_repo_cls.return_value.list_with_last_message = AsyncMock(
-                return_value=[(conversation, message)]
+                return_value=[(conversation, message, channel)]
             )
             response = await _list_conversations(token)
 
@@ -80,15 +90,20 @@ class TestListConversations:
         assert len(body) == 1
         assert body[0]["id"] == str(conversation.id)
         assert body[0]["last_message_text"] == "Yes, we ship worldwide!"
-        mock_repo_cls.return_value.list_with_last_message.assert_called_once_with(tenant_id)
+        assert body[0]["channel_type"] == "telegram"
+        assert body[0]["is_test"] is False
+        mock_repo_cls.return_value.list_with_last_message.assert_called_once_with(
+            tenant_id, None
+        )
 
     async def test_handles_a_conversation_with_no_messages(self) -> None:
         tenant_id = uuid.uuid4()
         token = _token(tenant_id)
         conversation = _fake_conversation(tenant_id)
+        channel = _fake_channel()
         with patch("app.conversations.api.ConversationRepository") as mock_repo_cls:
             mock_repo_cls.return_value.list_with_last_message = AsyncMock(
-                return_value=[(conversation, None)]
+                return_value=[(conversation, None, channel)]
             )
             response = await _list_conversations(token)
 
