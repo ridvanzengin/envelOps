@@ -313,28 +313,55 @@ Still empty routers, wired into `main.py` but with nothing behind them:
 
 ## 10. Frontend screens (Phase 1)
 
+A design-token system now backs the whole frontend (`frontend/src/index.css`
+— CSS variables for color/spacing/shadow, teal/blue accent, dark-default
+with a light toggle via `data-theme` on `<html>`, set pre-paint by an inline
+`index.html` script reading `localStorage` so there's no flash of the wrong
+theme). A persistent `Sidebar` (left) replaces the old flat `<nav>`, with
+`ThemeContext`/`useTheme` following the same 3-file split as the existing
+`AuthContext`/`useAuth`. Structurally modeled on a sibling project's mature
+frontend as a *reference only* (shared token/shell shape, not its domain
+features) — see that project's own docs if touching this area, the pattern
+isn't repeated here.
+
 - **Login** — real now: email/password against `POST /auth/login` (§9),
   token kept in `localStorage`, gates the whole app (single owner role,
   §2 — one gate is enough, no per-route permission model needed yet). The
   language switcher deliberately lives outside this gate (`App.tsx`), not
   inside the post-login nav — a Turkish-speaking owner needs it to read
   the login screen itself, not just the app after logging in (§7).
-- **Inbox** — real now: conversation list with a last-message preview on
-  the left, click one to load its full thread (`GET /conversations`,
-  `GET /conversations/{id}/messages`, §9) on the right. Two-pane, no
-  routing added for this — a single page managing which conversation is
-  selected as local state, same minimal-surface reasoning as everything
-  else in Phase 1's frontend.
-- **Escalation queue** — real now: lists `GET /escalations`, resolves via
-  `POST /escalations/{id}/resolve` (§9) with an optimistic-ish update (the
-  resolved row's response replaces it in place, no refetch). The primary
-  "action needed" screen, since auto-send is the default and escalations
-  are the one thing routinely waiting on a human.
+- **Conversations (right-side rail + panel, not a routed page)** — real
+  now, but no longer an "Inbox" nav item or route. A fixed icon rail on
+  the right (`ChannelRail`, one icon per channel type: Telegram, WhatsApp,
+  Facebook, Instagram, Email) is persistent across every authenticated
+  route. Only Telegram is real (the only channel actually built, §8) and
+  clickable — the rest render disabled/"coming soon", same convention as a
+  locked nav item. Clicking Telegram opens a sliding panel
+  (`ConversationPanel`) showing conversations as a list
+  (`GET /conversations`), then a conversation's full thread
+  (`GET /conversations/{id}/messages`) with direction-based bubble
+  alignment. The thread view is **read-only** — no reply input box, since
+  there's no backend capability yet for a human to send a message outside
+  the pipeline (see the pause-mode item in §11). No `channel_id` filtering
+  on the backend yet: every real conversation today is already Telegram,
+  so the Telegram icon just opens the existing full list.
+- **Escalations (folded into the same rail/panel, not a standalone page)**
+  — the old dedicated Escalation queue page and nav item are gone.
+  `GET /escalations` is instead fetched once at the app-shell level and
+  correlated by `conversation_id`, client-side, into: a pending-count badge
+  on the Telegram rail icon, an "Escalated" filter toggle in the
+  conversation list, and a Resolve action
+  (`POST /escalations/{id}/resolve`) inside a conversation's thread view
+  when it has a pending escalation. No backend change for any of this —
+  purely a client-side correlation of two already-existing endpoints. The
+  primary "action needed" surface, since auto-send is the default and
+  escalations are the one thing routinely waiting on a human.
 - **Knowledge sources** — real now: add (manual or url — pdf isn't built
   on the backend yet, §6, so there's no third form option), list with
   chunk counts, refresh (url only; no button shown for manual rows,
-  matching the backend's 400). Same fetch/update pattern as the
-  Escalation queue — in-place update on the response, no refetch.
+  matching the backend's 400). Same fetch/update pattern used for
+  escalation resolution (§10 above) — in-place update on the response, no
+  refetch.
 - **Settings** — partially real: the safety trigger phrase list (§5) is
   built — three static, translated category labels for the system
   defaults (disabled checkboxes, no edit/delete control, ever — there's
@@ -356,6 +383,14 @@ No drag-and-drop flow builder in Phase 1.
 
 ## 11. Open items carried forward (non-blocking, not designed yet)
 
+- **Human-paused conversations (pause AI replies, reply directly without
+  triggering an escalation)** — explicitly deferred out of the frontend
+  redesign that added the conversation panel (§10). A real new backend
+  feature: a second conversation-level pause mode alongside the existing
+  safety-floor escalation (§5), needing a `Conversation` mode field,
+  pause/resume + human-send endpoints, and a `process_incoming_message`
+  check to skip the AI while paused. Until this lands, the panel's thread
+  view stays read-only.
 - **`book_or_checkout` beyond a static link** — implemented and verified
   with a tenant-configured URL (`Tenant.closing_link`), which is enough for
   any business regardless of platform. A real Shopify/WooCommerce/Calendly
@@ -364,10 +399,6 @@ No drag-and-drop flow builder in Phase 1.
   ("live data connection... for platforms that support it"), not step 1 —
   correctly-sequenced-later work, not a gap, and needs a product decision
   on which connector(s) to build first, not just an engineering pass.
-- **Resuming a paused escalation** — the API side is built (`POST
-  /escalations/{id}/resolve`, §9, calling `resume_pipeline()`); the
-  "Escalation queue" screen (§10) that would actually call it is still
-  not built.
 - Channel failure behavior beyond the health-check stub — silent stop vs.
   detected fallback. Telegram (§8) doesn't have even a stub yet, only
   Beeper was ever planned to.

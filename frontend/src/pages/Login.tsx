@@ -28,7 +28,7 @@ export default function Login() {
   }
 
   return (
-    <section>
+    <section className="page">
       <h1>{t("auth.loginTitle")}</h1>
       <form onSubmit={(event) => void handleSubmit(event)}>
         <label>

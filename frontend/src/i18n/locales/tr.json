@@ -1,17 +1,35 @@
 {
   "nav": {
-    "inbox": "Gelen Kutusu",
-    "escalations": "Yükseltme Kuyruğu",
     "knowledge": "Bilgi Kaynakları",
     "settings": "Ayarlar",
     "dashboard": "Panel"
   },
   "pages": {
-    "inbox": "Konuşma listesi ve mesaj görünümü.",
-    "escalations": "İnsan onayı bekleyen konuşmalar — otomatik gönderim Faz 1 varsayılanı olduğu için birincil eylem ekranı.",
     "knowledge": "Bilgi kaynağı ekle (URL/PDF/manuel), listele ve yenile.",
     "settings": "Güvenlik tetikleyici ifadeleri (sistem varsayılanları kilitli, kendi ifadelerinizi aşağıya ekleyin). Kanal bağlantı durumu henüz burada gösterilmiyor.",
     "dashboard": "Bugünkü potansiyel müşteriler, bugünkü yükseltmeler, yanıt süreleri."
+  },
+  "theme": {
+    "toggle": "Temayı değiştir"
+  },
+  "channelRail": {
+    "telegram": "Telegram",
+    "whatsapp": "WhatsApp",
+    "facebook": "Facebook",
+    "instagram": "Instagram",
+    "email": "E-posta",
+    "comingSoon": "Yakında"
+  },
+  "conversationPanel": {
+    "back": "Geri",
+    "close": "Kapat",
+    "loading": "Konuşmalar yükleniyor…",
+    "empty": "Henüz konuşma yok.",
+    "loadError": "Konuşmalar yüklenemedi. Tekrar deneyin.",
+    "noMessages": "(mesaj yok)",
+    "threadLoading": "Mesajlar yükleniyor…",
+    "threadLoadError": "Bu konuşmanın mesajları yüklenemedi. Tekrar deneyin.",
+    "filterEscalated": "Yükseltilmiş"
   },
   "auth": {
     "loginTitle": "Giriş yap",
@@ -23,14 +41,7 @@
     "invalidCredentials": "E-posta veya şifre hatalı."
   },
   "escalations": {
-    "loading": "Yükseltmeler yükleniyor…",
-    "empty": "Yükseltme yok.",
-    "loadError": "Yükseltmeler yüklenemedi. Tekrar deneyin.",
     "resolveError": "Bu yükseltme çözülemedi. Tekrar deneyin.",
-    "reason": "Neden",
-    "layer": "Katman",
-    "status": "Durum",
-    "createdAt": "Oluşturulma",
     "resolve": "Çöz",
     "resolving": "Çözülüyor…"
   },
@@ -70,14 +81,5 @@
     "loading": "Tetikleyici ifadeler yükleniyor…",
     "empty": "Henüz eklenen ifade yok.",
     "loadError": "Tetikleyici ifadeler yüklenemedi. Tekrar deneyin."
-  },
-  "inbox": {
-    "loading": "Konuşmalar yükleniyor…",
-    "empty": "Henüz konuşma yok.",
-    "loadError": "Konuşmalar yüklenemedi. Tekrar deneyin.",
-    "noMessages": "(mesaj yok)",
-    "selectAConversation": "Mesajlarını görmek için bir konuşma seçin.",
-    "threadLoading": "Mesajlar yükleniyor…",
-    "threadLoadError": "Bu konuşmanın mesajları yüklenemedi. Tekrar deneyin."
   }
 }

@@ -1,17 +1,120 @@
-nav {
-  display: flex;
-  gap: 1rem;
-  align-items: center;
-  padding: 1rem;
-  border-bottom: 1px solid #ddd;
-}
-
-.app-language-bar {
+.app-topbar {
+  flex-shrink: 0;
   display: flex;
   justify-content: flex-end;
-  padding: 0.5rem 1rem 0;
+  align-items: center;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg);
 }
 
-main {
-  padding: 1rem;
+.language-switcher {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text);
+}
+
+.language-switcher__icon {
+  width: 16px;
+  height: 16px;
+}
+
+.language-switcher select {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text-h);
+  font: inherit;
+  font-size: 13px;
+  padding: 3px 6px;
+}
+
+.app-shell { display: flex; flex: 1; min-height: 0; overflow: hidden; }
+.app-content { flex: 1; min-width: 0; overflow-y: auto; }
+.page { width: 100%; padding: 32px 24px; box-sizing: border-box; }
+.page__header { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 4px; }
+.page__description { color: var(--text); margin-bottom: 24px; }
+
+.button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 16px;
+  text-decoration: none;
+  color: var(--text-h);
+  background: var(--bg);
+  cursor: pointer;
+  font: inherit;
+  font-weight: 500;
+  font-size: 14px;
+}
+
+.button:hover {
+  background: var(--bg-subtle);
+}
+
+.button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.button--primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: white;
+}
+
+.button--primary:hover:not(:disabled) {
+  background: var(--accent-h);
+  border-color: var(--accent-h);
+}
+
+.button--danger {
+  color: var(--danger);
+  border-color: var(--border);
+}
+
+.button--danger:hover:not(:disabled) {
+  background: var(--danger-bg);
+  border-color: var(--danger);
+}
+
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  background: var(--bg-subtle);
+  color: var(--text);
+}
+
+.status-badge::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: currentColor;
+}
+
+.status-badge--pending {
+  color: var(--danger);
+  background: var(--danger-bg);
+}
+
+.status-badge--resolved {
+  color: var(--success);
+  background: var(--success-bg);
+}
+
+.status-badge--open {
+  color: var(--accent-h);
+  background: var(--accent-bg);
 }

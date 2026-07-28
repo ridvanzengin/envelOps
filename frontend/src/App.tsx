@@ -1,12 +1,16 @@
 import { useTranslation } from "react-i18next";
-import { NavLink, Route, BrowserRouter as Router, Routes } from "react-router-dom";
+import { Route, BrowserRouter as Router, Routes } from "react-router-dom";
 
 import "./App.css";
 import { AuthProvider } from "./auth/AuthContext";
 import { useAuth } from "./auth/useAuth";
+import { ChannelRail } from "./components/ChannelRail";
+import { ConversationPanel } from "./components/ConversationPanel";
+import { GlobeIcon } from "./components/icons";
+import { Sidebar } from "./components/Sidebar";
+import { ConversationPanelProvider } from "./context/conversationPanel/ConversationPanelContext";
+import { ThemeProvider } from "./context/theme/ThemeContext";
 import Dashboard from "./pages/Dashboard";
-import EscalationQueue from "./pages/EscalationQueue";
-import Inbox from "./pages/Inbox";
 import KnowledgeSources from "./pages/KnowledgeSources";
 import Login from "./pages/Login";
 import Settings from "./pages/Settings";
@@ -14,19 +18,21 @@ import Settings from "./pages/Settings";
 function LanguageSwitcher() {
   const { i18n } = useTranslation();
   return (
-    <select
-      value={i18n.resolvedLanguage}
-      onChange={(e) => void i18n.changeLanguage(e.target.value)}
-      aria-label="Language"
-    >
-      <option value="en">EN</option>
-      <option value="tr">TR</option>
-    </select>
+    <label className="language-switcher">
+      <GlobeIcon className="language-switcher__icon" />
+      <select
+        value={i18n.resolvedLanguage}
+        onChange={(e) => void i18n.changeLanguage(e.target.value)}
+        aria-label="Language"
+      >
+        <option value="en">EN</option>
+        <option value="tr">TR</option>
+      </select>
+    </label>
   );
 }
 
 function AppShell() {
-  const { t } = useTranslation();
   const { token, logout } = useAuth();
 
   // Single "owner" role, Phase 1 (docs/ARCHITECTURE.md §2) -- one gate for
@@ -40,37 +46,34 @@ function AppShell() {
   }
 
   return (
-    <Router>
-      <nav>
-        <NavLink to="/">{t("nav.inbox")}</NavLink>
-        <NavLink to="/escalations">{t("nav.escalations")}</NavLink>
-        <NavLink to="/knowledge">{t("nav.knowledge")}</NavLink>
-        <NavLink to="/settings">{t("nav.settings")}</NavLink>
-        <NavLink to="/dashboard">{t("nav.dashboard")}</NavLink>
-        <button type="button" onClick={logout}>
-          {t("auth.logout")}
-        </button>
-      </nav>
-      <main>
-        <Routes>
-          <Route path="/" element={<Inbox />} />
-          <Route path="/escalations" element={<EscalationQueue />} />
-          <Route path="/knowledge" element={<KnowledgeSources />} />
-          <Route path="/settings" element={<Settings />} />
-          <Route path="/dashboard" element={<Dashboard />} />
-        </Routes>
-      </main>
-    </Router>
+    <ConversationPanelProvider>
+      <Router>
+        <div className="app-shell">
+          <Sidebar onLogout={logout} />
+          <div className="app-content">
+            <Routes>
+              <Route path="/" element={<Dashboard />} />
+              <Route path="/knowledge" element={<KnowledgeSources />} />
+              <Route path="/settings" element={<Settings />} />
+            </Routes>
+          </div>
+          <ConversationPanel />
+          <ChannelRail />
+        </div>
+      </Router>
+    </ConversationPanelProvider>
   );
 }
 
 export default function App() {
   return (
-    <AuthProvider>
-      <div className="app-language-bar">
-        <LanguageSwitcher />
-      </div>
-      <AppShell />
-    </AuthProvider>
+    <ThemeProvider>
+      <AuthProvider>
+        <div className="app-topbar">
+          <LanguageSwitcher />
+        </div>
+        <AppShell />
+      </AuthProvider>
+    </ThemeProvider>
   );
 }
