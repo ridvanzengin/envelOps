@@ -43,25 +43,25 @@
     "send": "Send",
     "sending": "Sending…",
     "sendError": "Couldn't send this message. Try again.",
-    "escalatedNotice": "This message was escalated for human review: {{reason}}",
-    "diagnostics": {
-      "intent": {
-        "knowledge_question": "Knowledge question",
-        "purchase_intent": "Purchase intent",
-        "complaint_or_problem": "Complaint/problem",
-        "small_talk": "Small talk",
-        "other": "Other"
-      },
-      "score": {
-        "hot": "Hot",
-        "warm": "Warm",
-        "cold": "Cold"
-      },
-      "decision": {
-        "keep_chatting": "Keep chatting",
-        "escalate_to_human": "Escalate to human",
-        "book_or_checkout": "Book/checkout"
-      }
+    "escalatedNotice": "This message was escalated for human review: {{reason}}"
+  },
+  "diagnostics": {
+    "intent": {
+      "knowledge_question": "Knowledge question",
+      "purchase_intent": "Purchase intent",
+      "complaint_or_problem": "Complaint/problem",
+      "small_talk": "Small talk",
+      "other": "Other"
+    },
+    "score": {
+      "hot": "Hot",
+      "warm": "Warm",
+      "cold": "Cold"
+    },
+    "decision": {
+      "keep_chatting": "Keep chatting",
+      "escalate_to_human": "Escalate to human",
+      "book_or_checkout": "Book/checkout"
     }
   },
   "conversationPanel": {

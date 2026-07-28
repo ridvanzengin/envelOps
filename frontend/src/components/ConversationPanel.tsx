@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { useConversationPanel } from "../context/conversationPanel/useConversationPanel";
+import { DiagnosticsBadges } from "./DiagnosticsBadges";
 import { ChevronLeftIcon, CheckIcon, SendIcon } from "./icons";
 import { MessageThread } from "./MessageThread";
 import { StatusBadge } from "./StatusBadge";
@@ -167,6 +168,15 @@ export function ConversationPanel() {
                         <StatusBadge status={conversation.status} />
                       </span>
                     </div>
+                    {(conversation.detected_intent || conversation.lead_score) && (
+                      <DiagnosticsBadges
+                        diagnostics={{
+                          detected_intent: conversation.detected_intent,
+                          lead_score: conversation.lead_score,
+                          decision: null,
+                        }}
+                      />
+                    )}
                     <div className="conversation-panel__row-preview">
                       {conversation.last_message_text ?? t("conversationPanel.noMessages")}
                     </div>

@@ -43,25 +43,25 @@
     "send": "Gönder",
     "sending": "Gönderiliyor…",
     "sendError": "Bu mesaj gönderilemedi. Tekrar deneyin.",
-    "escalatedNotice": "Bu mesaj insan incelemesi için yükseltildi: {{reason}}",
-    "diagnostics": {
-      "intent": {
-        "knowledge_question": "Bilgi sorusu",
-        "purchase_intent": "Satın alma niyeti",
-        "complaint_or_problem": "Şikayet/sorun",
-        "small_talk": "Sohbet",
-        "other": "Diğer"
-      },
-      "score": {
-        "hot": "Sıcak",
-        "warm": "Ilık",
-        "cold": "Soğuk"
-      },
-      "decision": {
-        "keep_chatting": "Sohbete devam",
-        "escalate_to_human": "İnsana yükselt",
-        "book_or_checkout": "Rezervasyon/ödeme"
-      }
+    "escalatedNotice": "Bu mesaj insan incelemesi için yükseltildi: {{reason}}"
+  },
+  "diagnostics": {
+    "intent": {
+      "knowledge_question": "Bilgi sorusu",
+      "purchase_intent": "Satın alma niyeti",
+      "complaint_or_problem": "Şikayet/sorun",
+      "small_talk": "Sohbet",
+      "other": "Diğer"
+    },
+    "score": {
+      "hot": "Sıcak",
+      "warm": "Ilık",
+      "cold": "Soğuk"
+    },
+    "decision": {
+      "keep_chatting": "Sohbete devam",
+      "escalate_to_human": "İnsana yükselt",
+      "book_or_checkout": "Rezervasyon/ödeme"
     }
   },
   "conversationPanel": {

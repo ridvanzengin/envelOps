@@ -52,7 +52,7 @@ async def telegram_webhook(
         )
 
     message_repo = MessageRepository(session)
-    await message_repo.add(
+    inbound_message = await message_repo.add(
         Message(
             tenant_id=channel.tenant_id,
             conversation_id=conversation.id,
@@ -70,6 +70,7 @@ async def telegram_webhook(
         str(channel.tenant_id),
         str(conversation.id),
         str(channel.id),
+        str(inbound_message.id),
         update.message.text,
     )
 

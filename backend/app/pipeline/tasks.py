@@ -21,6 +21,7 @@ from app.core.celery_app import celery_app
 from app.core.config import settings
 from app.core.db import async_session
 from app.core.llm import generate_text
+from app.pipeline.repository import PipelineTraceRepository
 from app.pipeline.runner import get_checkpointer, run_pipeline
 from app.pipeline.state import PipelineState
 
@@ -29,13 +30,18 @@ logger = logging.getLogger(__name__)
 
 @celery_app.task(name="process_incoming_message")
 def process_incoming_message(
-    tenant_id: str, conversation_id: str, channel_id: str, incoming_text: str
+    tenant_id: str,
+    conversation_id: str,
+    channel_id: str,
+    message_id: str,
+    incoming_text: str,
 ) -> None:
     asyncio.run(
         _process_incoming_message(
             uuid.UUID(tenant_id),
             uuid.UUID(conversation_id),
             uuid.UUID(channel_id),
+            uuid.UUID(message_id),
             incoming_text,
         )
     )
@@ -45,6 +51,7 @@ async def _process_incoming_message(
     tenant_id: uuid.UUID,
     conversation_id: uuid.UUID,
     channel_id: uuid.UUID,
+    message_id: uuid.UUID,
     incoming_text: str,
 ) -> None:
     async with async_session() as session:
@@ -62,6 +69,14 @@ async def _process_incoming_message(
         )
         async with get_checkpointer() as checkpointer:
             result = await run_pipeline(state, session, checkpointer)
+
+        # Written for both branches below (including the escalated
+        # early-return) -- the rail's intent/lead-score badges
+        # (docs/ROADMAP.md §3.3) need this regardless of whether the
+        # pipeline replied or paused.
+        await PipelineTraceRepository(session).record_result(
+            tenant_id, conversation_id, message_id, result
+        )
 
         if "__interrupt__" in result:
             # decide_next_step already logged the Escalation before this

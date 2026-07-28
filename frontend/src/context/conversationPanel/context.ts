@@ -1,5 +1,15 @@
 import { createContext } from "react";
 
+// Latest pipeline_traces row for a message/conversation (docs/ROADMAP.md
+// §3.3/§3.4) -- `decision` is only ever populated per-message
+// (MessageThread/Test Console); the rail's per-conversation row
+// (ConversationPanel) only has intent+lead-score to show.
+export interface MessageDiagnostics {
+  detected_intent: string | null;
+  lead_score: string | null;
+  decision: string | null;
+}
+
 export interface Conversation {
   id: string;
   external_contact_id: string;
@@ -8,15 +18,8 @@ export interface Conversation {
   last_message_at: string | null;
   channel_type: string;
   is_test: boolean;
-}
-
-// Only ever populated for Test Console messages (docs/ROADMAP.md §3.4) --
-// a real channel's messages never carry this, so MessageThread's rendering
-// of it is a no-op for ConversationPanel.
-export interface MessageDiagnostics {
   detected_intent: string | null;
   lead_score: string | null;
-  decision: string | null;
 }
 
 export interface Message {

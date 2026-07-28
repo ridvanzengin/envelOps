@@ -1,6 +1,5 @@
-import { useTranslation } from "react-i18next";
-
-import type { Message, MessageDiagnostics } from "../context/conversationPanel/context";
+import type { Message } from "../context/conversationPanel/context";
+import { DiagnosticsBadges } from "./DiagnosticsBadges";
 
 // Shared between ConversationPanel's thread view and TestConsole -- both
 // need identical direction-based bubble rendering, just fed from a
@@ -23,45 +22,5 @@ export function MessageThread({ messages }: { messages: Message[] }) {
         </li>
       ))}
     </ul>
-  );
-}
-
-// Test Console only (docs/ROADMAP.md §3.4) -- surfaces the pipeline's own
-// reasoning for this inbound message (intent/lead score/next-step
-// decision) so the tenant owner can debug why the AI replied the way it
-// did, message by message, not just read the final reply.
-function DiagnosticsBadges({ diagnostics }: { diagnostics: MessageDiagnostics }) {
-  const { t } = useTranslation();
-  return (
-    <div className="message-diagnostics">
-      {diagnostics.detected_intent && (
-        <span className="message-diagnostics__badge">
-          {t(
-            `testConsole.diagnostics.intent.${diagnostics.detected_intent}`,
-            diagnostics.detected_intent,
-          )}
-        </span>
-      )}
-      {diagnostics.lead_score && (
-        <span
-          className={`message-diagnostics__badge message-diagnostics__badge--score-${diagnostics.lead_score}`}
-        >
-          {t(
-            `testConsole.diagnostics.score.${diagnostics.lead_score}`,
-            diagnostics.lead_score,
-          )}
-        </span>
-      )}
-      {diagnostics.decision && (
-        <span
-          className={`message-diagnostics__badge message-diagnostics__badge--decision-${diagnostics.decision}`}
-        >
-          {t(
-            `testConsole.diagnostics.decision.${diagnostics.decision}`,
-            diagnostics.decision,
-          )}
-        </span>
-      )}
-    </div>
   );
 }

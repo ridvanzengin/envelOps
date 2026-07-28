@@ -28,12 +28,19 @@ def test_process_incoming_message_parses_uuids_and_delegates() -> None:
     tenant_id = uuid.uuid4()
     conversation_id = uuid.uuid4()
     channel_id = uuid.uuid4()
+    message_id = uuid.uuid4()
     mock_inner = AsyncMock()
     with patch("app.pipeline.tasks._process_incoming_message", mock_inner):
         process_incoming_message(
-            str(tenant_id), str(conversation_id), str(channel_id), "hello"
+            str(tenant_id),
+            str(conversation_id),
+            str(channel_id),
+            str(message_id),
+            "hello",
         )
-    mock_inner.assert_called_once_with(tenant_id, conversation_id, channel_id, "hello")
+    mock_inner.assert_called_once_with(
+        tenant_id, conversation_id, channel_id, message_id, "hello"
+    )
 
 
 class TestProcessIncomingMessageAsync:
@@ -50,18 +57,27 @@ class TestProcessIncomingMessageAsync:
             ),
             patch("app.pipeline.tasks.MessageRepository") as mock_message_repo_cls,
             patch("app.pipeline.tasks.ChannelRepository") as mock_channel_repo_cls,
+            patch("app.pipeline.tasks.PipelineTraceRepository") as mock_trace_repo_cls,
             patch("app.pipeline.tasks.send_message") as mock_send,
         ):
             mock_channel_repo_cls.return_value.get = AsyncMock(return_value=None)
+            mock_trace_repo_cls.return_value.record_result = AsyncMock()
+            message_id = uuid.uuid4()
             await _process_incoming_message(
                 uuid.uuid4(),
                 uuid.uuid4(),
                 uuid.uuid4(),
+                message_id,
                 "Can you guarantee this cures allergies?",
             )
 
         mock_message_repo_cls.return_value.add.assert_not_called()
         mock_send.assert_not_called()
+        # Diagnostics are still recorded for an escalated/interrupted run --
+        # the rail's badges (docs/ROADMAP.md §3.3) shouldn't go blank just
+        # because the pipeline paused instead of replying.
+        mock_trace_repo_cls.return_value.record_result.assert_called_once()
+        assert mock_trace_repo_cls.return_value.record_result.call_args.args[2] == message_id
         session.commit.assert_called_once()
 
     async def test_sends_reply_and_logs_outbound_message(self) -> None:
@@ -83,15 +99,21 @@ class TestProcessIncomingMessageAsync:
             patch("app.pipeline.tasks.MessageRepository") as mock_message_repo_cls,
             patch("app.pipeline.tasks.ConversationRepository") as mock_conv_repo_cls,
             patch("app.pipeline.tasks.ChannelRepository") as mock_channel_repo_cls,
+            patch("app.pipeline.tasks.PipelineTraceRepository") as mock_trace_repo_cls,
             patch("app.pipeline.tasks.send_message") as mock_send,
         ):
             mock_message_repo_cls.return_value.add = AsyncMock()
             mock_conv_repo_cls.return_value.get = AsyncMock(return_value=conversation)
             mock_channel_repo_cls.return_value.get = AsyncMock(return_value=channel)
+            mock_trace_repo_cls.return_value.record_result = AsyncMock()
             mock_send.return_value = None
 
             await _process_incoming_message(
-                uuid.uuid4(), uuid.uuid4(), uuid.uuid4(), "Do you ship internationally?"
+                uuid.uuid4(),
+                uuid.uuid4(),
+                uuid.uuid4(),
+                uuid.uuid4(),
+                "Do you ship internationally?",
             )
 
         mock_message_repo_cls.return_value.add.assert_called_once()
@@ -99,6 +121,7 @@ class TestProcessIncomingMessageAsync:
         assert logged.direction == "outbound"
         assert logged.text == "Sure!"
         mock_send.assert_called_once_with("test-bot-token", "999", "Sure!")
+        mock_trace_repo_cls.return_value.record_result.assert_called_once()
         session.commit.assert_called_once()
 
     async def test_delivery_failure_does_not_raise_or_block_commit(self) -> None:
@@ -120,6 +143,7 @@ class TestProcessIncomingMessageAsync:
             patch("app.pipeline.tasks.MessageRepository") as mock_message_repo_cls,
             patch("app.pipeline.tasks.ConversationRepository") as mock_conv_repo_cls,
             patch("app.pipeline.tasks.ChannelRepository") as mock_channel_repo_cls,
+            patch("app.pipeline.tasks.PipelineTraceRepository") as mock_trace_repo_cls,
             patch(
                 "app.pipeline.tasks.send_message",
                 AsyncMock(side_effect=ConnectionError("boom")),
@@ -128,9 +152,14 @@ class TestProcessIncomingMessageAsync:
             mock_message_repo_cls.return_value.add = AsyncMock()
             mock_conv_repo_cls.return_value.get = AsyncMock(return_value=conversation)
             mock_channel_repo_cls.return_value.get = AsyncMock(return_value=channel)
+            mock_trace_repo_cls.return_value.record_result = AsyncMock()
 
             await _process_incoming_message(
-                uuid.uuid4(), uuid.uuid4(), uuid.uuid4(), "Do you ship internationally?"
+                uuid.uuid4(),
+                uuid.uuid4(),
+                uuid.uuid4(),
+                uuid.uuid4(),
+                "Do you ship internationally?",
             )
 
         # Didn't raise (test reaching here proves it), and the DB write
@@ -156,14 +185,20 @@ class TestProcessIncomingMessageAsync:
             patch("app.pipeline.tasks.MessageRepository") as mock_message_repo_cls,
             patch("app.pipeline.tasks.ConversationRepository") as mock_conv_repo_cls,
             patch("app.pipeline.tasks.ChannelRepository") as mock_channel_repo_cls,
+            patch("app.pipeline.tasks.PipelineTraceRepository") as mock_trace_repo_cls,
             patch("app.pipeline.tasks.send_message") as mock_send,
         ):
             mock_message_repo_cls.return_value.add = AsyncMock()
             mock_conv_repo_cls.return_value.get = AsyncMock(return_value=conversation)
             mock_channel_repo_cls.return_value.get = AsyncMock(return_value=channel)
+            mock_trace_repo_cls.return_value.record_result = AsyncMock()
 
             await _process_incoming_message(
-                uuid.uuid4(), uuid.uuid4(), uuid.uuid4(), "Do you ship internationally?"
+                uuid.uuid4(),
+                uuid.uuid4(),
+                uuid.uuid4(),
+                uuid.uuid4(),
+                "Do you ship internationally?",
             )
 
         mock_send.assert_not_called()

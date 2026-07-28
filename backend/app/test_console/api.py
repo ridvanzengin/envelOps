@@ -226,18 +226,8 @@ async def send_test_message(
     # (_list_messages_with_diagnostics) so the per-message reasoning
     # (docs/ROADMAP.md §3.4) survives a platform switch/page reload, not
     # just the message just sent.
-    await PipelineTraceRepository(session).add(
-        PipelineTrace(
-            tenant_id=current_user.tenant_id,
-            conversation_id=conversation.id,
-            message_id=inbound_message.id,
-            step="result",
-            state={
-                "detected_intent": result.get("detected_intent"),
-                "lead_score": result.get("lead_score"),
-                "decision": result.get("decision"),
-            },
-        )
+    await PipelineTraceRepository(session).record_result(
+        current_user.tenant_id, conversation.id, inbound_message.id, result
     )
     await session.commit()
 

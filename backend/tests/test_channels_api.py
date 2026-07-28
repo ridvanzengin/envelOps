@@ -97,6 +97,8 @@ class TestTelegramWebhookHandling:
         channel = _fake_channel()
         new_conversation = MagicMock()
         new_conversation.id = uuid.uuid4()
+        inbound_message = MagicMock()
+        inbound_message.id = uuid.uuid4()
         with (
             patch("app.channels.api.ChannelRepository") as mock_channel_repo_cls,
             patch("app.channels.api.ConversationRepository") as mock_conv_repo_cls,
@@ -110,7 +112,7 @@ class TestTelegramWebhookHandling:
                 return_value=None
             )
             mock_conv_repo_cls.return_value.add = AsyncMock(return_value=new_conversation)
-            mock_message_repo_cls.return_value.add = AsyncMock()
+            mock_message_repo_cls.return_value.add = AsyncMock(return_value=inbound_message)
 
             response = await _post_update(channel.id, _TEXT_UPDATE, "test-secret")
 
@@ -127,6 +129,7 @@ class TestTelegramWebhookHandling:
             str(channel.tenant_id),
             str(new_conversation.id),
             str(channel.id),
+            str(inbound_message.id),
             "Do you ship internationally?",
         )
 
@@ -134,6 +137,8 @@ class TestTelegramWebhookHandling:
         channel = _fake_channel()
         existing_conversation = MagicMock()
         existing_conversation.id = uuid.uuid4()
+        inbound_message = MagicMock()
+        inbound_message.id = uuid.uuid4()
         with (
             patch("app.channels.api.ChannelRepository") as mock_channel_repo_cls,
             patch("app.channels.api.ConversationRepository") as mock_conv_repo_cls,
@@ -146,7 +151,7 @@ class TestTelegramWebhookHandling:
             mock_conv_repo_cls.return_value.get_by_external_contact = AsyncMock(
                 return_value=existing_conversation
             )
-            mock_message_repo_cls.return_value.add = AsyncMock()
+            mock_message_repo_cls.return_value.add = AsyncMock(return_value=inbound_message)
 
             await _post_update(channel.id, _TEXT_UPDATE, "test-secret")
 
@@ -155,5 +160,6 @@ class TestTelegramWebhookHandling:
             str(channel.tenant_id),
             str(existing_conversation.id),
             str(channel.id),
+            str(inbound_message.id),
             "Do you ship internationally?",
         )

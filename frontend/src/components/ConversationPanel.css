@@ -233,15 +233,16 @@
   border: 1px solid var(--accent-border);
 }
 
-/* Test Console only (docs/ROADMAP.md §3.4) -- per-message pipeline
-   reasoning badges, rendered above the bubble they describe. */
-.message-diagnostics {
+/* Pipeline reasoning badges (docs/ROADMAP.md §3.3/§3.4) -- used both above
+   a Test Console message bubble (MessageThread) and on a conversation's
+   row in the rail's list (ConversationPanel). */
+.diagnostics-badges {
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
 }
 
-.message-diagnostics__badge {
+.diagnostics-badge {
   display: inline-flex;
   align-items: center;
   padding: 1px 7px;
@@ -255,21 +256,21 @@
   border: 1px solid var(--border);
 }
 
-.message-diagnostics__badge--score-warm,
-.message-diagnostics__badge--decision-keep_chatting {
+.diagnostics-badge--score-warm,
+.diagnostics-badge--decision-keep_chatting {
   background: var(--accent-bg);
   color: var(--accent-h);
   border-color: var(--accent-border);
 }
 
-.message-diagnostics__badge--score-hot,
-.message-diagnostics__badge--decision-escalate_to_human {
+.diagnostics-badge--score-hot,
+.diagnostics-badge--decision-escalate_to_human {
   background: var(--danger-bg);
   color: var(--danger);
   border-color: var(--danger);
 }
 
-.message-diagnostics__badge--decision-book_or_checkout {
+.diagnostics-badge--decision-book_or_checkout {
   background: var(--success-bg);
   color: var(--success);
   border-color: var(--success);

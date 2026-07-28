@@ -32,6 +32,14 @@ def _fake_message(**overrides: object) -> MagicMock:
     return message
 
 
+def _fake_trace(**overrides: object) -> MagicMock:
+    trace = MagicMock()
+    trace.state = {"detected_intent": "purchase_intent", "lead_score": "hot"}
+    for key, value in overrides.items():
+        setattr(trace, key, value)
+    return trace
+
+
 def _fake_channel(**overrides: object) -> MagicMock:
     channel = MagicMock()
     channel.type = "telegram"
@@ -79,9 +87,15 @@ class TestListConversations:
         conversation = _fake_conversation(tenant_id)
         message = _fake_message(text="Yes, we ship worldwide!")
         channel = _fake_channel()
-        with patch("app.conversations.api.ConversationRepository") as mock_repo_cls:
+        with (
+            patch("app.conversations.api.ConversationRepository") as mock_repo_cls,
+            patch("app.conversations.api.PipelineTraceRepository") as mock_trace_repo_cls,
+        ):
             mock_repo_cls.return_value.list_with_last_message = AsyncMock(
                 return_value=[(conversation, message, channel)]
+            )
+            mock_trace_repo_cls.return_value.get_latest_by_conversation_ids = AsyncMock(
+                return_value={}
             )
             response = await _list_conversations(token)
 
@@ -92,6 +106,8 @@ class TestListConversations:
         assert body[0]["last_message_text"] == "Yes, we ship worldwide!"
         assert body[0]["channel_type"] == "telegram"
         assert body[0]["is_test"] is False
+        assert body[0]["detected_intent"] is None
+        assert body[0]["lead_score"] is None
         mock_repo_cls.return_value.list_with_last_message.assert_called_once_with(
             tenant_id, None
         )
@@ -101,9 +117,15 @@ class TestListConversations:
         token = _token(tenant_id)
         conversation = _fake_conversation(tenant_id)
         channel = _fake_channel()
-        with patch("app.conversations.api.ConversationRepository") as mock_repo_cls:
+        with (
+            patch("app.conversations.api.ConversationRepository") as mock_repo_cls,
+            patch("app.conversations.api.PipelineTraceRepository") as mock_trace_repo_cls,
+        ):
             mock_repo_cls.return_value.list_with_last_message = AsyncMock(
                 return_value=[(conversation, None, channel)]
+            )
+            mock_trace_repo_cls.return_value.get_latest_by_conversation_ids = AsyncMock(
+                return_value={}
             )
             response = await _list_conversations(token)
 
@@ -111,6 +133,32 @@ class TestListConversations:
         body = response.json()
         assert body[0]["last_message_text"] is None
         assert body[0]["last_message_at"] is None
+
+    async def test_includes_latest_intent_and_lead_score_from_pipeline_trace(self) -> None:
+        tenant_id = uuid.uuid4()
+        token = _token(tenant_id)
+        conversation = _fake_conversation(tenant_id)
+        channel = _fake_channel()
+        trace = _fake_trace()
+        with (
+            patch("app.conversations.api.ConversationRepository") as mock_repo_cls,
+            patch("app.conversations.api.PipelineTraceRepository") as mock_trace_repo_cls,
+        ):
+            mock_repo_cls.return_value.list_with_last_message = AsyncMock(
+                return_value=[(conversation, None, channel)]
+            )
+            mock_trace_repo_cls.return_value.get_latest_by_conversation_ids = AsyncMock(
+                return_value={conversation.id: trace}
+            )
+            response = await _list_conversations(token)
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body[0]["detected_intent"] == "purchase_intent"
+        assert body[0]["lead_score"] == "hot"
+        mock_trace_repo_cls.return_value.get_latest_by_conversation_ids.assert_called_once_with(
+            tenant_id, [conversation.id]
+        )
 
 
 class TestListMessages:

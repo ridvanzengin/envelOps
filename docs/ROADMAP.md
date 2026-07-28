@@ -89,10 +89,33 @@ in context — i.e. it depends on §2's conversation-history gap. Don't build
 this ahead of at least minimal history threading, or the model will
 re-ask blindly / lose track of its own question.
 
-### 3.3 Intent/lead-score badges on the conversation rail
+### 3.3 Intent/lead-score badges on the conversation rail — done (2026-07-28)
 Show intent classification and lead score as badges/colors directly on
 the ChannelRail conversation list, updating live as a conversation
 progresses (not just inside a single conversation's thread).
+
+**Built:** `pipeline_traces` is now also written from the *real* channel
+path, not just Test Console — `pipeline/tasks.py`'s
+`process_incoming_message` calls the same new
+`PipelineTraceRepository.record_result` helper §3.4 introduced (the
+inbound message's id is threaded through from `channels/api.py`'s webhook
+handler, a new `message_id` argument on the Celery task). A new
+`PipelineTraceRepository.get_latest_by_conversation_ids` fetches one
+latest-trace-per-conversation in a single query; `GET /conversations`
+joins it in as `detected_intent`/`lead_score` fields on
+`ConversationResponse`. Frontend: `DiagnosticsBadges` (extracted out of
+`MessageThread` into its own shared component) renders on each
+conversation row in `ConversationPanel`'s list, same badge styling as
+the per-message ones. Verified live: rows show e.g. "Purchase intent" /
+"Hot" in red, "Small talk" / "Cold" elsewhere, matching each
+conversation's latest message.
+
+**Explicitly not live-push yet** — badges are only as fresh as the last
+`GET /conversations` fetch (same as every other field on that list right
+now: status, last-message preview, escalation counts). Actually pushing
+updates as new messages arrive is §3.5's SSE work, not this one; don't
+conflate "the data is now there" with "it updates live" when reading this
+entry later.
 
 ### 3.4 Per-message pipeline diagnostics in Test Console — done (2026-07-28)
 For debugging/experimentation: show intent classification, lead score,
@@ -148,15 +171,19 @@ sibling project `iotops-workspace` already has a working SSE
 implementation to use as a reference rather than designing from scratch.
 
 ### Recommended sequencing (proposed, not yet agreed)
-1. **§3.4** (Test Console diagnostics) — contained, no behavior change,
-   immediately useful for §2.1's outstanding bug.
-2. **§3.3** (rail badges) — reuses the same backend fields §3.4 exposes.
-3. **§3.5** (SSE) — infra step, unblocks "live" feeling for both of the
-   above; crib from iotops-workspace's implementation.
-4. **§3.1** (escalation cover message + internal note bubble) — its own
+1. ~~§3.4 (Test Console diagnostics)~~ — done.
+2. ~~§3.3 (rail badges)~~ — done.
+3. **§2 (conversation-history threading)** — user-flagged 2026-07-28:
+   further pipeline-behavior testing/tuning has limited value while every
+   message is still evaluated in total isolation, so this is the next
+   thing worth designing, ahead of more Test-Console-driven debugging.
+   Also unblocks §3.2.
+4. **§3.5** (SSE) — infra step, unblocks "live" feeling for §3.3/§3.4's
+   badges; crib from iotops-workspace's implementation. Independent of
+   §2, can slot in before or after it.
+5. **§3.1** (escalation cover message + internal note bubble) — its own
    design pass (message visibility model + pipeline change).
-5. **§3.2** (clarifying question) — blocked on §2's conversation-history
-   work; do that first or build it alongside.
+6. **§3.2** (clarifying question) — blocked on §2, do after it.
 
 ## 4. Other open items carried from ARCHITECTURE.md
 
