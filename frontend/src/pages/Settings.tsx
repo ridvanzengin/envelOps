@@ -76,7 +76,7 @@ export default function Settings() {
   }
 
   return (
-    <section>
+    <section className="page">
       <h1>{t("nav.settings")}</h1>
       <p>{t("pages.settings")}</p>
 

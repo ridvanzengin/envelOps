@@ -1,17 +1,43 @@
 {
   "nav": {
-    "inbox": "Inbox",
-    "escalations": "Escalation queue",
     "knowledge": "Knowledge sources",
     "settings": "Settings",
     "dashboard": "Dashboard"
   },
   "pages": {
-    "inbox": "Conversation list and thread view.",
-    "escalations": "Conversations waiting on a human — the primary action screen, since auto-send is the Phase 1 default.",
     "knowledge": "Add (URL/PDF/manual), list, and refresh knowledge sources.",
     "settings": "Safety trigger phrases (system defaults locked, add your own below). Channel connection status isn't shown here yet.",
     "dashboard": "Leads today, escalations today, response times."
+  },
+  "theme": {
+    "light": "Light theme",
+    "dark": "Dark theme"
+  },
+  "menu": {
+    "language": "Language",
+    "theme": "Theme"
+  },
+  "channelRail": {
+    "telegram": "Telegram",
+    "whatsapp": "WhatsApp",
+    "facebook": "Facebook",
+    "instagram": "Instagram",
+    "email": "Email",
+    "comingSoon": "Coming soon",
+    "menu": "Account menu"
+  },
+  "conversationPanel": {
+    "back": "Back",
+    "close": "Close",
+    "loading": "Loading conversations…",
+    "empty": "No conversations yet.",
+    "loadError": "Couldn't load conversations. Try again.",
+    "noMessages": "(no messages)",
+    "threadLoading": "Loading messages…",
+    "threadLoadError": "Couldn't load this conversation's messages. Try again.",
+    "filterEscalated": "Escalated",
+    "replyPlaceholder": "Type a reply…",
+    "replyDisabledHint": "Sending replies isn't available yet"
   },
   "auth": {
     "loginTitle": "Log in",
@@ -23,14 +49,7 @@
     "invalidCredentials": "Invalid email or password."
   },
   "escalations": {
-    "loading": "Loading escalations…",
-    "empty": "No escalations.",
-    "loadError": "Couldn't load escalations. Try again.",
     "resolveError": "Couldn't resolve this escalation. Try again.",
-    "reason": "Reason",
-    "layer": "Layer",
-    "status": "Status",
-    "createdAt": "Created",
     "resolve": "Resolve",
     "resolving": "Resolving…"
   },
@@ -70,14 +89,5 @@
     "loading": "Loading trigger phrases…",
     "empty": "No added phrases yet.",
     "loadError": "Couldn't load trigger phrases. Try again."
-  },
-  "inbox": {
-    "loading": "Loading conversations…",
-    "empty": "No conversations yet.",
-    "loadError": "Couldn't load conversations. Try again.",
-    "noMessages": "(no messages)",
-    "selectAConversation": "Select a conversation to see its messages.",
-    "threadLoading": "Loading messages…",
-    "threadLoadError": "Couldn't load this conversation's messages. Try again."
   }
 }

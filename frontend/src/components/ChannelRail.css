@@ -1,0 +1,85 @@
+.channel-rail {
+  width: 56px;
+  flex-shrink: 0;
+  background: var(--bg);
+  border-left: 1px solid var(--border);
+  height: 100%;
+  padding: 20px 8px;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+.channel-rail__icon {
+  position: relative;
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg-subtle);
+  color: var(--text);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  font: inherit;
+}
+
+.channel-rail__icon:hover {
+  color: var(--text-h);
+  border-color: var(--accent-border);
+}
+
+.channel-rail__divider {
+  width: 100%;
+  height: 1px;
+  flex-shrink: 0;
+  background: var(--border);
+}
+
+.channel-rail__icon--telegram {
+  color: var(--text-h);
+}
+
+.channel-rail__icon--telegram:hover {
+  border-color: var(--accent-border);
+  color: var(--accent-h);
+}
+
+.channel-rail__icon--active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: white;
+}
+
+.channel-rail__icon--disabled {
+  color: color-mix(in srgb, var(--text) 45%, transparent);
+  cursor: default;
+}
+
+.channel-rail__svg {
+  width: 18px;
+  height: 18px;
+}
+
+.channel-rail__badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--danger);
+  color: white;
+  font-size: 10px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid var(--bg);
+}

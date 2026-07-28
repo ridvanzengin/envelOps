@@ -95,7 +95,7 @@ export default function KnowledgeSources() {
   }
 
   return (
-    <section>
+    <section className="page">
       <h1>{t("nav.knowledge")}</h1>
       <p>{t("pages.knowledge")}</p>
 
