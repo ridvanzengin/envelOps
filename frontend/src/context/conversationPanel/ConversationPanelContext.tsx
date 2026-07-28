@@ -77,6 +77,12 @@ export function ConversationPanelProvider({ children }: { children: ReactNode })
 
   const openPanel = useCallback(() => {
     setIsOpen(true);
+    // Always lands on the list, never a remembered thread -- clicking a
+    // channel icon means "show me this channel's conversations," not
+    // "resume where I left off."
+    setSelectedConversationId(null);
+    setMessages(null);
+    setThreadError(null);
     void loadConversations();
     void loadEscalations();
   }, [loadConversations, loadEscalations]);

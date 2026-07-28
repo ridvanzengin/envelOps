@@ -340,11 +340,13 @@ isn't repeated here.
   (`ConversationPanel`) showing conversations as a list
   (`GET /conversations`), then a conversation's full thread
   (`GET /conversations/{id}/messages`) with direction-based bubble
-  alignment. The thread view is **read-only** — no reply input box, since
-  there's no backend capability yet for a human to send a message outside
-  the pipeline (see the pause-mode item in §11). No `channel_id` filtering
-  on the backend yet: every real conversation today is already Telegram,
-  so the Telegram icon just opens the existing full list.
+  alignment. The thread view is **read-only** — it shows a reply input +
+  send button, but both render permanently disabled, since there's no
+  backend capability yet for a human to send a message outside the
+  pipeline (see the pause-mode item in §11); it's a placeholder for that
+  future affordance, not a working one. No `channel_id` filtering on the
+  backend yet: every real conversation today is already Telegram, so the
+  Telegram icon just opens the existing full list.
 - **Escalations (folded into the same rail/panel, not a standalone page)**
   — the old dedicated Escalation queue page and nav item are gone.
   `GET /escalations` is instead fetched once at the app-shell level and
