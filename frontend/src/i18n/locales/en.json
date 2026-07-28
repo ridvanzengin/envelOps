@@ -112,7 +112,17 @@
     "chunkCount": "Chunks",
     "lastSynced": "Last synced",
     "refresh": "Refresh",
-    "refreshing": "Refreshing…"
+    "refreshing": "Refreshing…",
+    "delete": "Delete",
+    "deleteConfirm": "Delete this knowledge source and all its content? This can't be undone.",
+    "deleteError": "Couldn't delete this source. Try again.",
+    "view": "View content",
+    "hide": "Hide content",
+    "edit": "Edit",
+    "save": "Save",
+    "saving": "Saving…",
+    "cancel": "Cancel",
+    "editError": "Couldn't save this source. Try again."
   },
   "settings": {
     "safetyTriggersTitle": "Safety trigger phrases",
@@ -129,6 +139,9 @@
     "addError": "Couldn't add this phrase. Try again.",
     "loading": "Loading trigger phrases…",
     "empty": "No added phrases yet.",
-    "loadError": "Couldn't load trigger phrases. Try again."
+    "loadError": "Couldn't load trigger phrases. Try again.",
+    "delete": "Delete",
+    "deleteConfirm": "Delete this trigger phrase? This can't be undone.",
+    "deleteError": "Couldn't delete this phrase. Try again."
   }
 }

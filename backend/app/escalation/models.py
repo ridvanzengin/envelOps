@@ -21,9 +21,13 @@ class Escalation(Base, TenantScopedMixin):
 
 class TenantTriggerPhrase(Base, TenantScopedMixin):
     """Tenant additions to the Layer 1 safety floor (docs/REQUIREMENTS.md
-    §6) — additive only. No columns for category/regex/enabled-toggle: a
-    tenant adds a plain phrase, nothing else, and there is deliberately no
-    way to edit or disable a system default through this table."""
+    §6). No columns for category/regex/enabled-toggle: a tenant adds a
+    plain phrase, nothing else, and there is deliberately no way to edit
+    or disable a *system default* through this table -- that part stays
+    immutable. The tenant's own rows here, unlike defaults, can be
+    deleted (`DELETE /escalations/trigger-phrases/{id}`, added
+    2026-07-29 -- a deliberate reversal of this table's original
+    additive-only design; REQUIREMENTS §6 has the full trade-off)."""
 
     __tablename__ = "escalation_trigger_phrases"
 

@@ -2,8 +2,9 @@ import { useCallback, useEffect, useState } from "react";
 import type { FormEvent } from "react";
 import { useTranslation } from "react-i18next";
 
-import { apiGet, apiPost, ApiError } from "../api/client";
+import { apiDelete, apiGet, apiPost, ApiError } from "../api/client";
 import { useAuth } from "../auth/useAuth";
+import { TrashIcon } from "../components/icons";
 
 interface TriggerPhrase {
   id: string;
@@ -30,6 +31,7 @@ export default function Settings() {
   const [newPhrase, setNewPhrase] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setError(null);
@@ -75,6 +77,24 @@ export default function Settings() {
     }
   }
 
+  async function handleDelete(id: string) {
+    if (!window.confirm(t("settings.deleteConfirm"))) return;
+    setError(null);
+    setDeletingId(id);
+    try {
+      await apiDelete(`/escalations/trigger-phrases/${id}`, token);
+      setPhrases((current) => current?.filter((row) => row.id !== id) ?? null);
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        logout();
+        return;
+      }
+      setError(err instanceof ApiError ? err.message : t("settings.deleteError"));
+    } finally {
+      setDeletingId(null);
+    }
+  }
+
   return (
     <section className="page">
       <div className="page__header">
@@ -112,8 +132,18 @@ export default function Settings() {
         <div className="card">
           <ul className="list">
             {phrases.map((phrase) => (
-              <li key={phrase.id} className="list__item">
-                {phrase.phrase}
+              <li key={phrase.id} className="list__item list__item--with-action">
+                <span>{phrase.phrase}</span>
+                <button
+                  type="button"
+                  className="button button--danger"
+                  disabled={deletingId === phrase.id}
+                  onClick={() => void handleDelete(phrase.id)}
+                  aria-label={t("settings.delete")}
+                  title={t("settings.delete")}
+                >
+                  <TrashIcon />
+                </button>
               </li>
             ))}
           </ul>

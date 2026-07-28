@@ -22,6 +22,12 @@ def _fake_source(tenant_id: uuid.UUID, **overrides: object) -> MagicMock:
     return source
 
 
+def _fake_chunk(content: str) -> MagicMock:
+    chunk = MagicMock()
+    chunk.content = content
+    return chunk
+
+
 @pytest.fixture(autouse=True)
 def _override_session() -> object:
     app.dependency_overrides[get_session] = lambda: AsyncMock()
@@ -47,6 +53,20 @@ async def _get(path: str, token: str | None) -> httpx.Response:
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         return await client.get(path, headers=headers)
+
+
+async def _delete(path: str, token: str | None) -> httpx.Response:
+    headers = {"Authorization": f"Bearer {token}"} if token else {}
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        return await client.delete(path, headers=headers)
+
+
+async def _put(path: str, body: dict, token: str | None) -> httpx.Response:
+    headers = {"Authorization": f"Bearer {token}"} if token else {}
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        return await client.put(path, json=body, headers=headers)
 
 
 class TestCreateKnowledgeSource:
@@ -147,13 +167,16 @@ class TestCreateKnowledgeSource:
 
 
 class TestListKnowledgeSources:
-    async def test_returns_only_the_callers_tenant_sources_with_counts(self) -> None:
+    async def test_returns_only_the_callers_tenant_sources_with_counts_and_content(
+        self,
+    ) -> None:
         tenant_id = uuid.uuid4()
         token = _token(tenant_id)
         source = _fake_source(tenant_id)
+        chunks = [_fake_chunk("First chunk."), _fake_chunk("Second chunk.")]
         with patch("app.knowledge.api.KnowledgeSourceRepository") as mock_repo_cls:
-            mock_repo_cls.return_value.list_with_chunk_counts = AsyncMock(
-                return_value=[(source, 3)]
+            mock_repo_cls.return_value.list_with_chunks = AsyncMock(
+                return_value=[(source, chunks)]
             )
             response = await _get("/knowledge/sources", token)
 
@@ -161,8 +184,9 @@ class TestListKnowledgeSources:
         body = response.json()
         assert len(body) == 1
         assert body[0]["id"] == str(source.id)
-        assert body[0]["chunk_count"] == 3
-        mock_repo_cls.return_value.list_with_chunk_counts.assert_called_once_with(tenant_id)
+        assert body[0]["chunk_count"] == 2
+        assert body[0]["content"] == "First chunk.\n\nSecond chunk."
+        mock_repo_cls.return_value.list_with_chunks.assert_called_once_with(tenant_id)
 
 
 class TestRefreshKnowledgeSource:
@@ -209,3 +233,98 @@ class TestRefreshKnowledgeSource:
         )
         stored_chunk = mock_chunk_repo_cls.return_value.add.call_args.args[0]
         assert stored_chunk.content == "Updated info."
+
+
+class TestDeleteKnowledgeSource:
+    async def test_rejects_missing_token(self) -> None:
+        response = await _delete(f"/knowledge/sources/{uuid.uuid4()}", None)
+        assert response.status_code == 401
+
+    async def test_404_when_not_found_or_wrong_tenant(self) -> None:
+        with patch("app.knowledge.api.KnowledgeSourceRepository") as mock_repo_cls:
+            mock_repo_cls.return_value.get = AsyncMock(return_value=None)
+            response = await _delete(f"/knowledge/sources/{uuid.uuid4()}", _token())
+        assert response.status_code == 404
+
+    async def test_deletes_source_and_its_chunks(self) -> None:
+        # Any type, not just manual -- refresh has its own type-specific
+        # rules, but delete doesn't need to care what kind of source this is.
+        tenant_id = uuid.uuid4()
+        token = _token(tenant_id)
+        source = _fake_source(tenant_id, type="url", source_uri="https://example.com/faq")
+        with (
+            patch("app.knowledge.api.KnowledgeSourceRepository") as mock_source_repo_cls,
+            patch("app.knowledge.api.KnowledgeChunkRepository") as mock_chunk_repo_cls,
+        ):
+            mock_source_repo_cls.return_value.get = AsyncMock(return_value=source)
+            mock_source_repo_cls.return_value.delete = AsyncMock()
+            mock_chunk_repo_cls.return_value.delete_by_source = AsyncMock()
+            response = await _delete(f"/knowledge/sources/{source.id}", token)
+
+        assert response.status_code == 204
+        mock_chunk_repo_cls.return_value.delete_by_source.assert_called_once_with(
+            tenant_id, source.id
+        )
+        mock_source_repo_cls.return_value.delete.assert_called_once_with(source)
+
+
+class TestUpdateKnowledgeSource:
+    async def test_rejects_missing_token(self) -> None:
+        response = await _put(
+            f"/knowledge/sources/{uuid.uuid4()}", {"content": "x"}, None
+        )
+        assert response.status_code == 401
+
+    async def test_404_when_not_found_or_wrong_tenant(self) -> None:
+        with patch("app.knowledge.api.KnowledgeSourceRepository") as mock_repo_cls:
+            mock_repo_cls.return_value.get = AsyncMock(return_value=None)
+            response = await _put(
+                f"/knowledge/sources/{uuid.uuid4()}", {"content": "x"}, _token()
+            )
+        assert response.status_code == 404
+
+    async def test_400_when_source_is_not_manual(self) -> None:
+        tenant_id = uuid.uuid4()
+        token = _token(tenant_id)
+        source = _fake_source(tenant_id, type="url", source_uri="https://example.com/faq")
+        with patch("app.knowledge.api.KnowledgeSourceRepository") as mock_repo_cls:
+            mock_repo_cls.return_value.get = AsyncMock(return_value=source)
+            response = await _put(f"/knowledge/sources/{source.id}", {"content": "x"}, token)
+        assert response.status_code == 400
+
+    async def test_rejects_blank_content(self) -> None:
+        tenant_id = uuid.uuid4()
+        token = _token(tenant_id)
+        source = _fake_source(tenant_id, type="manual")
+        with patch("app.knowledge.api.KnowledgeSourceRepository") as mock_repo_cls:
+            mock_repo_cls.return_value.get = AsyncMock(return_value=source)
+            response = await _put(f"/knowledge/sources/{source.id}", {"content": "   "}, token)
+        assert response.status_code == 400
+
+    async def test_replaces_chunks_with_newly_chunked_content(self) -> None:
+        tenant_id = uuid.uuid4()
+        token = _token(tenant_id)
+        source = _fake_source(tenant_id, type="manual")
+        with (
+            patch("app.knowledge.api.KnowledgeSourceRepository") as mock_source_repo_cls,
+            patch("app.knowledge.api.KnowledgeChunkRepository") as mock_chunk_repo_cls,
+            patch("app.knowledge.api.embed_text", return_value=[0.1]),
+        ):
+            mock_source_repo_cls.return_value.get = AsyncMock(return_value=source)
+            mock_chunk_repo_cls.return_value.delete_by_source = AsyncMock()
+            mock_chunk_repo_cls.return_value.add = AsyncMock()
+            response = await _put(
+                f"/knowledge/sources/{source.id}",
+                {"content": "Corrected shipping info."},
+                token,
+            )
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["content"] == "Corrected shipping info."
+        assert body["chunk_count"] == 1
+        mock_chunk_repo_cls.return_value.delete_by_source.assert_called_once_with(
+            tenant_id, source.id
+        )
+        stored_chunk = mock_chunk_repo_cls.return_value.add.call_args.args[0]
+        assert stored_chunk.content == "Corrected shipping info."

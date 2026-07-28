@@ -112,7 +112,17 @@
     "chunkCount": "Parça",
     "lastSynced": "Son senkronizasyon",
     "refresh": "Yenile",
-    "refreshing": "Yenileniyor…"
+    "refreshing": "Yenileniyor…",
+    "delete": "Sil",
+    "deleteConfirm": "Bu bilgi kaynağı ve tüm içeriği silinsin mi? Bu işlem geri alınamaz.",
+    "deleteError": "Bu kaynak silinemedi. Tekrar deneyin.",
+    "view": "İçeriği göster",
+    "hide": "İçeriği gizle",
+    "edit": "Düzenle",
+    "save": "Kaydet",
+    "saving": "Kaydediliyor…",
+    "cancel": "Vazgeç",
+    "editError": "Bu kaynak kaydedilemedi. Tekrar deneyin."
   },
   "settings": {
     "safetyTriggersTitle": "Güvenlik tetikleyici ifadeleri",
@@ -129,6 +139,9 @@
     "addError": "Bu ifade eklenemedi. Tekrar deneyin.",
     "loading": "Tetikleyici ifadeler yükleniyor…",
     "empty": "Henüz eklenen ifade yok.",
-    "loadError": "Tetikleyici ifadeler yüklenemedi. Tekrar deneyin."
+    "loadError": "Tetikleyici ifadeler yüklenemedi. Tekrar deneyin.",
+    "delete": "Sil",
+    "deleteConfirm": "Bu tetikleyici ifade silinsin mi? Bu işlem geri alınamaz.",
+    "deleteError": "Bu ifade silinemedi. Tekrar deneyin."
   }
 }

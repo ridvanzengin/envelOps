@@ -34,3 +34,9 @@ class TenantScopedRepository(Generic[ModelT]):
         self.session.add(obj)
         await self.session.flush()
         return obj
+
+    async def delete(self, obj: ModelT) -> None:
+        # Takes an already-fetched object, not a bare id -- every caller
+        # already does get(tenant_id, id) first to 404 on a missing/
+        # wrong-tenant row, so this never needs its own tenant check.
+        await self.session.delete(obj)

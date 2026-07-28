@@ -153,18 +153,20 @@ is wanted later, it's a contained addition (one more pause point, one more
 queue), not a rewrite — see §11.
 
 **Layer 1 trigger phrases (REQUIREMENTS §6): system defaults + tenant
-additions, checked together, additive only.** System defaults are the
-compiled regex patterns in `escalation/safety_gate.py`
-(`check_platform_safety_floor`); tenant additions live in
-`escalation_trigger_phrases` (tenant-scoped, one row per phrase, no
-category/regex — a business owner types a phrase, not a pattern) and are
-matched as plain case-insensitive substrings, not compiled into the regex
-list. `decide_next_step` (§4) checks both and escalates if either fires —
-whichever runs first, the result is the same hard gate. The UI (§10) shows
-system defaults as visible but disabled/locked (no edit, no delete) and
-lets the tenant append to their own list; there is no code path or API
-endpoint that edits or removes a system default, by design, not just by
-UI omission.
+additions, checked together.** System defaults are the compiled regex
+patterns in `escalation/safety_gate.py` (`check_platform_safety_floor`);
+tenant additions live in `escalation_trigger_phrases` (tenant-scoped, one
+row per phrase, no category/regex — a business owner types a phrase, not
+a pattern) and are matched as plain case-insensitive substrings, not
+compiled into the regex list. `decide_next_step` (§4) checks both and
+escalates if either fires — whichever runs first, the result is the same
+hard gate. The UI (§10) shows system defaults as visible but disabled/
+locked (no edit, no delete) and lets the tenant append to *and delete
+from* their own list (`DELETE /escalations/trigger-phrases/{id}`, added
+2026-07-29 — REQUIREMENTS §6 has the full reasoning for allowing removal
+after all); there is no code path or API endpoint that edits or removes
+a system default, by design, not just by UI omission — that part is
+still fully immutable.
 
 **The Escalation row is logged by `decide_next_step`, before the pause —
 not by `log_lead_and_notify` after a resume.** A human has to be able to
@@ -204,7 +206,7 @@ safety-floor branch.
 `knowledge_chunks` (tenant-scoped, pgvector). A manual "refresh this source"
 action deletes and re-embeds a source's chunks — no silent staleness.
 
-**API-reachable now** (`POST /knowledge/sources`, `GET /knowledge/sources`,
+**API-reachable now** (`POST`/`GET`/`PUT`/`DELETE /knowledge/sources`,
 `POST /knowledge/sources/{id}/refresh`, all auth-gated): `manual` (owner
 pastes text directly) and `url` (fetched via a plain httpx GET,
 `app/knowledge/web_fetch.py` — same "thin client, not a heavier SDK"
@@ -213,8 +215,15 @@ dependencies — `app/knowledge/html_text.py` strips HTML to plain text
 using stdlib `html.parser`, not a new parsing library. Deliberately not
 attempted: schema.org FAQPage structured Q&A parsing (§5's "parsed as
 clean Q&A pairs where available" — text-only fallback is what's built).
-Refresh only makes sense for `url` sources (400 for `manual` — nothing
-external to re-fetch; delete and re-add instead).
+Refresh only makes sense for `url` sources (400 for `manual`). `PUT`
+(added 2026-07-29, docs/ROADMAP.md §5.5) is refresh's manual-only mirror
+— replaces a source's chunks with newly-chunked/re-embedded
+user-submitted text; 400s for `url` sources for the same reason refresh
+400s for `manual` ones, so editing a url source's fetched content by hand
+can't be silently clobbered by the next refresh. `GET` now also returns
+each source's `content` (its chunks rejoined with `"\n\n"`, not a second
+copy of the text stored anywhere) — before this, a source's actual
+content was never visible anywhere in the API, only its metadata.
 
 **`pdf` is not built** — the model's `type` column already anticipates it,
 but ingesting one needs a real PDF-parsing library (pypdf or similar), a
@@ -353,14 +362,19 @@ here does **not** send anything to the customer; the human handles the
 actual reply outside the tool. 409s if the escalation isn't `pending`
 (prevents resuming an already-resumed thread twice).
 
-`/knowledge` is real now too (§6: create/list/refresh a source).
+`/knowledge` is real now too (§6: create/list/refresh a source, and, as
+of 2026-07-29, `DELETE /knowledge/sources/{id}` — cascades to that
+source's `knowledge_chunks` via `KnowledgeChunkRepository.delete_by_source`,
+the same method `refresh` already used).
 
-`GET`/`POST /escalations/trigger-phrases` — the tenant-additions half of
-§5's Layer 1 trigger phrases. List-and-add only, no delete/edit endpoint
-(`TenantTriggerPhrase`'s own docstring: additive only). System defaults
-have nothing to list here since they're compiled regex in
+`GET`/`POST`/`DELETE /escalations/trigger-phrases` — the tenant-additions
+half of §5's Layer 1 trigger phrases; delete added 2026-07-29 (§5 above
+has the full reasoning). Still no edit endpoint — a business owner
+deletes and re-adds to change a phrase, same as a knowledge source.
+System defaults have nothing to list here since they're compiled regex in
 `safety_gate.py`, not DB rows — the frontend shows those as static,
-translated copy instead (§10).
+translated copy instead (§10), and there is still no code path that
+edits or removes *those*.
 
 `/conversations` is real now too: `GET /conversations` (list, with each
 conversation's most recent message as a preview — one query via
@@ -436,16 +450,23 @@ isn't repeated here.
 - **Knowledge sources** — real now: add (manual or url — pdf isn't built
   on the backend yet, §6, so there's no third form option), list with
   chunk counts, refresh (url only; no button shown for manual rows,
-  matching the backend's 400). Same fetch/update pattern used for
-  escalation resolution (§10 above) — in-place update on the response, no
-  refetch.
+  matching the backend's 400), and delete (any type, added 2026-07-29 —
+  in-place removal from the list, same as everything else here, no
+  refetch). Same fetch/update pattern used for escalation resolution
+  (§10 above). Each row also has a chevron toggle (added 2026-07-29,
+  alongside delete) that expands/collapses the source's actual content
+  read-only — before this, a source's content was never shown anywhere
+  in the UI, only its metadata (a real gap, found via live use, not by
+  design). Manual rows additionally get a pencil button turning that same
+  expanded area into an editable textarea (Save calls the new `PUT`);
+  url rows stay view-only, matching the backend's url/manual split.
 - **Settings** — partially real: the safety trigger phrase list (§5) is
   built — three static, translated category labels for the system
   defaults (disabled checkboxes, no edit/delete control, ever — there's
   nothing to fetch for them, they're not DB rows) plus a real
-  list-and-add form for the tenant's own additions (§9). Channel
-  connection status is not built — no `GET /channels` endpoint exists
-  yet to show it.
+  list-add-and-delete form for the tenant's own additions (§9; delete
+  added 2026-07-29, §5's reasoning). Channel connection status is not
+  built — no `GET /channels` endpoint exists yet to show it.
 - **Dashboard** — still a placeholder; minimal for Phase 1 (leads today,
   escalations today, response times) once built. The full two-audience
   observability design is still an open item (see §11).

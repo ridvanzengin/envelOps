@@ -432,6 +432,86 @@ authenticated.
 disabled, both work correctly when enabled, and an unknown `user_id`
 still 404s even with the bypass on.
 
+### 5.5 Knowledge source + trigger phrase CRUD — done (2026-07-29)
+User-flagged gap: knowledge sources and escalation trigger phrases had
+create/list (and refresh, for knowledge sources) but no delete.
+
+**Knowledge sources:** a real, undisputed gap — `refresh`'s own error
+message for a manual source already said *"delete and re-add instead,"*
+which wasn't actually possible since no delete endpoint existed.
+`DELETE /knowledge/sources/{id}` now exists, cascading to the source's
+chunks via the same `KnowledgeChunkRepository.delete_by_source` refresh
+already used.
+
+**Trigger phrases were a different situation, not just a gap** — the
+"additive only" design was deliberate (REQUIREMENTS §6): a business
+optimizing for fewer escalations could remove an inconvenient phrase,
+weakening its own floor, so removal was intentionally left out. Flagged
+this explicitly before touching it; **user decided to add delete anyway,
+accepting the trade-off** — a permanently-stuck typo'd/mistaken phrase
+was judged the worse failure mode. `DELETE /escalations/trigger-phrases/{id}`
+now exists. **System defaults are completely unaffected** — still
+compiled regex in `safety_gate.py`, not DB rows, no code path touches
+them. REQUIREMENTS §6 and ARCHITECTURE §5/§9 updated to reflect the
+reversal and why, not left stating the old reasoning as if still current.
+
+Added a generic `TenantScopedRepository.delete()` (`app/core/repository.py`)
+rather than one-off delete methods per repository, since both new
+endpoints needed the identical get-then-delete shape.
+
+**Checked iotops-workspace's own CRUD conventions before building the
+frontend** (`collector/api.py` + `CollectorList.tsx`) — confirms: `204`
+on delete, `window.confirm("Delete X? This cannot be undone.")` phrasing,
+disabled-while-pending. Two spots kept envelOps's own existing convention
+instead of copying iotops exactly, flagged rather than silently
+diverging: iotops hides delete behind a "⋮" dropdown (justified there by
+3+ actions per row); envelOps's rows only ever have at most two actions,
+so delete stays inline next to Refresh. iotops refetches the whole list
+after a mutation; envelOps's own established pattern (escalation
+resolve, source refresh) is in-place local update, no refetch — kept
+that consistent rather than introducing a second sync strategy for just
+this one action.
+
+**Verified live:** added then deleted a manual knowledge source (row
+count 2→1) and a trigger phrase (visible→gone), both through the real UI
+with the confirm dialog accepted.
+
+11 new backend tests across `test_knowledge_api.py`/`test_escalation_api.py`
+(401/404/success for both new endpoints).
+
+**Follow-up, same session: "delete" alone wasn't the whole gap.** After
+merging the above, the user reported not being able to *see or edit*
+knowledge sources at all — seeded ones or ones they'd added themselves.
+Checking the API directly (bypassing the browser) confirmed the data was
+always there; the actual bug was that the UI never rendered a source's
+own content anywhere — the table only ever showed type/source_uri/
+chunk_count/last_synced, never what was actually *in* it — and there was
+no edit endpoint at all, so the only "correction" path was delete + re-add.
+
+Fixed both, scoped after confirming with the user that URL sources
+should stay view-only (their content comes from the URL; refresh already
+re-fetches it, so hand-editing would just be silently overwritten):
+- `KnowledgeSourceResponse` now includes `content` — the source's chunks
+  rejoined with `"\n\n"`. Nothing new stored: `KnowledgeSourceRepository
+  .list_with_chunks` (replaces the old `list_with_chunk_counts`) fetches
+  each source's chunks directly rather than just a count, two queries
+  total regardless of source count, not N+1.
+- `PUT /knowledge/sources/{id}` — manual sources only (400 for `url`,
+  symmetric with `refresh`'s existing url-only restriction) — replaces
+  the source's chunks with newly-chunked/re-embedded text, the same
+  delete-then-reingest shape `refresh` already uses.
+- Frontend: each row gets a chevron to expand/collapse its content
+  read-only, and manual rows additionally get a pencil button that turns
+  the same expanded area into a textarea with Save/Cancel.
+
+**Verified live**, twice — once via direct API calls (to isolate
+backend vs. frontend before assuming which was broken), once through
+the actual browser: expanded a seeded source's content, edited a manual
+source's text, saved, and confirmed the new text round-tripped correctly.
+
+5 more backend tests for the new `PUT` endpoint (401/404/400-wrong-type/
+400-blank/success).
+
 ### Updated sequencing given 5.1–5.3
 1. ~~§3.4 (Test Console diagnostics)~~ / ~~§3.3 (rail badges)~~ /
    ~~§5.1 (multi-tenant seed + showcase scenarios)~~ /

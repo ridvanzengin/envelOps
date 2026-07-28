@@ -200,3 +200,24 @@ export function RefreshIcon(props: SVGProps<SVGSVGElement>) {
     </Icon>
   );
 }
+
+export function PencilIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <Icon {...props}>
+      <path d="M12 20h9" />
+      <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
+    </Icon>
+  );
+}
+
+export function TrashIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <Icon {...props}>
+      <path d="M4 7h16" />
+      <path d="M6 7V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v2" />
+      <path d="M6 7v13a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V7" />
+      <path d="M10 11v6" />
+      <path d="M14 11v6" />
+    </Icon>
+  );
+}

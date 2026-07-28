@@ -25,17 +25,31 @@ class CreateKnowledgeSourceRequest(BaseModel):
     content: str | None = None
 
 
+class UpdateKnowledgeSourceRequest(BaseModel):
+    content: str
+
+
 class KnowledgeSourceResponse(BaseModel):
     id: uuid.UUID
     type: str
     source_uri: str | None
     last_synced_at: datetime | None
     chunk_count: int
+    # The chunked content joined back into one block (docs/ROADMAP.md --
+    # "can't see or edit" gap found via live use). Reconstructed from
+    # KnowledgeChunk rows, not stored separately anywhere: there's no
+    # second copy of "the original text" to keep in sync with the chunks
+    # actually used for retrieval.
+    content: str
+
+
+def _join_chunk_texts(chunks: list[str]) -> str:
+    return "\n\n".join(chunks)
 
 
 async def _ingest_chunks(
     session: AsyncSession, tenant_id: uuid.UUID, source_id: uuid.UUID, text: str
-) -> int:
+) -> list[str]:
     chunk_repo = KnowledgeChunkRepository(session)
     contents = chunk_text(text)
     for content in contents:
@@ -48,7 +62,7 @@ async def _ingest_chunks(
                 embedding=embedding,
             )
         )
-    return len(contents)
+    return contents
 
 
 async def _fetch_source_text(body: CreateKnowledgeSourceRequest) -> tuple[str, str | None]:
@@ -94,7 +108,7 @@ async def create_knowledge_source(
             last_synced_at=datetime.now(UTC),
         )
     )
-    chunk_count = await _ingest_chunks(session, current_user.tenant_id, source.id, text)
+    chunks = await _ingest_chunks(session, current_user.tenant_id, source.id, text)
     await session.commit()
 
     return KnowledgeSourceResponse(
@@ -102,7 +116,8 @@ async def create_knowledge_source(
         type=source.type,
         source_uri=source.source_uri,
         last_synced_at=source.last_synced_at,
-        chunk_count=chunk_count,
+        chunk_count=len(chunks),
+        content=_join_chunk_texts(chunks),
     )
 
 
@@ -112,16 +127,17 @@ async def list_knowledge_sources(
     session: AsyncSession = Depends(get_session),
 ) -> list[KnowledgeSourceResponse]:
     source_repo = KnowledgeSourceRepository(session)
-    rows = await source_repo.list_with_chunk_counts(current_user.tenant_id)
+    rows = await source_repo.list_with_chunks(current_user.tenant_id)
     return [
         KnowledgeSourceResponse(
             id=source.id,
             type=source.type,
             source_uri=source.source_uri,
             last_synced_at=source.last_synced_at,
-            chunk_count=chunk_count,
+            chunk_count=len(chunks),
+            content=_join_chunk_texts([chunk.content for chunk in chunks]),
         )
-        for source, chunk_count in rows
+        for source, chunks in rows
     ]
 
 
@@ -138,11 +154,11 @@ async def refresh_knowledge_source(
     if source.type != "url":
         # Manual entries have nothing external to re-fetch (REQUIREMENTS
         # §5's re-sync requirement is about crawled content going stale on
-        # the business's own site) -- changing one means deleting and
-        # re-adding it, not refreshing it.
+        # the business's own site) -- editing one directly (PUT, below) or
+        # deleting and re-adding are the ways to change it, not refresh.
         raise HTTPException(
             status.HTTP_400_BAD_REQUEST,
-            f"'{source.type}' sources have nothing to refresh; delete and re-add instead",
+            f"'{source.type}' sources have nothing to refresh; edit or delete instead",
         )
     if not source.source_uri:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "source has no url to refresh from")
@@ -159,7 +175,7 @@ async def refresh_knowledge_source(
 
     chunk_repo = KnowledgeChunkRepository(session)
     await chunk_repo.delete_by_source(current_user.tenant_id, source.id)
-    chunk_count = await _ingest_chunks(session, current_user.tenant_id, source.id, text)
+    chunks = await _ingest_chunks(session, current_user.tenant_id, source.id, text)
     source.last_synced_at = datetime.now(UTC)
     await session.commit()
 
@@ -168,5 +184,72 @@ async def refresh_knowledge_source(
         type=source.type,
         source_uri=source.source_uri,
         last_synced_at=source.last_synced_at,
-        chunk_count=chunk_count,
+        chunk_count=len(chunks),
+        content=_join_chunk_texts(chunks),
     )
+
+
+@router.put("/sources/{source_id}")
+async def update_knowledge_source(
+    source_id: uuid.UUID,
+    body: UpdateKnowledgeSourceRequest,
+    current_user: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> KnowledgeSourceResponse:
+    """Added 2026-07-29, alongside delete -- the other half of the "can't
+    see or edit" gap found via live use: a manual entry's actual text was
+    never shown anywhere, let alone editable, so the only way to correct
+    one was delete-and-re-add. Manual sources only, symmetric with
+    refresh's own url-only restriction above -- a url source's content
+    comes from the url itself, so editing it by hand would just be
+    silently overwritten by the next refresh; 400s instead of allowing
+    that footgun."""
+    source_repo = KnowledgeSourceRepository(session)
+    source = await source_repo.get(current_user.tenant_id, source_id)
+    if source is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "knowledge source not found")
+    if source.type != "manual":
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            f"'{source.type}' sources can't be edited directly; refresh instead",
+        )
+    stripped = body.content.strip()
+    if not stripped:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "content must not be blank")
+
+    chunk_repo = KnowledgeChunkRepository(session)
+    await chunk_repo.delete_by_source(current_user.tenant_id, source.id)
+    chunks = await _ingest_chunks(session, current_user.tenant_id, source.id, stripped)
+    source.last_synced_at = datetime.now(UTC)
+    await session.commit()
+
+    return KnowledgeSourceResponse(
+        id=source.id,
+        type=source.type,
+        source_uri=source.source_uri,
+        last_synced_at=source.last_synced_at,
+        chunk_count=len(chunks),
+        content=_join_chunk_texts(chunks),
+    )
+
+
+@router.delete("/sources/{source_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_knowledge_source(
+    source_id: uuid.UUID,
+    current_user: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> None:
+    """Added 2026-07-29 -- previously the only way to correct a bad manual
+    entry was refresh's own error message ("delete and re-add instead"),
+    which wasn't actually possible since this endpoint didn't exist yet.
+    Cascades to the source's own chunks via the same
+    KnowledgeChunkRepository.delete_by_source refresh already uses, not a
+    new deletion path."""
+    source_repo = KnowledgeSourceRepository(session)
+    source = await source_repo.get(current_user.tenant_id, source_id)
+    if source is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "knowledge source not found")
+
+    await KnowledgeChunkRepository(session).delete_by_source(current_user.tenant_id, source_id)
+    await source_repo.delete(source)
+    await session.commit()

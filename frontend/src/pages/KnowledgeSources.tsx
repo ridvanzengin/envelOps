@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useState } from "react";
 import type { FormEvent } from "react";
 import { useTranslation } from "react-i18next";
 
-import { apiGet, apiPost, ApiError } from "../api/client";
+import { apiDelete, apiGet, apiPost, apiPut, ApiError } from "../api/client";
 import { useAuth } from "../auth/useAuth";
+import { ChevronIcon, PencilIcon, TrashIcon } from "../components/icons";
 
 interface KnowledgeSource {
   id: string;
@@ -11,6 +12,7 @@ interface KnowledgeSource {
   source_uri: string | null;
   last_synced_at: string | null;
   chunk_count: number;
+  content: string;
 }
 
 type SourceType = "manual" | "url";
@@ -21,12 +23,24 @@ export default function KnowledgeSources() {
   const [sources, setSources] = useState<KnowledgeSource[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [refreshingId, setRefreshingId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const [type, setType] = useState<SourceType>("manual");
   const [content, setContent] = useState("");
   const [url, setUrl] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+
+  // Expanded-row view/edit state (docs/ROADMAP.md -- "can't see or edit"
+  // gap found via live use). At most one row expanded at a time, and
+  // edit mode only ever applies to a manual source -- url sources show
+  // their fetched content read-only, since refresh would silently
+  // overwrite a hand edit anyway.
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editContent, setEditContent] = useState("");
+  const [savingId, setSavingId] = useState<string | null>(null);
+  const [editError, setEditError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setError(null);
@@ -94,6 +108,68 @@ export default function KnowledgeSources() {
     }
   }
 
+  async function handleDelete(id: string) {
+    if (!window.confirm(t("knowledgeSources.deleteConfirm"))) return;
+    setError(null);
+    setDeletingId(id);
+    try {
+      await apiDelete(`/knowledge/sources/${id}`, token);
+      setSources((current) => current?.filter((row) => row.id !== id) ?? null);
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        logout();
+        return;
+      }
+      setError(err instanceof ApiError ? err.message : t("knowledgeSources.deleteError"));
+    } finally {
+      setDeletingId(null);
+    }
+  }
+
+  function toggleExpanded(source: KnowledgeSource) {
+    if (expandedId === source.id) {
+      setExpandedId(null);
+      setEditingId(null);
+      return;
+    }
+    setExpandedId(source.id);
+    setEditingId(null);
+  }
+
+  function startEditing(source: KnowledgeSource) {
+    setExpandedId(source.id);
+    setEditingId(source.id);
+    setEditContent(source.content);
+    setEditError(null);
+  }
+
+  function cancelEditing() {
+    setEditingId(null);
+    setEditError(null);
+  }
+
+  async function handleSaveEdit(id: string) {
+    setEditError(null);
+    setSavingId(id);
+    try {
+      const updated = await apiPut<KnowledgeSource>(
+        `/knowledge/sources/${id}`,
+        { content: editContent },
+        token,
+      );
+      setSources((current) => current?.map((row) => (row.id === id ? updated : row)) ?? null);
+      setEditingId(null);
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        logout();
+        return;
+      }
+      setEditError(err instanceof ApiError ? err.message : t("knowledgeSources.editError"));
+    } finally {
+      setSavingId(null);
+    }
+  }
+
   return (
     <section className="page">
       <div className="page__header">
@@ -158,30 +234,116 @@ export default function KnowledgeSources() {
               </thead>
               <tbody>
                 {sources.map((source) => (
-                  <tr key={source.id}>
-                    <td>{source.type}</td>
-                    <td>{source.source_uri ?? "—"}</td>
-                    <td>{source.chunk_count}</td>
-                    <td>
-                      {source.last_synced_at
-                        ? new Date(source.last_synced_at).toLocaleString()
-                        : "—"}
-                    </td>
-                    <td>
-                      {source.type === "url" && (
+                  <Fragment key={source.id}>
+                    <tr>
+                      <td>{source.type}</td>
+                      <td>{source.source_uri ?? "—"}</td>
+                      <td>{source.chunk_count}</td>
+                      <td>
+                        {source.last_synced_at
+                          ? new Date(source.last_synced_at).toLocaleString()
+                          : "—"}
+                      </td>
+                      <td className="table__actions">
                         <button
                           type="button"
-                          className="button button--primary"
-                          disabled={refreshingId === source.id}
-                          onClick={() => void handleRefresh(source.id)}
+                          className="button"
+                          onClick={() => toggleExpanded(source)}
+                          aria-label={
+                            expandedId === source.id
+                              ? t("knowledgeSources.hide")
+                              : t("knowledgeSources.view")
+                          }
+                          title={
+                            expandedId === source.id
+                              ? t("knowledgeSources.hide")
+                              : t("knowledgeSources.view")
+                          }
                         >
-                          {refreshingId === source.id
-                            ? t("knowledgeSources.refreshing")
-                            : t("knowledgeSources.refresh")}
+                          <ChevronIcon
+                            className={`chevron${
+                              expandedId === source.id ? " chevron--expanded" : ""
+                            }`}
+                          />
                         </button>
-                      )}
-                    </td>
-                  </tr>
+                        {source.type === "manual" && (
+                          <button
+                            type="button"
+                            className="button"
+                            onClick={() => startEditing(source)}
+                            aria-label={t("knowledgeSources.edit")}
+                            title={t("knowledgeSources.edit")}
+                          >
+                            <PencilIcon />
+                          </button>
+                        )}
+                        {source.type === "url" && (
+                          <button
+                            type="button"
+                            className="button button--primary"
+                            disabled={refreshingId === source.id}
+                            onClick={() => void handleRefresh(source.id)}
+                          >
+                            {refreshingId === source.id
+                              ? t("knowledgeSources.refreshing")
+                              : t("knowledgeSources.refresh")}
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          className="button button--danger"
+                          disabled={deletingId === source.id}
+                          onClick={() => void handleDelete(source.id)}
+                          aria-label={t("knowledgeSources.delete")}
+                          title={t("knowledgeSources.delete")}
+                        >
+                          <TrashIcon />
+                        </button>
+                      </td>
+                    </tr>
+                    {expandedId === source.id && (
+                      <tr>
+                        <td colSpan={5} className="knowledge-sources__expanded">
+                          {editingId === source.id ? (
+                            <div className="form__field">
+                              <textarea
+                                value={editContent}
+                                onChange={(e) => setEditContent(e.target.value)}
+                                rows={6}
+                              />
+                              <div className="knowledge-sources__edit-actions">
+                                <button
+                                  type="button"
+                                  className="button button--primary"
+                                  disabled={savingId === source.id}
+                                  onClick={() => void handleSaveEdit(source.id)}
+                                >
+                                  {savingId === source.id
+                                    ? t("knowledgeSources.saving")
+                                    : t("knowledgeSources.save")}
+                                </button>
+                                <button
+                                  type="button"
+                                  className="button"
+                                  disabled={savingId === source.id}
+                                  onClick={cancelEditing}
+                                >
+                                  {t("knowledgeSources.cancel")}
+                                </button>
+                              </div>
+                              {editError && (
+                                <p className="error-message" role="alert">
+                                  {editError}
+                                </p>
+                              )}
+                            </div>
+                          ) : (
+                            <pre className="knowledge-sources__content">{source.content}</pre>
+                          )}
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
                 ))}
               </tbody>
             </table>
