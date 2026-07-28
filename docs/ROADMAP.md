@@ -11,12 +11,20 @@
 
 ---
 
-## 1. Status as of 2026-07-28
+## 1. Status as of 2026-07-29
 
-**PR #23 — Test Console** (branch `feature/test-console`) is built and
-pushed but **not merged** — the user is deliberately doing a manual testing
-pass before merging. Check `gh pr view 23 --json state` before assuming
-anything in it is "in main."
+**PR #23 — Test Console — merged into `main` (2026-07-28).** Covered Test
+Console itself, the per-message/rail diagnostics (§3.3/§3.4), and this
+doc's own creation. **PR #24 — multi-tenant showcase seed script (§5.1) —
+open, not yet merged** (branch `feature/showcase-seed-tenants`). Check
+`gh pr view <n> --json state` before assuming either is "in main" by the
+time this is read again.
+
+**The §5.1 safety-floor finding (outcome-guarantee check missing
+safety/risk-absence language) is explicitly postponed to a later
+session, by direct instruction — not forgotten, not silently deprioritized.**
+Still recorded in full under §5.1 below; don't fix it without it being
+raised again.
 
 Two real pipeline bugs were found and fixed via live Test Console use
 (both predate the PR itself):
@@ -303,9 +311,10 @@ work in themselves — recorded here rather than silently fixed:**
    language but not safety/risk-absence language ("risk," "complication,"
    "safe," "side-effect-free") — a real coverage gap for exactly the kind
    of business (health tourism/aesthetic clinics) REQUIREMENTS §1 names
-   as a primary use case, not a hypothetical one. Not fixed yet —
-   deliberately left for the user to decide whether/when, since it's a
-   change to the safety-critical gate itself, not a routine bug. The
+   as a primary use case, not a hypothetical one. **Explicitly postponed
+   to a later session (2026-07-29 instruction)** — not fixed here, since
+   it's a change to the safety-critical gate itself, not a routine bug.
+   Don't pick this up without it being raised again. The
    module's own docstring already flagged this class of gap ("a plain
    regex list will miss plenty of real phrasing... treat expanding this
    as required before relying on it for real health-related tenants, not
@@ -347,20 +356,18 @@ Flagging before any design starts:
 - Not designed at all yet — this entry exists so the ambition is on
   record, not as a spec to start building from.
 
-### Updated sequencing given 5.1–5.3 (proposed, not yet agreed)
-1. ~~§3.4 (Test Console diagnostics)~~ / ~~§3.3 (rail badges)~~ — done.
-2. **§5.1** (multi-tenant seed + showcase scenarios) — user-flagged as
-   possibly belonging here, ahead of §2: makes every subsequent testing
-   step (§2, and any pipeline tuning after it) meaningfully more robust.
-   Also needs its own look at Gemini quota headroom before it can run at
-   the scale implied (see constraint above).
-3. **§2** (conversation-history threading) — easier to validate for real
-   once §5.1 exists.
-4. **§3.5** (SSE) — independent infrastructure, can slot in anytime.
-5. **§3.1** (escalation cover message + internal note bubble).
-6. **§3.2** (clarifying question) — blocked on §2.
-7. **§5.2** (template gallery) — natural next step once §5.1 is
+### Updated sequencing given 5.1–5.3
+1. ~~§3.4 (Test Console diagnostics)~~ / ~~§3.3 (rail badges)~~ / ~~§5.1
+   (multi-tenant seed + showcase scenarios)~~ — done. §5.1's safety-floor
+   finding explicitly postponed, see §1/§5.1 above.
+2. **§2 (conversation-history threading) — current focus, picked up
+   2026-07-29.** Easier to validate for real now that §5.1's diverse
+   tenants exist.
+3. **§3.5** (SSE) — independent infrastructure, can slot in anytime.
+4. **§3.1** (escalation cover message + internal note bubble).
+5. **§3.2** (clarifying question) — blocked on §2.
+6. **§5.2** (template gallery) — natural next step once §5.1 is
    battle-tested, not before.
-8. **§5.3** (AI copilot) — longest-horizon item here; needs §5.1's
+7. **§5.3** (AI copilot) — longest-horizon item here; needs §5.1's
    scenario diversity and §3.3/§3.4's data maturing first, and its own
    dedicated design pass on the approval-point question above.
