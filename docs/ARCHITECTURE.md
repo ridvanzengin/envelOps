@@ -415,17 +415,26 @@ No drag-and-drop flow builder in Phase 1.
   `backend/scripts/run_synthetic_conversations.py` runs a fixed set of
   fabricated DMs (REQUIREMENTS §12 stage 1's list — order/shipping/returns/
   price + safety-floor edge cases, Turkish and English) through the real
-  pipeline against a synthetic tenant, for manual review. First full run
-  surfaced two real gaps, not yet fixed, worth knowing before treating
-  REQUIREMENTS §12's synthetic-testing gate as cleared: (1) the same
-  question can classify to a different intent/score depending on language
-  (a Turkish return question came back `knowledge_question`/cold, the
-  English equivalent `complaint_or_problem`/warm — both got the right
-  answer, but the classification itself isn't language-stable), and (2) a
-  real hallucination — a Turkish price question got told prices are fixed,
-  which isn't in the knowledge base at all, while the English equivalent
-  correctly declined to guess. Both are prompt/grounding quality issues,
-  not pipeline-structure bugs.
+  pipeline against a synthetic tenant, for manual review.
+- ~~Two quality gaps found by the first synthetic run~~ — fixed and
+  re-verified against a second full run: (1) intent classification wasn't
+  language-stable (a hypothetical pre-purchase return question classified
+  as `knowledge_question`/cold in Turkish but `complaint_or_problem`/warm
+  in English) — fixed by giving `understand_intent`'s prompt explicit
+  per-label definitions, specifically the hypothetical-vs-actual-problem
+  distinction that was previously left to the model to infer; both
+  languages now return `knowledge_question`/cold. (2) a real
+  hallucination — a Turkish price question got told prices are fixed,
+  not present in the knowledge base at all, while English correctly
+  declined to guess — fixed by strengthening `keep_chatting`'s grounding
+  instruction to name prices/policies/guarantees specifically and to
+  call out Turkish by name as somewhere not to be less careful; the
+  Turkish reply now says it can't state that and a person will confirm,
+  matching the English behavior. Both fixes are prompt-only (`app/
+  pipeline/graph.py`'s `understand_intent`/`keep_chatting`), no retrieval
+  or pipeline-structure changes — re-run the harness again if a similar
+  language-asymmetry bug shows up elsewhere, since this class of issue
+  isn't proven fixed everywhere, only for these two specific cases.
 
 ## 12. Explicitly deferred to later phases
 
