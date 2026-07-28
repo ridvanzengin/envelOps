@@ -30,6 +30,9 @@
 .login-page {
   position: relative;
   min-height: 100svh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .login-page__corner {
@@ -38,11 +41,69 @@
   right: 16px;
 }
 
+.login-page__card {
+  width: 100%;
+  max-width: 360px;
+  padding: 32px;
+  box-sizing: border-box;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+}
+
+.login-page__card h1 {
+  margin-bottom: 24px;
+}
+
 .app-shell { display: flex; height: 100svh; overflow: hidden; }
 .app-content { flex: 1; min-width: 0; overflow-y: auto; }
 .page { width: 100%; padding: 32px 24px; box-sizing: border-box; }
 .page__header { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 4px; }
 .page__description { color: var(--text); margin-bottom: 24px; }
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.form__field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.form__field input,
+.form__field select,
+.form__field textarea {
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-subtle);
+  color: var(--text-h);
+  font: inherit;
+  font-size: 14px;
+}
+
+.form__field input:focus,
+.form__field select:focus,
+.form__field textarea:focus {
+  outline: 2px solid var(--accent-border);
+  outline-offset: 0;
+  border-color: var(--accent);
+}
+
+.error-message {
+  color: var(--danger);
+  background: var(--danger-bg);
+  border-radius: 6px;
+  padding: 10px 14px;
+  font-size: 13px;
+}
 
 .button {
   display: inline-flex;
