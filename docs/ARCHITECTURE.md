@@ -169,6 +169,23 @@ safety-floor branch, right after it logs the row) is what tells
 its first real caller — this used to be a known, harmless-until-something-
 calls-resume gap; it isn't anymore.
 
+**A second way `decision` becomes `escalate_to_human`, besides the safety
+floor — `decide_next_step`'s hot+purchase-intent branch, when
+`tenant.closing_action` is `escalate_to_human`** (the *default* for every
+tenant that hasn't opted into `book_or_checkout` — `Tenant.closing_action`'s
+own docstring). Found and fixed via real Test Console usage (§9, §10), not
+synthetic testing — the synthetic tenant always sets
+`closing_action="book_or_checkout"`, so this path never ran there. Before
+the fix: this routed straight to `escalate_to_human`'s `interrupt()`
+without ever setting `escalation_reason` or logging an Escalation row
+first, exactly the "logged after the pause is circular" problem the
+paragraph above already solved for the safety floor — so for the
+*default* tenant config, every hot purchase-intent message silently
+paused the pipeline forever: no reply, no Escalation a human could ever
+see or resolve. Now logs immediately (`layer="business_rule"`, distinct
+from the safety floor's `platform_floor`) before the pause, same as the
+safety-floor branch.
+
 ## 6. Knowledge ingestion & retrieval
 
 **Static sources** (URL, PDF, manual entry): fetch/extract text → chunk

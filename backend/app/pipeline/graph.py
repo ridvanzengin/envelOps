@@ -35,6 +35,14 @@ _INTENT_LABELS = frozenset(
     {"knowledge_question", "purchase_intent", "complaint_or_problem", "small_talk", "other"}
 )
 
+# keep_chatting's own grounding-vs-natural split -- a greeting or "you
+# there?" check-in isn't asking anything, so there's no "answer" to
+# ground in the knowledge base at all. Everything else in _INTENT_LABELS
+# is treated as a real information request.
+_INTENTS_NEEDING_GROUNDING = frozenset(
+    {"knowledge_question", "purchase_intent", "complaint_or_problem"}
+)
+
 # Also a first-pass default, not tenant-configurable yet (ARCHITECTURE §4:
 # "plain LLM call for now"; REQUIREMENTS §2: "what counts as a hot lead"
 # must eventually be per-business config). "cold" is the fallback on an
@@ -189,6 +197,37 @@ async def decide_next_step(
         # comes from an already-authenticated context), but if it somehow
         # happened, defaulting to auto-send here would be exactly backwards.
         state.decision = tenant.closing_action if tenant is not None else "escalate_to_human"
+        if state.decision == "escalate_to_human":
+            # Real bug, found via Test Console (not synthetic testing --
+            # the synthetic tenant always sets closing_action=
+            # book_or_checkout, so this path never ran there): this is a
+            # SECOND way decision can become "escalate_to_human", besides
+            # the safety-floor branch above, and it used to fall straight
+            # through to escalate_to_human's interrupt() without ever
+            # setting escalation_reason or logging an Escalation row --
+            # since closing_action defaults to escalate_to_human for
+            # every tenant that hasn't opted into book_or_checkout
+            # (Tenant.closing_action's own docstring), this was silently
+            # dropping every hot purchase-intent message for the *default*
+            # tenant config: pipeline pauses, no reply, no Escalation row
+            # for a human to ever see or resolve. Same
+            # log-immediately-before-the-pause reasoning as the
+            # safety-floor branch above -- log_lead_and_notify never runs
+            # until this is resumed, so waiting for it isn't an option.
+            state.escalation_reason = (
+                "hot purchase-intent lead (tenant closing_action is escalate_to_human)"
+            )
+            escalation_repo = EscalationRepository(runtime.context.session)
+            await escalation_repo.add(
+                Escalation(
+                    tenant_id=state.tenant_id,
+                    conversation_id=state.conversation_id,
+                    reason=state.escalation_reason,
+                    layer="business_rule",
+                    status="pending",
+                )
+            )
+            state.escalation_logged = True
         return state
 
     state.decision = "keep_chatting"
@@ -203,32 +242,55 @@ def route_after_decision(state: PipelineState) -> str:
 
 
 def keep_chatting(state: PipelineState) -> PipelineState:
-    context_block = (
-        "\n".join(f"- {chunk}" for chunk in state.retrieved_chunks)
-        if state.retrieved_chunks
-        else "(no matching knowledge found for this question)"
-    )
-    # The stronger, more explicit anti-hallucination wording below (naming
-    # prices/policies/guarantees specifically, and calling out Turkish by
-    # name) exists because of a real synthetic-test finding (REQUIREMENTS
-    # §12 stage 1, docs/ARCHITECTURE.md §11): a Turkish price question got
-    # told "prices are fixed" -- not present anywhere in the knowledge base
-    # in either language -- while the English equivalent correctly declined
-    # to guess. The original single soft "say so honestly" line wasn't
-    # forceful enough for the model to hold the line equally well in both
-    # languages.
     tone_guidance = _CHANNEL_TONE_GUIDANCE.get(state.channel_type, _DEFAULT_CHANNEL_TONE)
+
+    # Found via real Test Console usage (not synthetic testing -- REQUIREMENTS
+    # §12's fixed message list never included a bare greeting/check-in): the
+    # strict grounding instruction below used to apply unconditionally, so a
+    # plain "merhaba"/"you there?" -- small_talk, not a real question --
+    # still got the "I don't have that information" disclaimer, since there
+    # was nothing in the knowledge base about greetings either. Only
+    # information-seeking intents actually need the "don't guess" rule; a
+    # greeting just needs a greeting back.
+    if state.detected_intent in _INTENTS_NEEDING_GROUNDING:
+        context_block = (
+            "\n".join(f"- {chunk}" for chunk in state.retrieved_chunks)
+            if state.retrieved_chunks
+            else "(no matching knowledge found for this question)"
+        )
+        # The stronger, more explicit anti-hallucination wording below
+        # (naming prices/policies/guarantees specifically, and calling out
+        # Turkish by name) exists because of a real synthetic-test finding
+        # (REQUIREMENTS §12 stage 1, docs/ARCHITECTURE.md §11): a Turkish
+        # price question got told "prices are fixed" -- not present
+        # anywhere in the knowledge base in either language -- while the
+        # English equivalent correctly declined to guess. The original
+        # single soft "say so honestly" line wasn't forceful enough for
+        # the model to hold the line equally well in both languages.
+        content_instruction = (
+            "Ground your reply ONLY in the knowledge listed below. If it does "
+            "not explicitly contain the answer — including specific facts like "
+            "prices, policies, or guarantees — you MUST say you don't have "
+            "that information and a person will confirm, rather than guessing "
+            "or inferring an answer that merely sounds plausible. Apply this "
+            "the same way in every language; do not be any less careful in "
+            "Turkish than you would be in English.\n\n"
+            f"Relevant knowledge:\n{context_block}\n\n"
+        )
+    else:
+        content_instruction = (
+            "This message isn't asking a specific question (it's a greeting, "
+            "small talk, or similar) -- there's nothing to ground in a "
+            "knowledge base here, so just reply naturally and "
+            "conversationally instead (e.g. a greeting gets a greeting "
+            "back). Do not say you don't have information or that someone "
+            "will follow up; nothing was actually asked.\n\n"
+        )
+
     prompt = (
         "You are a helpful customer support assistant for a small business, "
         f"replying directly to a customer's message. {tone_guidance}\n\n"
-        "Ground your reply ONLY in the knowledge listed below. If it does "
-        "not explicitly contain the answer — including specific facts like "
-        "prices, policies, or guarantees — you MUST say you don't have "
-        "that information and a person will confirm, rather than guessing "
-        "or inferring an answer that merely sounds plausible. Apply this "
-        "the same way in every language; do not be any less careful in "
-        "Turkish than you would be in English.\n\n"
-        f"Relevant knowledge:\n{context_block}\n\n"
+        f"{content_instruction}"
         "Customer message (your reply MUST be in this exact same language "
         f"— do not translate, do not switch languages): {state.incoming_text}"
     )
