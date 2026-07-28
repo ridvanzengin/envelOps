@@ -33,6 +33,9 @@
   },
   "testConsole": {
     "platform": "Platform",
+    "newSession": "Yeni oturum",
+    "newSessionHint": "Bu platformda, öncekilerden ayrı takip edilen yeni bir test konuşması başlatın",
+    "sessionLabel": "Oturum: {{sessionId}}",
     "loading": "Yükleniyor…",
     "empty": "Henüz mesaj yok — bu platformda AI'ın nasıl yanıt verdiğini görmek için bir mesaj gönderin.",
     "loadError": "Bu platformun test konuşması yüklenemedi. Tekrar deneyin.",

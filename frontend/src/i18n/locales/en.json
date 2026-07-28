@@ -33,6 +33,9 @@
   },
   "testConsole": {
     "platform": "Platform",
+    "newSession": "New session",
+    "newSessionHint": "Start a fresh test conversation on this platform, tracked separately from previous ones",
+    "sessionLabel": "Session: {{sessionId}}",
     "loading": "Loading…",
     "empty": "No messages yet — send one to see how the AI replies on this platform.",
     "loadError": "Couldn't load this platform's test conversation. Try again.",

@@ -32,14 +32,6 @@ from app.pipeline.state import PipelineState
 
 router = APIRouter(prefix="/test", tags=["test"])
 
-# One test conversation per (tenant, channel type) -- there's no real
-# external contact for a test channel, so this fixed id is what makes
-# repeated test messages on the same platform continue the same thread
-# instead of creating a new conversation every time, reusing
-# ConversationRepository.get_by_external_contact exactly like the Telegram
-# webhook handler (app/channels/api.py) already does for real contacts.
-_TEST_EXTERNAL_CONTACT_ID = "test-user"
-
 
 class TestConversationResponse(BaseModel):
     conversation_id: uuid.UUID | None
@@ -48,6 +40,15 @@ class TestConversationResponse(BaseModel):
 
 class SendTestMessageRequest(BaseModel):
     channel_type: str
+    # Frontend-generated per test "session" (TestConsole.tsx's New Session
+    # button/fresh mount) -- there's no real external contact for a test
+    # channel, so this is what makes repeated messages within the same
+    # session continue the same thread (reusing
+    # ConversationRepository.get_by_external_contact exactly like the
+    # Telegram webhook handler, app/channels/api.py, does for real
+    # contacts), while a new session gets its own independent Conversation
+    # row, trackable on its own in ChannelRail/ConversationPanel.
+    external_contact_id: str
     text: str
 
 
@@ -61,6 +62,7 @@ class SendTestMessageResponse(BaseModel):
 @router.get("/conversations")
 async def get_test_conversation(
     channel_type: str,
+    external_contact_id: str,
     current_user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> TestConversationResponse:
@@ -68,7 +70,7 @@ async def get_test_conversation(
     channel = await channel_repo.get_test_channel(current_user.tenant_id, channel_type)
     conversation = (
         await ConversationRepository(session).get_by_external_contact(
-            current_user.tenant_id, channel.id, _TEST_EXTERNAL_CONTACT_ID
+            current_user.tenant_id, channel.id, external_contact_id
         )
         if channel is not None
         else None
@@ -93,6 +95,11 @@ async def send_test_message(
     stripped = body.text.strip()
     if not stripped:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "text must not be blank")
+    external_contact_id = body.external_contact_id.strip()
+    if not external_contact_id:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST, "external_contact_id must not be blank"
+        )
 
     channel_repo = ChannelRepository(session)
     channel = await channel_repo.get_test_channel(current_user.tenant_id, body.channel_type)
@@ -108,14 +115,14 @@ async def send_test_message(
 
     conversation_repo = ConversationRepository(session)
     conversation = await conversation_repo.get_by_external_contact(
-        current_user.tenant_id, channel.id, _TEST_EXTERNAL_CONTACT_ID
+        current_user.tenant_id, channel.id, external_contact_id
     )
     if conversation is None:
         conversation = await conversation_repo.add(
             Conversation(
                 tenant_id=current_user.tenant_id,
                 channel_id=channel.id,
-                external_contact_id=_TEST_EXTERNAL_CONTACT_ID,
+                external_contact_id=external_contact_id,
             )
         )
 

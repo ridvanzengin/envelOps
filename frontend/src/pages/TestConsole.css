@@ -1,5 +1,23 @@
+.test-console__toolbar {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  margin-bottom: 6px;
+}
+
 .test-console__platform {
   max-width: 280px;
+  margin-bottom: 0;
+}
+
+.test-console__new-session {
+  flex-shrink: 0;
+}
+
+.test-console__session-label {
+  color: var(--text);
+  font-size: 12px;
+  font-family: var(--mono, monospace);
   margin-bottom: 16px;
 }
 
