@@ -1,9 +1,21 @@
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { useConversationPanel } from "../context/conversationPanel/useConversationPanel";
-import { ChevronLeftIcon, CheckIcon } from "./icons";
+import { ChevronLeftIcon, CheckIcon, SendIcon } from "./icons";
 import { StatusBadge } from "./StatusBadge";
 import "./ConversationPanel.css";
+
+const WIDTH_STORAGE_KEY = "envelops:conversation-panel-width";
+const DEFAULT_WIDTH = 340;
+const MIN_WIDTH = 280;
+const MAX_WIDTH = 640;
+
+function loadStoredWidth(): number {
+  const raw = typeof window !== "undefined" ? window.localStorage.getItem(WIDTH_STORAGE_KEY) : null;
+  const parsed = raw ? Number(raw) : NaN;
+  return Number.isFinite(parsed) ? Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, parsed)) : DEFAULT_WIDTH;
+}
 
 export function ConversationPanel() {
   const { t } = useTranslation();
@@ -25,6 +37,43 @@ export function ConversationPanel() {
     resolveError,
   } = useConversationPanel();
 
+  // Persists across reopens and reloads, same drag-to-resize convention as
+  // the sibling reference project's own right-side panel -- the handle
+  // sits on the panel's *left* edge, so width tracks the distance from the
+  // viewport's right edge to the cursor, not raw clientX.
+  const [width, setWidth] = useState(loadStoredWidth);
+  const resizingRef = useRef(false);
+
+  useEffect(() => {
+    function handleMouseMove(event: MouseEvent) {
+      if (!resizingRef.current) return;
+      const next = window.innerWidth - event.clientX;
+      setWidth(Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, next)));
+    }
+    function handleMouseUp() {
+      if (!resizingRef.current) return;
+      resizingRef.current = false;
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    }
+    document.addEventListener("mousemove", handleMouseMove);
+    document.addEventListener("mouseup", handleMouseUp);
+    return () => {
+      document.removeEventListener("mousemove", handleMouseMove);
+      document.removeEventListener("mouseup", handleMouseUp);
+    };
+  }, []);
+
+  useEffect(() => {
+    window.localStorage.setItem(WIDTH_STORAGE_KEY, String(width));
+  }, [width]);
+
+  function handleResizeStart() {
+    resizingRef.current = true;
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+  }
+
   if (!isOpen) return null;
 
   const selectedConversation =
@@ -40,7 +89,8 @@ export function ConversationPanel() {
     : conversations;
 
   return (
-    <aside className="conversation-panel">
+    <aside className="conversation-panel" style={{ width }}>
+      <div className="conversation-panel__resize-handle" onMouseDown={handleResizeStart} />
       <div className="conversation-panel__header">
         {selectedConversationId !== null && (
           <button
@@ -114,44 +164,69 @@ export function ConversationPanel() {
           )}
         </div>
       ) : (
-        <div className="conversation-panel__body">
-          {selectedEscalation && (
-            <div className="conversation-panel__escalation">
-              <div className="conversation-panel__escalation-reason">
-                {selectedEscalation.reason}
-              </div>
-              <button
-                type="button"
-                className="button button--primary conversation-panel__resolve"
-                disabled={resolvingEscalationId === selectedEscalation.id}
-                onClick={() => void resolveEscalation(selectedEscalation.id)}
-              >
-                <CheckIcon />
-                {resolvingEscalationId === selectedEscalation.id
-                  ? t("escalations.resolving")
-                  : t("escalations.resolve")}
-              </button>
-              {resolveError && <p className="conversation-panel__hint" role="alert">{resolveError}</p>}
-            </div>
-          )}
-
-          {threadError && <p className="conversation-panel__hint" role="alert">{threadError}</p>}
-          {messages === null && !threadError && (
-            <p className="conversation-panel__hint">{t("conversationPanel.threadLoading")}</p>
-          )}
-          {messages !== null && (
-            <ul className="conversation-panel__thread">
-              {messages.map((message) => (
-                <li
-                  key={message.id}
-                  className={`conversation-panel__message conversation-panel__message--${message.direction}`}
+        <>
+          <div className="conversation-panel__body">
+            {selectedEscalation && (
+              <div className="conversation-panel__escalation">
+                <div className="conversation-panel__escalation-reason">
+                  {selectedEscalation.reason}
+                </div>
+                <button
+                  type="button"
+                  className="button button--primary conversation-panel__resolve"
+                  disabled={resolvingEscalationId === selectedEscalation.id}
+                  onClick={() => void resolveEscalation(selectedEscalation.id)}
                 >
-                  {message.text}
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
+                  <CheckIcon />
+                  {resolvingEscalationId === selectedEscalation.id
+                    ? t("escalations.resolving")
+                    : t("escalations.resolve")}
+                </button>
+                {resolveError && <p className="conversation-panel__hint" role="alert">{resolveError}</p>}
+              </div>
+            )}
+
+            {threadError && <p className="conversation-panel__hint" role="alert">{threadError}</p>}
+            {messages === null && !threadError && (
+              <p className="conversation-panel__hint">{t("conversationPanel.threadLoading")}</p>
+            )}
+            {messages !== null && (
+              <ul className="conversation-panel__thread">
+                {messages.map((message) => (
+                  <li
+                    key={message.id}
+                    className={`conversation-panel__message conversation-panel__message--${message.direction}`}
+                  >
+                    {message.text}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+
+          {/* Placeholder only -- no backend capability yet for a human to
+              send a message outside the pipeline (docs/ARCHITECTURE.md
+              §11's deferred pause-mode item). Disabled rather than wired
+              to a no-op, so it doesn't look like a silently broken send. */}
+          <div className="conversation-panel__input-row">
+            <input
+              type="text"
+              className="conversation-panel__input"
+              placeholder={t("conversationPanel.replyPlaceholder")}
+              disabled
+              title={t("conversationPanel.replyDisabledHint")}
+            />
+            <button
+              type="button"
+              className="button button--primary conversation-panel__send"
+              disabled
+              title={t("conversationPanel.replyDisabledHint")}
+              aria-label={t("conversationPanel.replyDisabledHint")}
+            >
+              <SendIcon />
+            </button>
+          </div>
+        </>
       )}
     </aside>
   );

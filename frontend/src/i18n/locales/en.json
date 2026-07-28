@@ -10,7 +10,8 @@
     "dashboard": "Leads today, escalations today, response times."
   },
   "theme": {
-    "toggle": "Toggle theme"
+    "switchToLight": "Switch to light theme",
+    "switchToDark": "Switch to dark theme"
   },
   "channelRail": {
     "telegram": "Telegram",
@@ -18,7 +19,8 @@
     "facebook": "Facebook",
     "instagram": "Instagram",
     "email": "Email",
-    "comingSoon": "Coming soon"
+    "comingSoon": "Coming soon",
+    "menu": "Account menu"
   },
   "conversationPanel": {
     "back": "Back",
@@ -29,7 +31,9 @@
     "noMessages": "(no messages)",
     "threadLoading": "Loading messages…",
     "threadLoadError": "Couldn't load this conversation's messages. Try again.",
-    "filterEscalated": "Escalated"
+    "filterEscalated": "Escalated",
+    "replyPlaceholder": "Type a reply…",
+    "replyDisabledHint": "Sending replies isn't available yet"
   },
   "auth": {
     "loginTitle": "Log in",

@@ -109,6 +109,24 @@ export function ChevronLeftIcon(props: SVGProps<SVGSVGElement>) {
   );
 }
 
+export function MoreIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <Icon {...props} strokeWidth="0" fill="currentColor">
+      <circle cx="12" cy="5" r="1.6" />
+      <circle cx="12" cy="12" r="1.6" />
+      <circle cx="12" cy="19" r="1.6" />
+    </Icon>
+  );
+}
+
+export function SendIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <Icon {...props}>
+      <path d="m3 12 18-9-5 9 5 9-18-9Z" />
+    </Icon>
+  );
+}
+
 export function TelegramIcon(props: SVGProps<SVGSVGElement>) {
   return (
     <Icon {...props}>

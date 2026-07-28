@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { useAuth } from "../auth/useAuth";
@@ -7,13 +8,10 @@ import {
   EmailIcon,
   FacebookIcon,
   InstagramIcon,
-  LogoutIcon,
-  MoonIcon,
-  SunIcon,
+  MoreIcon,
   TelegramIcon,
   WhatsAppIcon,
 } from "./icons";
-import { LanguageSwitcher } from "./LanguageSwitcher";
 import "./ChannelRail.css";
 
 // Only Telegram is a real, built channel (app/channels/ backend) -- the
@@ -29,36 +27,74 @@ const DISABLED_CHANNELS = [
 ] as const;
 
 export function ChannelRail() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { theme, toggleTheme } = useTheme();
   const { logout } = useAuth();
   const { isOpen, openPanel, closePanel, pendingEscalationCount } = useConversationPanel();
+  const [menuOpen, setMenuOpen] = useState(false);
+
+  // Same click-outside convention as every other .dropdown-menu consumer
+  // in the sibling reference project -- a mousedown anywhere outside the
+  // menu's own DOM subtree closes it.
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (!(event.target instanceof Element) || !event.target.closest(".dropdown-menu")) {
+        setMenuOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  const isEnglish = i18n.resolvedLanguage !== "tr";
 
   return (
     <nav className="channel-rail">
-      <LanguageSwitcher showLabel={false} className="channel-rail__icon" />
-      <button
-        type="button"
-        className="channel-rail__icon"
-        onClick={toggleTheme}
-        title={t("theme.toggle")}
-        aria-label={t("theme.toggle")}
-      >
-        {theme === "dark" ? (
-          <SunIcon className="channel-rail__svg" />
-        ) : (
-          <MoonIcon className="channel-rail__svg" />
+      <div className="dropdown-menu">
+        <button
+          type="button"
+          className="channel-rail__icon"
+          aria-label={t("channelRail.menu")}
+          aria-expanded={menuOpen}
+          onClick={() => setMenuOpen((value) => !value)}
+        >
+          <MoreIcon className="channel-rail__svg" />
+        </button>
+        {menuOpen && (
+          <div className="dropdown-menu__list">
+            <button
+              type="button"
+              className="dropdown-menu__item"
+              onClick={() => {
+                setMenuOpen(false);
+                void i18n.changeLanguage(isEnglish ? "tr" : "en");
+              }}
+            >
+              {isEnglish ? "Türkçe" : "English"}
+            </button>
+            <button
+              type="button"
+              className="dropdown-menu__item"
+              onClick={() => {
+                setMenuOpen(false);
+                toggleTheme();
+              }}
+            >
+              {theme === "dark" ? t("theme.switchToLight") : t("theme.switchToDark")}
+            </button>
+            <button
+              type="button"
+              className="dropdown-menu__item dropdown-menu__item--danger"
+              onClick={() => {
+                setMenuOpen(false);
+                logout();
+              }}
+            >
+              {t("auth.logout")}
+            </button>
+          </div>
         )}
-      </button>
-      <button
-        type="button"
-        className="channel-rail__icon"
-        onClick={logout}
-        title={t("auth.logout")}
-        aria-label={t("auth.logout")}
-      >
-        <LogoutIcon className="channel-rail__svg" />
-      </button>
+      </div>
 
       <div className="channel-rail__divider" />
 

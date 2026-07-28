@@ -1,11 +1,26 @@
 .conversation-panel {
-  width: 340px;
+  position: relative;
   flex-shrink: 0;
   background: var(--bg);
   border-left: 1px solid var(--border);
   height: 100%;
   display: flex;
   flex-direction: column;
+}
+
+.conversation-panel__resize-handle {
+  position: absolute;
+  top: 0;
+  left: -3px;
+  width: 6px;
+  height: 100%;
+  cursor: col-resize;
+  z-index: 1;
+}
+
+.conversation-panel__resize-handle:hover,
+.conversation-panel__resize-handle:active {
+  background: var(--accent-border);
 }
 
 .conversation-panel__header {
@@ -197,4 +212,37 @@
   background: var(--accent-bg);
   color: var(--accent-h);
   border: 1px solid var(--accent-border);
+}
+
+.conversation-panel__input-row {
+  flex-shrink: 0;
+  display: flex;
+  gap: 6px;
+  padding: 10px 12px;
+  border-top: 1px solid var(--border);
+}
+
+.conversation-panel__input {
+  flex: 1;
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-subtle);
+  color: var(--text-h);
+  font: inherit;
+  font-size: 13px;
+}
+
+.conversation-panel__input::placeholder {
+  color: var(--text);
+}
+
+.conversation-panel__input:disabled {
+  cursor: not-allowed;
+}
+
+.conversation-panel__send {
+  flex-shrink: 0;
+  padding: 8px 10px;
 }

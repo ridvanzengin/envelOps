@@ -10,7 +10,8 @@
     "dashboard": "Bugünkü potansiyel müşteriler, bugünkü yükseltmeler, yanıt süreleri."
   },
   "theme": {
-    "toggle": "Temayı değiştir"
+    "switchToLight": "Açık temaya geç",
+    "switchToDark": "Koyu temaya geç"
   },
   "channelRail": {
     "telegram": "Telegram",
@@ -18,7 +19,8 @@
     "facebook": "Facebook",
     "instagram": "Instagram",
     "email": "E-posta",
-    "comingSoon": "Yakında"
+    "comingSoon": "Yakında",
+    "menu": "Hesap menüsü"
   },
   "conversationPanel": {
     "back": "Geri",
@@ -29,7 +31,9 @@
     "noMessages": "(mesaj yok)",
     "threadLoading": "Mesajlar yükleniyor…",
     "threadLoadError": "Bu konuşmanın mesajları yüklenemedi. Tekrar deneyin.",
-    "filterEscalated": "Yükseltilmiş"
+    "filterEscalated": "Yükseltilmiş",
+    "replyPlaceholder": "Bir yanıt yazın…",
+    "replyDisabledHint": "Yanıt gönderme henüz kullanılamıyor"
   },
   "auth": {
     "loginTitle": "Giriş yap",
