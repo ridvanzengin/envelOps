@@ -449,56 +449,27 @@ No drag-and-drop flow builder in Phase 1.
 
 ## 11. Open items carried forward (non-blocking, not designed yet)
 
-- **Human-paused conversations (pause AI replies, reply directly without
-  triggering an escalation)** — explicitly deferred out of the frontend
-  redesign that added the conversation panel (§10). A real new backend
-  feature: a second conversation-level pause mode alongside the existing
-  safety-floor escalation (§5), needing a `Conversation` mode field,
-  pause/resume + human-send endpoints, and a `process_incoming_message`
-  check to skip the AI while paused. Until this lands, the panel's thread
-  view stays read-only.
-- **`book_or_checkout` beyond a static link** — implemented and verified
-  with a tenant-configured URL (`Tenant.closing_link`), which is enough for
-  any business regardless of platform. A real Shopify/WooCommerce/Calendly
-  *connector* (auto-generating a checkout/booking link per order rather
-  than sending the same static one) is REQUIREMENTS §13's own step 2
-  ("live data connection... for platforms that support it"), not step 1 —
-  correctly-sequenced-later work, not a gap, and needs a product decision
-  on which connector(s) to build first, not just an engineering pass.
-- Channel failure behavior beyond the health-check stub — silent stop vs.
-  detected fallback. Telegram (§8) doesn't have even a stub yet, only
-  Beeper was ever planned to.
-- Full observability dashboard (builder's trace view vs. owner's operational
-  view — likely two different views, not one)
-- Data retention/deletion policy specifics
-- Whether/when general draft-and-approve gets added back, and if so, whether
-  certain categories "graduate" to auto-send based on approval history (the
-  data hook for this — approved-as-is vs. edited vs. rejected — should still
-  be captured wherever it's cheap to log, even without the feature)
-- ~~A synthetic-message test harness for pipeline validation~~ — built:
-  `backend/scripts/run_synthetic_conversations.py` runs a fixed set of
-  fabricated DMs (REQUIREMENTS §12 stage 1's list — order/shipping/returns/
-  price + safety-floor edge cases, Turkish and English) through the real
-  pipeline against a synthetic tenant, for manual review.
-- ~~Two quality gaps found by the first synthetic run~~ — fixed and
-  re-verified against a second full run: (1) intent classification wasn't
-  language-stable (a hypothetical pre-purchase return question classified
-  as `knowledge_question`/cold in Turkish but `complaint_or_problem`/warm
-  in English) — fixed by giving `understand_intent`'s prompt explicit
-  per-label definitions, specifically the hypothetical-vs-actual-problem
-  distinction that was previously left to the model to infer; both
-  languages now return `knowledge_question`/cold. (2) a real
-  hallucination — a Turkish price question got told prices are fixed,
-  not present in the knowledge base at all, while English correctly
-  declined to guess — fixed by strengthening `keep_chatting`'s grounding
-  instruction to name prices/policies/guarantees specifically and to
-  call out Turkish by name as somewhere not to be less careful; the
-  Turkish reply now says it can't state that and a person will confirm,
-  matching the English behavior. Both fixes are prompt-only (`app/
-  pipeline/graph.py`'s `understand_intent`/`keep_chatting`), no retrieval
-  or pipeline-structure changes — re-run the harness again if a similar
-  language-asymmetry bug shows up elsewhere, since this class of issue
-  isn't proven fixed everywhere, only for these two specific cases.
+See [`ROADMAP.md`](ROADMAP.md) for the up-to-date, actively-maintained
+version of this list, current status, and priority order — that document
+now owns tracking "what's next," so it doesn't drift out of sync with a
+second copy here. Kept brief in this document because these are
+architectural gaps, not day-to-day status:
+
+- **Human-paused conversations** (pause AI replies, reply directly without
+  triggering an escalation) — a second conversation-level pause mode
+  alongside the existing safety-floor escalation (§5), needing a
+  `Conversation` mode field, pause/resume + human-send endpoints, and a
+  `process_incoming_message` check to skip the AI while paused. Until this
+  lands, the conversation panel's thread view stays read-only.
+- **`book_or_checkout` beyond a static link** — a real Shopify/WooCommerce/
+  Calendly *connector* (auto-generating a checkout/booking link per order)
+  instead of always sending the same tenant-configured static URL
+  (`Tenant.closing_link`). REQUIREMENTS §13 step 2, not step 1.
+- Channel failure behavior beyond the health-check stub.
+- Full observability dashboard (builder's trace view vs. owner's
+  operational view).
+- Data retention/deletion policy specifics.
+- Whether/when general draft-and-approve gets added back (REQUIREMENTS §4).
 
 ## 12. Explicitly deferred to later phases
 
@@ -510,4 +481,5 @@ connectors, AI-assisted configuration, the visual flow builder. See
 ---
 
 *This document plus `REQUIREMENTS.md` together are the reference for
-starting Phase 1 development.*
+starting Phase 1 development. See [`ROADMAP.md`](ROADMAP.md) for current
+status and next steps.*

@@ -90,7 +90,7 @@ _DEFAULT_CHANNEL_TONE = _CHANNEL_TONE_GUIDANCE["telegram"]
 
 def understand_intent(state: PipelineState) -> PipelineState:
     # Explicit per-label definitions, not just the label names -- found via
-    # REQUIREMENTS §12 stage 1 synthetic testing (docs/ARCHITECTURE.md §11):
+    # REQUIREMENTS §12 stage 1 synthetic testing:
     # a hypothetical pre-purchase question ("what if I don't like it, can I
     # return it?") classified as knowledge_question in Turkish but
     # complaint_or_problem in English, because nothing told the model where
@@ -261,7 +261,7 @@ def keep_chatting(state: PipelineState) -> PipelineState:
         # The stronger, more explicit anti-hallucination wording below
         # (naming prices/policies/guarantees specifically, and calling out
         # Turkish by name) exists because of a real synthetic-test finding
-        # (REQUIREMENTS §12 stage 1, docs/ARCHITECTURE.md §11): a Turkish
+        # (REQUIREMENTS §12 stage 1): a Turkish
         # price question got told "prices are fixed" -- not present
         # anywhere in the knowledge base in either language -- while the
         # English equivalent correctly declined to guess. The original
