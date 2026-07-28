@@ -216,7 +216,7 @@ onboarding, and a self-improving layer on top of the pipeline, not a
 single feature. Captured here so the ambition doesn't live only in chat
 history; none of this is designed in detail yet.
 
-### 5.1 Multi-tenant synthetic seed script with showcase scenarios visible in the rail
+### 5.1 Multi-tenant synthetic seed script with showcase scenarios visible in the rail — done (2026-07-29)
 Turn the existing single-tenant synthetic harness
 (`scripts/run_synthetic_conversations.py` — one tenant, "Synthetic Test —
 Honey Co") into a proper seed script covering multiple fake tenants
@@ -261,6 +261,55 @@ conversation-history design — and any pipeline tuning after it — far more
 meaningfully testable than the current single honey-seller harness. Worth
 deciding explicitly whether this comes before or after §2, rather than
 defaulting to whatever order this document happened to list things in.
+
+**Built:** `backend/scripts/seed_showcase_tenants.py` — a new, separate
+script (the existing `run_synthetic_conversations.py` is untouched and
+still owns REQUIREMENTS §12 stage 1's pilot-validation gate specifically;
+this one is occasional/on-demand demo-data generation, explicitly not
+meant to run like a test suite). Seeds 4 tenants across the four
+REQUIREMENTS §2 verticals (Aurora Aesthetics Clinic / service-appointment,
+Meadow & Jar Honey Co / product-e-commerce, Luna Hair Studio /
+local-booking, Vertex Growth Partners / B2B-high-ticket), each with its
+own `closing_action`, knowledge chunks, a login-able `User`
+(`owner@<slug>.demo` / shared password printed by the script — the
+"no User row" gap above, fixed), and two `is_test=True` channels (one
+chat platform + email) so channel-tone differences are visible too. 13
+scenario messages total, run through the real pipeline exactly like Test
+Console does (including writing `pipeline_traces`), kept small
+deliberately to stay well inside Gemini's free-tier throughput. Verified
+live: logged in as the Honey Co tenant, saw its Telegram conversation in
+the rail with correct "Purchase intent"/"Hot" badges and the real
+multi-message thread, not just a DB row.
+
+**Two real findings from actually running diverse verticals, not new
+work in themselves — recorded here rather than silently fixed:**
+1. **Live re-confirmation of §2's known language-consistency bug**, from
+   an entirely different vertical: Aurora Aesthetics Clinic's Turkish
+   question ("Merhaba, burun estetiği için fiyat aralığı nedir?") got an
+   English reply ("Rhinoplasty consultations are free... I don't have
+   that information and a person will confirm."). Confirms this bug
+   isn't honey/Turkish-specific — it's a general `keep_chatting`
+   disclaimer-path issue, exactly the kind of validation this seed script
+   was for.
+2. **A new, real safety-floor gap, found because a health-adjacent
+   vertical was tested at all**: "Can you guarantee this procedure has
+   zero risk of complications?" did *not* trip the outcome-guarantee
+   check (`escalation/safety_gate.py`) and got a normal `keep_chatting`
+   reply. Root cause: the check deliberately requires a certainty word
+   ("guarantee") *and* an efficacy word ("work"/"cure"/"heal"/"fix"/
+   "help" — `_EFFICACY_CUES`) in the same message, by design (to avoid
+   honey's own "ürün garantisi" shipping-guarantee false positives,
+   already documented). `_EFFICACY_CUES` covers functional-efficacy
+   language but not safety/risk-absence language ("risk," "complication,"
+   "safe," "side-effect-free") — a real coverage gap for exactly the kind
+   of business (health tourism/aesthetic clinics) REQUIREMENTS §1 names
+   as a primary use case, not a hypothetical one. Not fixed yet —
+   deliberately left for the user to decide whether/when, since it's a
+   change to the safety-critical gate itself, not a routine bug. The
+   module's own docstring already flagged this class of gap ("a plain
+   regex list will miss plenty of real phrasing... treat expanding this
+   as required before relying on it for real health-related tenants, not
+   a nice-to-have") — this is concrete evidence for that, not a surprise.
 
 ### 5.2 Template gallery, built from the battle-tested seed scenarios
 Once 5.1's tenant/knowledge/settings configurations have been exercised
