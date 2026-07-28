@@ -44,11 +44,33 @@ _LEAD_SCORES = frozenset({"hot", "warm", "cold"})
 
 
 def understand_intent(state: PipelineState) -> PipelineState:
+    # Explicit per-label definitions, not just the label names -- found via
+    # REQUIREMENTS §12 stage 1 synthetic testing (docs/ARCHITECTURE.md §11):
+    # a hypothetical pre-purchase question ("what if I don't like it, can I
+    # return it?") classified as knowledge_question in Turkish but
+    # complaint_or_problem in English, because nothing told the model where
+    # that boundary actually sits. The hypothetical-vs-actual distinction
+    # below is what's supposed to make the same underlying question land on
+    # the same label regardless of which language it's asked in.
     prompt = (
         "Classify the intent of this customer DM into exactly one of: "
-        f"{', '.join(sorted(_INTENT_LABELS))}. "
-        "The message may be in Turkish or English — respond in neither, "
-        "just the single label, nothing else, no punctuation.\n\n"
+        f"{', '.join(sorted(_INTENT_LABELS))}.\n\n"
+        "Label definitions -- apply these the same way regardless of "
+        "which language the message is in; the same underlying question "
+        "must get the same label whether asked in Turkish or English:\n"
+        "- knowledge_question: asking for information -- policy, product "
+        "details, or a hypothetical \"what if\" scenario about something "
+        "that hasn't happened yet (e.g. \"can I return it if I don't like "
+        "it?\" is hypothetical, not a real problem, even if phrased with "
+        "mild hesitation).\n"
+        "- complaint_or_problem: describing an ACTUAL problem with an "
+        "order/product the customer already has or experienced (e.g. "
+        "\"it arrived damaged\", \"this isn't working\").\n"
+        "- purchase_intent: ready or trying to buy/book right now.\n"
+        "- small_talk: greeting or chit-chat, no real question.\n"
+        "- other: doesn't fit any of the above.\n\n"
+        "Respond in neither Turkish nor English — just the single label, "
+        "nothing else, no punctuation.\n\n"
         f"Message: {state.incoming_text}"
     )
     raw = generate_text(prompt).strip().lower()
@@ -149,13 +171,27 @@ def keep_chatting(state: PipelineState) -> PipelineState:
         if state.retrieved_chunks
         else "(no matching knowledge found for this question)"
     )
+    # The stronger, more explicit anti-hallucination wording below (naming
+    # prices/policies/guarantees specifically, and calling out Turkish by
+    # name) exists because of a real synthetic-test finding (REQUIREMENTS
+    # §12 stage 1, docs/ARCHITECTURE.md §11): a Turkish price question got
+    # told "prices are fixed" -- not present anywhere in the knowledge base
+    # in either language -- while the English equivalent correctly declined
+    # to guess. The original single soft "say so honestly" line wasn't
+    # forceful enough for the model to hold the line equally well in both
+    # languages.
     prompt = (
         "You are a helpful customer support assistant for a small business, "
         "replying directly to a customer's DM. Keep it short and natural, "
         "like a real person texting back — no \"Dear customer\" greeting, "
-        "no signature. Only use the knowledge below if it's actually "
-        "relevant to the question; if it doesn't answer the question, say "
-        "so honestly rather than guessing.\n\n"
+        "no signature.\n\n"
+        "Ground your reply ONLY in the knowledge listed below. If it does "
+        "not explicitly contain the answer — including specific facts like "
+        "prices, policies, or guarantees — you MUST say you don't have "
+        "that information and a person will confirm, rather than guessing "
+        "or inferring an answer that merely sounds plausible. Apply this "
+        "the same way in every language; do not be any less careful in "
+        "Turkish than you would be in English.\n\n"
         f"Relevant knowledge:\n{context_block}\n\n"
         "Customer message (your reply MUST be in this exact same language "
         f"— do not translate, do not switch languages): {state.incoming_text}"
