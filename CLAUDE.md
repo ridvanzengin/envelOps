@@ -12,6 +12,11 @@ product or architecture decisions, don't rely on this file for that:**
   reference, product-level)
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — *how*, for Phase 1
   specifically (tech stack, data model, pipeline steps, API surface)
+- [`docs/ROADMAP.md`](docs/ROADMAP.md) — *what's next*: current status,
+  open bugs, and scoped-but-unbuilt feature work. This one changes every
+  session — check it before assuming REQUIREMENTS/ARCHITECTURE's own
+  "open items" sections are current, since ROADMAP.md is now the single
+  place that gets updated live.
 
 This file is deliberately short: day-to-day working conventions and things
 that would otherwise need repeating every session. When architecture or
@@ -120,8 +125,11 @@ discipline above; the existing set doesn't need reinstalling.
   `core/llm.py`). Leaves real rows in the DB tagged "Synthetic Test — Honey
   Co" for inspection; doesn't clean up after itself. First full run found
   two real quality gaps (language-inconsistent intent classification, a
-  Turkish-only pricing hallucination) — see `docs/ARCHITECTURE.md` §11,
-  neither fixed yet.
+  Turkish-only pricing hallucination) — both fixed and re-verified via a
+  second full run (prompt-only fixes in `app/pipeline/graph.py`'s
+  `understand_intent`/`keep_chatting`). A related but distinct language-
+  consistency bug in `keep_chatting`'s disclaimer path was later found via
+  Test Console usage and is still open — see `docs/ROADMAP.md` §2.
 - Lint: `ruff check app/ tests/ scripts/` — Format-on-save equivalent:
   `ruff format` (not yet run repo-wide, safe to use)
 - Type-check: `mypy app/ scripts/`

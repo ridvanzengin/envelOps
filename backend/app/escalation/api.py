@@ -6,8 +6,11 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import CurrentUser, get_current_user
+from app.channels.models import Channel
+from app.channels.repository import ChannelRepository
+from app.conversations.repository import ConversationRepository
 from app.core.db import get_session
-from app.escalation.models import TenantTriggerPhrase
+from app.escalation.models import Escalation, TenantTriggerPhrase
 from app.escalation.repository import EscalationRepository, TenantTriggerPhraseRepository
 from app.pipeline.runner import get_checkpointer, resume_pipeline
 
@@ -21,6 +24,8 @@ class EscalationResponse(BaseModel):
     layer: str
     status: str
     created_at: datetime
+    channel_type: str
+    is_test: bool
 
     model_config = {"from_attributes": True}
 
@@ -36,14 +41,30 @@ class CreateTriggerPhraseRequest(BaseModel):
     phrase: str
 
 
+def _to_response(escalation: Escalation, channel: Channel) -> EscalationResponse:
+    """channel_type/is_test live on Channel, not Escalation -- model_validate's
+    from_attributes only ever reads one source object, so this merges the two
+    by hand instead."""
+    return EscalationResponse(
+        id=escalation.id,
+        conversation_id=escalation.conversation_id,
+        reason=escalation.reason,
+        layer=escalation.layer,
+        status=escalation.status,
+        created_at=escalation.created_at,
+        channel_type=channel.type,
+        is_test=channel.is_test,
+    )
+
+
 @router.get("")
 async def list_escalations(
     current_user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> list[EscalationResponse]:
     escalation_repo = EscalationRepository(session)
-    escalations = await escalation_repo.list(current_user.tenant_id)
-    return [EscalationResponse.model_validate(escalation) for escalation in escalations]
+    rows = await escalation_repo.list_with_channel_info(current_user.tenant_id)
+    return [_to_response(escalation, channel) for escalation, channel in rows]
 
 
 @router.post("/{escalation_id}/resolve")
@@ -89,7 +110,24 @@ async def resolve_escalation(
     # caller of run_pipeline/resume_pipeline owns its own commit.
     await session.commit()
 
-    return EscalationResponse.model_validate(escalation)
+    conversation = await ConversationRepository(session).get(
+        current_user.tenant_id, escalation.conversation_id
+    )
+    channel = (
+        await ChannelRepository(session).get(current_user.tenant_id, conversation.channel_id)
+        if conversation is not None
+        else None
+    )
+    # Neither should be possible in practice (an escalation's conversation/
+    # channel disappearing mid-resolve) -- 500s rather than silently
+    # returning a response with made-up channel info.
+    if conversation is None or channel is None:
+        raise HTTPException(
+            status.HTTP_500_INTERNAL_SERVER_ERROR,
+            "escalation's conversation or channel is missing",
+        )
+
+    return _to_response(escalation, channel)
 
 
 @router.get("/trigger-phrases")

@@ -1,5 +1,5 @@
-"""Synthetic-message validation harness (docs/ARCHITECTURE.md §11,
-docs/REQUIREMENTS.md §12 stage 1) — runs a fixed set of fabricated DM
+"""Synthetic-message validation harness (docs/REQUIREMENTS.md §12 stage 1)
+— runs a fixed set of fabricated DM
 conversations through the real pipeline (real LLM, real DB) against a
 synthetic tenant, and prints what happened for manual review.
 
@@ -183,6 +183,7 @@ async def main() -> None:
                     tenant_id=tenant.id,
                     conversation_id=conversation.id,
                     incoming_text=message.text,
+                    channel_type=channel.type,
                 )
                 try:
                     result = await run_pipeline(state, session, checkpointer)

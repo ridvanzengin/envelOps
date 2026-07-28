@@ -1,11 +1,25 @@
 import { createContext } from "react";
 
+// Latest pipeline_traces row for a message/conversation (docs/ROADMAP.md
+// §3.3/§3.4) -- `decision` is only ever populated per-message
+// (MessageThread/Test Console); the rail's per-conversation row
+// (ConversationPanel) only has intent+lead-score to show.
+export interface MessageDiagnostics {
+  detected_intent: string | null;
+  lead_score: string | null;
+  decision: string | null;
+}
+
 export interface Conversation {
   id: string;
   external_contact_id: string;
   status: string;
   last_message_text: string | null;
   last_message_at: string | null;
+  channel_type: string;
+  is_test: boolean;
+  detected_intent: string | null;
+  lead_score: string | null;
 }
 
 export interface Message {
@@ -13,6 +27,7 @@ export interface Message {
   direction: string;
   text: string;
   created_at: string;
+  diagnostics?: MessageDiagnostics | null;
 }
 
 export interface Escalation {
@@ -22,11 +37,14 @@ export interface Escalation {
   layer: string;
   status: string;
   created_at: string;
+  channel_type: string;
+  is_test: boolean;
 }
 
 export interface ConversationPanelContextValue {
   isOpen: boolean;
-  openPanel: () => void;
+  activeChannelType: string | null;
+  openPanel: (channelType: string) => void;
   closePanel: () => void;
 
   conversations: Conversation[] | null;
@@ -34,10 +52,12 @@ export interface ConversationPanelContextValue {
 
   // Pending escalations keyed by conversation_id -- a conversation shows up
   // here only while it has an unresolved escalation (docs/ARCHITECTURE.md
-  // §5), which is also what ChannelRail's badge count and the panel's
-  // "escalated only" filter both read from.
+  // §5), which is also what the panel's "escalated only" filter reads from.
   escalationByConversationId: Map<string, Escalation>;
-  pendingEscalationCount: number;
+  // ChannelRail's per-icon badge -- one count per channel_type, not a
+  // single tenant-wide number, now that Test Console channels mean more
+  // than one channel type can be live at once.
+  pendingEscalationCountByChannelType: Record<string, number>;
 
   escalatedOnly: boolean;
   setEscalatedOnly: (value: boolean) => void;

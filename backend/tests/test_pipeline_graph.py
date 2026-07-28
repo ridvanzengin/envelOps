@@ -19,7 +19,10 @@ from app.pipeline.state import PipelineState
 
 def _make_state(text: str) -> PipelineState:
     return PipelineState(
-        tenant_id=uuid.uuid4(), conversation_id=uuid.uuid4(), incoming_text=text
+        tenant_id=uuid.uuid4(),
+        conversation_id=uuid.uuid4(),
+        incoming_text=text,
+        channel_type="telegram",
     )
 
 
@@ -185,16 +188,53 @@ class TestDecideNextStepRouting:
         with (
             patch("app.pipeline.graph.TenantTriggerPhraseRepository") as mock_phrase_repo_cls,
             patch("app.pipeline.graph.TenantRepository") as mock_tenant_repo_cls,
+            patch("app.pipeline.graph.EscalationRepository") as mock_escalation_repo_cls,
         ):
             mock_phrase_repo_cls.return_value.list = AsyncMock(return_value=[])
             mock_tenant_repo_cls.return_value.get = AsyncMock(return_value=None)
+            mock_escalation_repo_cls.return_value.add = AsyncMock()
             result = await decide_next_step(state, _make_runtime())
         assert result.decision == "escalate_to_human"
+        assert result.escalation_logged is True
+
+    async def test_logs_escalation_when_tenant_closing_action_is_escalate_to_human(
+        self,
+    ) -> None:
+        # Real bug, found via Test Console: closing_action defaults to
+        # escalate_to_human for every tenant that hasn't opted into
+        # book_or_checkout (Tenant.closing_action's own docstring), and
+        # this path used to route straight to escalate_to_human's
+        # interrupt() without ever logging an Escalation -- silently
+        # pausing forever with no way for a human to ever see or resolve
+        # it. The synthetic test tenant always sets closing_action=
+        # book_or_checkout, so synthetic testing never exercised this.
+        state = _make_state("I want to order 5 jars right now, how do I pay?")
+        state.detected_intent = "purchase_intent"
+        state.lead_score = "hot"
+        fake_tenant = type("Tenant", (), {"closing_action": "escalate_to_human"})()
+        with (
+            patch("app.pipeline.graph.TenantTriggerPhraseRepository") as mock_phrase_repo_cls,
+            patch("app.pipeline.graph.TenantRepository") as mock_tenant_repo_cls,
+            patch("app.pipeline.graph.EscalationRepository") as mock_escalation_repo_cls,
+        ):
+            mock_phrase_repo_cls.return_value.list = AsyncMock(return_value=[])
+            mock_tenant_repo_cls.return_value.get = AsyncMock(return_value=fake_tenant)
+            mock_escalation_repo_cls.return_value.add = AsyncMock()
+            result = await decide_next_step(state, _make_runtime())
+
+        assert result.decision == "escalate_to_human"
+        assert result.escalation_reason is not None
+        assert result.escalation_logged is True
+        logged = mock_escalation_repo_cls.return_value.add.call_args.args[0]
+        assert logged.reason == result.escalation_reason
+        assert logged.layer == "business_rule"
+        assert logged.status == "pending"
 
 
 class TestKeepChatting:
     def test_sets_draft_text_from_model_response(self) -> None:
         state = _make_state("Do you ship internationally?")
+        state.detected_intent = "knowledge_question"
         state.retrieved_chunks = ["We ship worldwide via DHL."]
         with patch(
             "app.pipeline.graph.generate_text", return_value="Yes, we ship worldwide!"
@@ -204,6 +244,7 @@ class TestKeepChatting:
 
     def test_handles_no_retrieved_chunks_without_erroring(self) -> None:
         state = _make_state("Do you ship internationally?")
+        state.detected_intent = "knowledge_question"
         state.retrieved_chunks = []
         with patch(
             "app.pipeline.graph.generate_text", return_value="Let me check on that."
@@ -212,6 +253,38 @@ class TestKeepChatting:
         assert result.draft_text == "Let me check on that."
         prompt = mock_gen.call_args.args[0]
         assert "no matching knowledge found" in prompt
+
+    def test_grounds_reply_for_information_seeking_intents(self) -> None:
+        # knowledge_question/purchase_intent/complaint_or_problem all get
+        # the strict "don't guess" grounding instruction + the knowledge
+        # block -- there's a real question to ground an answer in.
+        for intent in ("knowledge_question", "purchase_intent", "complaint_or_problem"):
+            state = _make_state("Do you ship internationally?")
+            state.detected_intent = intent
+            state.retrieved_chunks = ["We ship worldwide via DHL."]
+            with patch("app.pipeline.graph.generate_text", return_value="x") as mock_gen:
+                keep_chatting(state)
+            prompt = mock_gen.call_args.args[0]
+            assert "Ground your reply ONLY in the knowledge" in prompt
+            assert "We ship worldwide via DHL." in prompt
+
+    def test_skips_grounding_for_small_talk_and_other(self) -> None:
+        # Found via real usage, not synthetic testing: a bare greeting
+        # ("merhaba") or a "you there?" check-in isn't asking anything, so
+        # forcing the "I don't have that information" disclaimer onto it
+        # was a real bug -- these intents get a plain conversational
+        # instruction instead, with no knowledge block at all.
+        for intent in ("small_talk", "other"):
+            state = _make_state("hi")
+            state.detected_intent = intent
+            state.retrieved_chunks = ["We ship worldwide via DHL."]
+            with patch("app.pipeline.graph.generate_text", return_value="x") as mock_gen:
+                keep_chatting(state)
+            prompt = mock_gen.call_args.args[0]
+            assert "Ground your reply ONLY in the knowledge" not in prompt
+            assert "isn't asking a specific question" in prompt
+            # The knowledge block itself shouldn't leak into a greeting reply.
+            assert "We ship worldwide via DHL." not in prompt
 
 
 class TestLogLeadAndNotify:

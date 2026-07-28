@@ -1,11 +1,13 @@
 {
   "nav": {
     "knowledge": "Knowledge sources",
+    "testConsole": "Test console",
     "settings": "Settings",
     "dashboard": "Dashboard"
   },
   "pages": {
     "knowledge": "Add (URL/PDF/manual), list, and refresh knowledge sources.",
+    "testConsole": "Send a test message through the real pipeline on any platform, to compare how replies differ by channel.",
     "settings": "Safety trigger phrases (system defaults locked, add your own below). Channel connection status isn't shown here yet.",
     "dashboard": "Leads today, escalations today, response times."
   },
@@ -17,14 +19,50 @@
     "language": "Language",
     "theme": "Theme"
   },
+  "common": {
+    "testBadge": "Test"
+  },
   "channelRail": {
     "telegram": "Telegram",
     "whatsapp": "WhatsApp",
     "facebook": "Facebook",
     "instagram": "Instagram",
     "email": "Email",
-    "comingSoon": "Coming soon",
+    "testOnly": "Test only — not connected yet",
     "menu": "Account menu"
+  },
+  "testConsole": {
+    "platform": "Platform",
+    "newSession": "New session",
+    "newSessionHint": "Start a fresh test conversation on this platform, tracked separately from previous ones",
+    "sessionLabel": "Session: {{sessionId}}",
+    "loading": "Loading…",
+    "empty": "No messages yet — send one to see how the AI replies on this platform.",
+    "loadError": "Couldn't load this platform's test conversation. Try again.",
+    "inputPlaceholder": "Type a test message…",
+    "send": "Send",
+    "sending": "Sending…",
+    "sendError": "Couldn't send this message. Try again.",
+    "escalatedNotice": "This message was escalated for human review: {{reason}}"
+  },
+  "diagnostics": {
+    "intent": {
+      "knowledge_question": "Knowledge question",
+      "purchase_intent": "Purchase intent",
+      "complaint_or_problem": "Complaint/problem",
+      "small_talk": "Small talk",
+      "other": "Other"
+    },
+    "score": {
+      "hot": "Hot",
+      "warm": "Warm",
+      "cold": "Cold"
+    },
+    "decision": {
+      "keep_chatting": "Keep chatting",
+      "escalate_to_human": "Escalate to human",
+      "book_or_checkout": "Book/checkout"
+    }
   },
   "conversationPanel": {
     "back": "Back",

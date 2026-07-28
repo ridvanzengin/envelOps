@@ -17,3 +17,17 @@ class ChannelRepository(TenantScopedRepository[Channel]):
         this point uses the returned channel's own tenant_id; this method
         exists only for that bootstrapping moment, not for general use."""
         return await self.session.scalar(select(Channel).where(Channel.id == channel_id))
+
+    async def get_test_channel(
+        self, tenant_id: uuid.UUID, channel_type: str
+    ) -> Channel | None:
+        """The Test Console's (app/test_console/api.py) one lookup per
+        (tenant, type) -- at most one test channel ever exists per type,
+        lazily created by the caller via the base .add() if this returns
+        None."""
+        stmt = select(Channel).where(
+            Channel.tenant_id == tenant_id,
+            Channel.type == channel_type,
+            Channel.is_test.is_(True),
+        )
+        return await self.session.scalar(stmt)

@@ -12,13 +12,14 @@ export function ConversationPanelProvider({ children }: { children: ReactNode })
   const { token, logout } = useAuth();
 
   const [isOpen, setIsOpen] = useState(false);
+  const [activeChannelType, setActiveChannelType] = useState<string | null>(null);
 
   const [conversations, setConversations] = useState<Conversation[] | null>(null);
   const [conversationsError, setConversationsError] = useState<string | null>(null);
 
   // Fetched once on mount (not just on openPanel) -- ChannelRail's
-  // escalation badge must show a count even while the panel itself is
-  // closed, and this is the only source that count can come from (no
+  // escalation badges must show a count even while the panel itself is
+  // closed, and this is the only source those counts can come from (no
   // backend change: derived client-side from GET /escalations, same as
   // the old standalone Escalation queue page did).
   const [escalations, setEscalations] = useState<Escalation[]>([]);
@@ -40,7 +41,7 @@ export function ConversationPanelProvider({ children }: { children: ReactNode })
       if (err instanceof ApiError && err.status === 401) {
         logout();
       }
-      // Silently leaves the previous count in place -- this is a
+      // Silently leaves the previous counts in place -- this is a
       // secondary, badge-only signal, not a page with its own error UI.
     }
   }, [token, logout]);
@@ -59,33 +60,51 @@ export function ConversationPanelProvider({ children }: { children: ReactNode })
     return map;
   }, [escalations]);
 
-  const pendingEscalationCount = escalationByConversationId.size;
-
-  const loadConversations = useCallback(async () => {
-    setConversationsError(null);
-    try {
-      const result = await apiGet<Conversation[]>("/conversations", token);
-      setConversations(result);
-    } catch (err) {
-      if (err instanceof ApiError && err.status === 401) {
-        logout();
-        return;
+  const pendingEscalationCountByChannelType = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const escalation of escalations) {
+      if (escalation.status === "pending") {
+        counts[escalation.channel_type] = (counts[escalation.channel_type] ?? 0) + 1;
       }
-      setConversationsError(t("conversationPanel.loadError"));
     }
-  }, [token, logout, t]);
+    return counts;
+  }, [escalations]);
 
-  const openPanel = useCallback(() => {
-    setIsOpen(true);
-    // Always lands on the list, never a remembered thread -- clicking a
-    // channel icon means "show me this channel's conversations," not
-    // "resume where I left off."
-    setSelectedConversationId(null);
-    setMessages(null);
-    setThreadError(null);
-    void loadConversations();
-    void loadEscalations();
-  }, [loadConversations, loadEscalations]);
+  const loadConversations = useCallback(
+    async (channelType: string) => {
+      setConversationsError(null);
+      try {
+        const result = await apiGet<Conversation[]>(
+          `/conversations?channel_type=${encodeURIComponent(channelType)}`,
+          token,
+        );
+        setConversations(result);
+      } catch (err) {
+        if (err instanceof ApiError && err.status === 401) {
+          logout();
+          return;
+        }
+        setConversationsError(t("conversationPanel.loadError"));
+      }
+    },
+    [token, logout, t],
+  );
+
+  const openPanel = useCallback(
+    (channelType: string) => {
+      setIsOpen(true);
+      setActiveChannelType(channelType);
+      // Always lands on the list, never a remembered thread -- clicking a
+      // channel icon means "show me this channel's conversations," not
+      // "resume where I left off."
+      setSelectedConversationId(null);
+      setMessages(null);
+      setThreadError(null);
+      void loadConversations(channelType);
+      void loadEscalations();
+    },
+    [loadConversations, loadEscalations],
+  );
 
   const closePanel = useCallback(() => {
     setIsOpen(false);
@@ -144,12 +163,13 @@ export function ConversationPanelProvider({ children }: { children: ReactNode })
   const value = useMemo(
     () => ({
       isOpen,
+      activeChannelType,
       openPanel,
       closePanel,
       conversations,
       conversationsError,
       escalationByConversationId,
-      pendingEscalationCount,
+      pendingEscalationCountByChannelType,
       escalatedOnly,
       setEscalatedOnly,
       selectedConversationId,
@@ -163,12 +183,13 @@ export function ConversationPanelProvider({ children }: { children: ReactNode })
     }),
     [
       isOpen,
+      activeChannelType,
       openPanel,
       closePanel,
       conversations,
       conversationsError,
       escalationByConversationId,
-      pendingEscalationCount,
+      pendingEscalationCountByChannelType,
       escalatedOnly,
       selectedConversationId,
       selectConversation,

@@ -157,6 +157,13 @@
   color: var(--text-h);
 }
 
+.conversation-panel__row-badges {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
 .conversation-panel__row-preview {
   font-size: 12px;
   color: var(--text);
@@ -191,8 +198,22 @@
   gap: 8px;
 }
 
-.conversation-panel__message {
+.conversation-panel__message-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
   max-width: 85%;
+}
+
+.conversation-panel__message-group--inbound {
+  align-self: flex-start;
+}
+
+.conversation-panel__message-group--outbound {
+  align-self: flex-end;
+}
+
+.conversation-panel__message {
   padding: 8px 10px;
   border-radius: 10px;
   font-size: 13px;
@@ -201,17 +222,58 @@
 }
 
 .conversation-panel__message--inbound {
-  align-self: flex-start;
   background: var(--bg-subtle);
   color: var(--text-h);
   border: 1px solid var(--border);
 }
 
 .conversation-panel__message--outbound {
-  align-self: flex-end;
   background: var(--accent-bg);
   color: var(--accent-h);
   border: 1px solid var(--accent-border);
+}
+
+/* Pipeline reasoning badges (docs/ROADMAP.md §3.3/§3.4) -- used both above
+   a Test Console message bubble (MessageThread) and on a conversation's
+   row in the rail's list (ConversationPanel). */
+.diagnostics-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.diagnostics-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  background: var(--bg-subtle);
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+
+.diagnostics-badge--score-warm,
+.diagnostics-badge--decision-keep_chatting {
+  background: var(--accent-bg);
+  color: var(--accent-h);
+  border-color: var(--accent-border);
+}
+
+.diagnostics-badge--score-hot,
+.diagnostics-badge--decision-escalate_to_human {
+  background: var(--danger-bg);
+  color: var(--danger);
+  border-color: var(--danger);
+}
+
+.diagnostics-badge--decision-book_or_checkout {
+  background: var(--success-bg);
+  color: var(--success);
+  border-color: var(--success);
 }
 
 .conversation-panel__input-row {

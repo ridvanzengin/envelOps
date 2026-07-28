@@ -21,22 +21,24 @@ import {
 import "./ChannelRail.css";
 
 // Only Telegram is a real, built channel (app/channels/ backend) -- the
-// rest render disabled/"coming soon", same convention as a locked nav item,
-// not fake working icons. No channel_id filtering: every real conversation
-// today is already Telegram, so the Telegram icon just opens the existing
-// full conversation list.
-const DISABLED_CHANNELS = [
-  { key: "whatsapp", icon: WhatsAppIcon },
-  { key: "facebook", icon: FacebookIcon },
-  { key: "instagram", icon: InstagramIcon },
-  { key: "email", icon: EmailIcon },
+// rest have no real integration yet, but are still clickable: Test Console
+// (frontend TestConsole.tsx) lets a test conversation exist for any of
+// them, so they open the panel showing that channel's (always test-only)
+// conversations rather than rendering disabled.
+const CHANNELS = [
+  { key: "telegram", icon: TelegramIcon, real: true },
+  { key: "whatsapp", icon: WhatsAppIcon, real: false },
+  { key: "facebook", icon: FacebookIcon, real: false },
+  { key: "instagram", icon: InstagramIcon, real: false },
+  { key: "email", icon: EmailIcon, real: false },
 ] as const;
 
 export function ChannelRail() {
   const { t, i18n } = useTranslation();
   const { theme, setTheme } = useTheme();
   const { logout } = useAuth();
-  const { isOpen, openPanel, closePanel, pendingEscalationCount } = useConversationPanel();
+  const { isOpen, activeChannelType, openPanel, closePanel, pendingEscalationCountByChannelType } =
+    useConversationPanel();
   const [menuOpen, setMenuOpen] = useState(false);
   const [langSubmenuOpen, setLangSubmenuOpen] = useState(false);
   const [themeSubmenuOpen, setThemeSubmenuOpen] = useState(false);
@@ -179,30 +181,28 @@ export function ChannelRail() {
 
       <div className="channel-rail__divider" />
 
-      <button
-        type="button"
-        className={`channel-rail__icon channel-rail__icon--telegram${
-          isOpen ? " channel-rail__icon--active" : ""
-        }`}
-        title={t("channelRail.telegram")}
-        aria-label={t("channelRail.telegram")}
-        aria-pressed={isOpen}
-        onClick={() => (isOpen ? closePanel() : openPanel())}
-      >
-        <TelegramIcon className="channel-rail__svg" />
-        {pendingEscalationCount > 0 && (
-          <span className="channel-rail__badge">{pendingEscalationCount}</span>
-        )}
-      </button>
-      {DISABLED_CHANNELS.map(({ key, icon: ChannelIcon }) => (
-        <span
-          key={key}
-          className="channel-rail__icon channel-rail__icon--disabled"
-          title={`${t(`channelRail.${key}`)} — ${t("channelRail.comingSoon")}`}
-        >
-          <ChannelIcon className="channel-rail__svg" />
-        </span>
-      ))}
+      {CHANNELS.map(({ key, icon: ChannelIcon, real }) => {
+        const isActive = isOpen && activeChannelType === key;
+        const badgeCount = pendingEscalationCountByChannelType[key] ?? 0;
+        const label = t(`channelRail.${key}`);
+        const title = real ? label : `${label} — ${t("channelRail.testOnly")}`;
+        return (
+          <button
+            key={key}
+            type="button"
+            className={`channel-rail__icon${
+              real ? " channel-rail__icon--telegram" : ""
+            }${isActive ? " channel-rail__icon--active" : ""}`}
+            title={title}
+            aria-label={label}
+            aria-pressed={isActive}
+            onClick={() => (isActive ? closePanel() : openPanel(key))}
+          >
+            <ChannelIcon className="channel-rail__svg" />
+            {badgeCount > 0 && <span className="channel-rail__badge">{badgeCount}</span>}
+          </button>
+        );
+      })}
     </nav>
   );
 }

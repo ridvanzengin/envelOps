@@ -10,6 +10,11 @@ class PipelineState(BaseModel):
     tenant_id: uuid.UUID
     conversation_id: uuid.UUID
     incoming_text: str
+    # No default -- forces every caller to consciously supply it, same as
+    # tenant_id/conversation_id. Drives keep_chatting/book_or_checkout's
+    # channel-specific reply tone (app/pipeline/graph.py); an unrecognized
+    # value falls back to the chat-style default there rather than erroring.
+    channel_type: str
     detected_intent: str | None = None
     retrieved_chunks: list[str] = []
     lead_score: str | None = None

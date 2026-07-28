@@ -11,11 +11,14 @@ Working name — pre-launch, Phase 1 in active development.
 - [`docs/REQUIREMENTS.md`](docs/REQUIREMENTS.md) — what's being built and why
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — how, for Phase 1
   (tech stack, data model, pipeline, API surface)
+- [`docs/ROADMAP.md`](docs/ROADMAP.md) — current status and what's next
 - [`CLAUDE.md`](CLAUDE.md) — working conventions for developing this repo
   with Claude Code
 
 ## Status
 
-Phase 1 scaffolding in progress: core pipeline, tenant-isolated data model,
-auto-send with a hard safety gate, static knowledge, one channel. See
-`docs/REQUIREMENTS.md` §11 for the full build sequencing.
+Core pipeline, tenant-isolated data model, auto-send with a hard safety
+gate, static knowledge sources, and a Telegram channel are built and
+tested (synthetic + live Test Console). See
+[`docs/ROADMAP.md`](docs/ROADMAP.md) for current status, open bugs, and
+what's next.

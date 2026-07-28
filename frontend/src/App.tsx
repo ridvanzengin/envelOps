@@ -12,6 +12,7 @@ import Dashboard from "./pages/Dashboard";
 import KnowledgeSources from "./pages/KnowledgeSources";
 import Login from "./pages/Login";
 import Settings from "./pages/Settings";
+import TestConsole from "./pages/TestConsole";
 
 function AppShell() {
   const { token } = useAuth();
@@ -34,6 +35,7 @@ function AppShell() {
             <Routes>
               <Route path="/" element={<Dashboard />} />
               <Route path="/knowledge" element={<KnowledgeSources />} />
+              <Route path="/test-console" element={<TestConsole />} />
               <Route path="/settings" element={<Settings />} />
             </Routes>
           </div>

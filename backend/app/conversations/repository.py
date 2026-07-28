@@ -3,6 +3,7 @@ from datetime import datetime
 
 from sqlalchemy import func, select
 
+from app.channels.models import Channel
 from app.conversations.models import Conversation, Message
 from app.core.repository import TenantScopedRepository
 
@@ -54,14 +55,22 @@ class ConversationRepository(TenantScopedRepository[Conversation]):
         return list(result)
 
     async def list_with_last_message(
-        self, tenant_id: uuid.UUID
-    ) -> list[tuple[Conversation, Message | None]]:
+        self, tenant_id: uuid.UUID, channel_type: str | None = None
+    ) -> list[tuple[Conversation, Message | None, Channel]]:
         """Inbox list view -- one query, not list-then-fetch-per-conversation,
         same reasoning as KnowledgeSourceRepository.list_with_chunk_counts.
-        Outer join: a conversation with no messages yet (shouldn't happen in
-        practice -- every conversation is created alongside its first
-        inbound message, ARCHITECTURE §8) still shows up, just with a null
-        preview, rather than silently disappearing from the list."""
+        Outer join on Message: a conversation with no messages yet (shouldn't
+        happen in practice -- every conversation is created alongside its
+        first inbound message, ARCHITECTURE §8) still shows up, just with a
+        null preview, rather than silently disappearing from the list. Inner
+        join on Channel: every conversation has exactly one, unlike Message.
+
+        channel_type filters to one platform's conversations (ChannelRail/
+        ConversationPanel, one rail icon at a time) -- optional so callers
+        that genuinely want everything (none currently do, kept for
+        parity with how this looked before multiple channel types existed)
+        still can.
+        """
         latest_message_at = (
             select(func.max(Message.created_at))
             .where(Message.conversation_id == Conversation.id)
@@ -69,7 +78,8 @@ class ConversationRepository(TenantScopedRepository[Conversation]):
             .scalar_subquery()
         )
         stmt = (
-            select(Conversation, Message)
+            select(Conversation, Message, Channel)
+            .join(Channel, Channel.id == Conversation.channel_id)
             .outerjoin(
                 Message,
                 (Message.conversation_id == Conversation.id)
@@ -78,8 +88,10 @@ class ConversationRepository(TenantScopedRepository[Conversation]):
             .where(Conversation.tenant_id == tenant_id)
             .order_by(Message.created_at.desc())
         )
+        if channel_type is not None:
+            stmt = stmt.where(Channel.type == channel_type)
         result = await self.session.execute(stmt)
-        return [(row[0], row[1]) for row in result.all()]
+        return [(row[0], row[1], row[2]) for row in result.all()]
 
 
 class MessageRepository(TenantScopedRepository[Message]):

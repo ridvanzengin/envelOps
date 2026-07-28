@@ -1,11 +1,13 @@
 {
   "nav": {
     "knowledge": "Bilgi Kaynakları",
+    "testConsole": "Test Konsolu",
     "settings": "Ayarlar",
     "dashboard": "Panel"
   },
   "pages": {
     "knowledge": "Bilgi kaynağı ekle (URL/PDF/manuel), listele ve yenile.",
+    "testConsole": "Yanıtların platforma göre nasıl farklılaştığını karşılaştırmak için herhangi bir platformda gerçek pipeline üzerinden test mesajı gönderin.",
     "settings": "Güvenlik tetikleyici ifadeleri (sistem varsayılanları kilitli, kendi ifadelerinizi aşağıya ekleyin). Kanal bağlantı durumu henüz burada gösterilmiyor.",
     "dashboard": "Bugünkü potansiyel müşteriler, bugünkü yükseltmeler, yanıt süreleri."
   },
@@ -17,14 +19,50 @@
     "language": "Dil",
     "theme": "Tema"
   },
+  "common": {
+    "testBadge": "Test"
+  },
   "channelRail": {
     "telegram": "Telegram",
     "whatsapp": "WhatsApp",
     "facebook": "Facebook",
     "instagram": "Instagram",
     "email": "E-posta",
-    "comingSoon": "Yakında",
+    "testOnly": "Sadece test — henüz bağlı değil",
     "menu": "Hesap menüsü"
+  },
+  "testConsole": {
+    "platform": "Platform",
+    "newSession": "Yeni oturum",
+    "newSessionHint": "Bu platformda, öncekilerden ayrı takip edilen yeni bir test konuşması başlatın",
+    "sessionLabel": "Oturum: {{sessionId}}",
+    "loading": "Yükleniyor…",
+    "empty": "Henüz mesaj yok — bu platformda AI'ın nasıl yanıt verdiğini görmek için bir mesaj gönderin.",
+    "loadError": "Bu platformun test konuşması yüklenemedi. Tekrar deneyin.",
+    "inputPlaceholder": "Bir test mesajı yazın…",
+    "send": "Gönder",
+    "sending": "Gönderiliyor…",
+    "sendError": "Bu mesaj gönderilemedi. Tekrar deneyin.",
+    "escalatedNotice": "Bu mesaj insan incelemesi için yükseltildi: {{reason}}"
+  },
+  "diagnostics": {
+    "intent": {
+      "knowledge_question": "Bilgi sorusu",
+      "purchase_intent": "Satın alma niyeti",
+      "complaint_or_problem": "Şikayet/sorun",
+      "small_talk": "Sohbet",
+      "other": "Diğer"
+    },
+    "score": {
+      "hot": "Sıcak",
+      "warm": "Ilık",
+      "cold": "Soğuk"
+    },
+    "decision": {
+      "keep_chatting": "Sohbete devam",
+      "escalate_to_human": "İnsana yükselt",
+      "book_or_checkout": "Rezervasyon/ödeme"
+    }
   },
   "conversationPanel": {
     "back": "Geri",

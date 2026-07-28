@@ -102,12 +102,27 @@ builder in Phase 1 — see REQUIREMENTS §3):
    step 2 if the lead replies)
 
 State object carried through the run: `tenant_id`, `conversation_id`,
-`incoming_text`, `detected_intent`, `retrieved_chunks`, `lead_score`,
-`decision`, `draft_text`, `escalation_reason` (if any), `escalation_logged`
-(§5's double-log guard). This state is what
-gets checkpointed at the pause point (§5) and is most of what a
-`pipeline_traces` row records — the future observability dashboard can
-largely be built by surfacing this object rather than inventing new logging.
+`incoming_text`, `channel_type`, `detected_intent`, `retrieved_chunks`,
+`lead_score`, `decision`, `draft_text`, `escalation_reason` (if any),
+`escalation_logged` (§5's double-log guard). This state is what
+gets checkpointed at the pause point (§5). `pipeline_traces` (defined
+alongside the rest of the data model but unused for a while) now gets one
+row per inbound Test Console message (`detected_intent`/`lead_score`/
+`decision` only, not the full state) — `app/test_console/api.py`, see
+`docs/ROADMAP.md` §3.4. Not yet written for real (Telegram) messages; the
+future observability dashboard can still largely be built by widening
+this same mechanism rather than inventing new logging.
+
+`channel_type` drives reply tone/structure in steps 6's `keep_chatting`/
+`book_or_checkout` branches (`app/pipeline/graph.py`'s
+`_CHANNEL_TONE_GUIDANCE`) — email gets a greeting, fuller sentences, and a
+sign-off; Telegram/WhatsApp/Instagram/Facebook stay short and casual, no
+greeting or sign-off. First-pass and generic, not tenant-configurable yet,
+same status as the intent-label/lead-score taxonomies above. Verified via
+the Test Console (§9, §10), not the synthetic harness — tone is a
+presentational property the harness's "does this look right to a human"
+standard doesn't really cover; the real check is sending the same question
+through multiple channels and comparing.
 
 ## 5. Human-in-the-loop: safety gate only, not general approval
 
@@ -157,6 +172,23 @@ safety-floor branch, right after it logs the row) is what tells
 `POST /escalations/{id}/resolve` (§9) landed and gave `resume_pipeline()`
 its first real caller — this used to be a known, harmless-until-something-
 calls-resume gap; it isn't anymore.
+
+**A second way `decision` becomes `escalate_to_human`, besides the safety
+floor — `decide_next_step`'s hot+purchase-intent branch, when
+`tenant.closing_action` is `escalate_to_human`** (the *default* for every
+tenant that hasn't opted into `book_or_checkout` — `Tenant.closing_action`'s
+own docstring). Found and fixed via real Test Console usage (§9, §10), not
+synthetic testing — the synthetic tenant always sets
+`closing_action="book_or_checkout"`, so this path never ran there. Before
+the fix: this routed straight to `escalate_to_human`'s `interrupt()`
+without ever setting `escalation_reason` or logging an Escalation row
+first, exactly the "logged after the pause is circular" problem the
+paragraph above already solved for the safety floor — so for the
+*default* tenant config, every hot purchase-intent message silently
+paused the pipeline forever: no reply, no Escalation a human could ever
+see or resolve. Now logs immediately (`layer="business_rule"`, distinct
+from the safety floor's `platform_floor`) before the pause, same as the
+safety-floor branch.
 
 ## 6. Knowledge ingestion & retrieval
 
@@ -239,6 +271,19 @@ creates the `Channel` row and calls `setWebhook` — no API/UI for this yet
 channel to actually implement (no bridge infrastructure, just a bot
 token), not just a "fallback."
 
+**Test Console channels** (`app/test_console/api.py`) — `Channel.is_test`
+flags a lazily-created, one-per-(tenant, type) channel with no real
+webhook/API behind it, for any of the five rail channel types (Telegram/
+WhatsApp/Instagram/Facebook/Email). Lets the pipeline's channel-aware
+reply tone (§4) and the safety gate (§5) be exercised end-to-end, on
+channels that don't have a real integration yet, before building one.
+`GET /test/conversations`/`POST /test/conversations/messages` (§9) call
+`run_pipeline` directly and synchronously — no Celery hand-off, since a
+human is watching and there's no webhook needing a fast response. A test
+conversation's `is_test` (via its channel) is what the frontend's Test
+badge and `GET /conversations`'s/`GET /escalations`'s `channel_type`/
+`is_test` fields key off (§9, §10).
+
 **Background jobs (Celery):**
 - `process_incoming_message` — **built.** Runs the pipeline for one
   message; on `__interrupt__` it commits without replying (the escalation
@@ -269,8 +314,17 @@ token), not just a "fallback."
 ## 9. API surface (Phase 1)
 
 `/auth`, `/channels`, `/knowledge`, `/conversations`, `/leads`,
-`/escalations`, `/dashboard` — one router per domain module, matching the
-`api.py` per module convention.
+`/escalations`, `/dashboard`, `/test` — one router per domain module,
+matching the `api.py` per module convention. `/test` (`app/test_console/
+api.py`) is the one exception with no `models.py`/`repository.py` of its
+own — reuses `Channel`/`Conversation`/`Message` as-is (§8).
+
+`GET /conversations` takes an optional `channel_type` query param (one
+rail icon's worth of conversations at a time, ChannelRail/
+ConversationPanel — §10); its response and `GET /escalations`'s both
+carry `channel_type`/`is_test` per row now (joined through to `Channel`),
+which is what the frontend's per-channel escalation badges and Test
+badge key off.
 
 **Auth is real now:** `POST /auth/login` (email + password → JWT, tenant id
 and role embedded per §2) and `GET /escalations` (the first real protected
@@ -334,30 +388,44 @@ isn't repeated here.
   now, but no longer an "Inbox" nav item or route. A fixed icon rail on
   the right (`ChannelRail`, one icon per channel type: Telegram, WhatsApp,
   Facebook, Instagram, Email) is persistent across every authenticated
-  route. Only Telegram is real (the only channel actually built, §8) and
-  clickable — the rest render disabled/"coming soon", same convention as a
-  locked nav item. Clicking Telegram opens a sliding panel
-  (`ConversationPanel`) showing conversations as a list
-  (`GET /conversations`), then a conversation's full thread
-  (`GET /conversations/{id}/messages`) with direction-based bubble
-  alignment. The thread view is **read-only** — it shows a reply input +
-  send button, but both render permanently disabled, since there's no
-  backend capability yet for a human to send a message outside the
-  pipeline (see the pause-mode item in §11); it's a placeholder for that
-  future affordance, not a working one. No `channel_id` filtering on the
-  backend yet: every real conversation today is already Telegram, so the
-  Telegram icon just opens the existing full list.
+  route. All five are clickable now (§8's Test Console channels are what
+  made this possible for the four without a real integration) — Telegram
+  is the only one with any real conversations, the other four only ever
+  show Test Console conversations. Clicking one opens a sliding panel
+  (`ConversationPanel`) showing that channel's conversations as a list
+  (`GET /conversations?channel_type=...`), then a conversation's full
+  thread (`GET /conversations/{id}/messages`) with direction-based bubble
+  alignment. A conversation whose channel is `is_test` shows a small Test
+  badge next to its status. The thread view is **read-only** — it shows a
+  reply input + send button, but both render permanently disabled, since
+  there's no backend capability yet for a human to send a message outside
+  the pipeline (see the pause-mode item in §11); it's a placeholder for
+  that future affordance, not a working one.
 - **Escalations (folded into the same rail/panel, not a standalone page)**
   — the old dedicated Escalation queue page and nav item are gone.
   `GET /escalations` is instead fetched once at the app-shell level and
-  correlated by `conversation_id`, client-side, into: a pending-count badge
-  on the Telegram rail icon, an "Escalated" filter toggle in the
-  conversation list, and a Resolve action
+  correlated by `conversation_id`, client-side, into: a **per-channel-type**
+  pending-count badge on each rail icon (`channel_type` now travels on
+  each escalation row, §9), an "Escalated" filter toggle scoped to the
+  currently-open channel's conversation list, and a Resolve action
   (`POST /escalations/{id}/resolve`) inside a conversation's thread view
-  when it has a pending escalation. No backend change for any of this —
-  purely a client-side correlation of two already-existing endpoints. The
-  primary "action needed" surface, since auto-send is the default and
-  escalations are the one thing routinely waiting on a human.
+  when it has a pending escalation. No backend *schema* change for any of
+  this beyond the `channel_type`/`is_test` fields already covered in §9 —
+  still a client-side correlation, just now aware of more than one
+  channel at a time. The primary "action needed" surface, since auto-send
+  is the default and escalations are the one thing routinely waiting on a
+  human.
+- **Test console** (`/test`, new nav item) — lets the tenant owner send a
+  message through the real pipeline against any of the five channel
+  types, to validate reply tone/behavior (§4) before a real integration
+  exists for that channel. A platform dropdown plus an always-enabled
+  input (the one place in the app where a human's text actually reaches
+  the pipeline directly) send to `POST /test/conversations/messages`;
+  switching platforms re-fetches that channel's one ongoing test
+  conversation via `GET /test/conversations`. An escalated test message
+  shows an inline notice instead of a reply, and resolves through the
+  exact same rail/panel Resolve action as any other escalation — no
+  separate resolve UI for test conversations.
 - **Knowledge sources** — real now: add (manual or url — pdf isn't built
   on the backend yet, §6, so there's no third form option), list with
   chunk counts, refresh (url only; no button shown for manual rows,
@@ -385,56 +453,27 @@ No drag-and-drop flow builder in Phase 1.
 
 ## 11. Open items carried forward (non-blocking, not designed yet)
 
-- **Human-paused conversations (pause AI replies, reply directly without
-  triggering an escalation)** — explicitly deferred out of the frontend
-  redesign that added the conversation panel (§10). A real new backend
-  feature: a second conversation-level pause mode alongside the existing
-  safety-floor escalation (§5), needing a `Conversation` mode field,
-  pause/resume + human-send endpoints, and a `process_incoming_message`
-  check to skip the AI while paused. Until this lands, the panel's thread
-  view stays read-only.
-- **`book_or_checkout` beyond a static link** — implemented and verified
-  with a tenant-configured URL (`Tenant.closing_link`), which is enough for
-  any business regardless of platform. A real Shopify/WooCommerce/Calendly
-  *connector* (auto-generating a checkout/booking link per order rather
-  than sending the same static one) is REQUIREMENTS §13's own step 2
-  ("live data connection... for platforms that support it"), not step 1 —
-  correctly-sequenced-later work, not a gap, and needs a product decision
-  on which connector(s) to build first, not just an engineering pass.
-- Channel failure behavior beyond the health-check stub — silent stop vs.
-  detected fallback. Telegram (§8) doesn't have even a stub yet, only
-  Beeper was ever planned to.
-- Full observability dashboard (builder's trace view vs. owner's operational
-  view — likely two different views, not one)
-- Data retention/deletion policy specifics
-- Whether/when general draft-and-approve gets added back, and if so, whether
-  certain categories "graduate" to auto-send based on approval history (the
-  data hook for this — approved-as-is vs. edited vs. rejected — should still
-  be captured wherever it's cheap to log, even without the feature)
-- ~~A synthetic-message test harness for pipeline validation~~ — built:
-  `backend/scripts/run_synthetic_conversations.py` runs a fixed set of
-  fabricated DMs (REQUIREMENTS §12 stage 1's list — order/shipping/returns/
-  price + safety-floor edge cases, Turkish and English) through the real
-  pipeline against a synthetic tenant, for manual review.
-- ~~Two quality gaps found by the first synthetic run~~ — fixed and
-  re-verified against a second full run: (1) intent classification wasn't
-  language-stable (a hypothetical pre-purchase return question classified
-  as `knowledge_question`/cold in Turkish but `complaint_or_problem`/warm
-  in English) — fixed by giving `understand_intent`'s prompt explicit
-  per-label definitions, specifically the hypothetical-vs-actual-problem
-  distinction that was previously left to the model to infer; both
-  languages now return `knowledge_question`/cold. (2) a real
-  hallucination — a Turkish price question got told prices are fixed,
-  not present in the knowledge base at all, while English correctly
-  declined to guess — fixed by strengthening `keep_chatting`'s grounding
-  instruction to name prices/policies/guarantees specifically and to
-  call out Turkish by name as somewhere not to be less careful; the
-  Turkish reply now says it can't state that and a person will confirm,
-  matching the English behavior. Both fixes are prompt-only (`app/
-  pipeline/graph.py`'s `understand_intent`/`keep_chatting`), no retrieval
-  or pipeline-structure changes — re-run the harness again if a similar
-  language-asymmetry bug shows up elsewhere, since this class of issue
-  isn't proven fixed everywhere, only for these two specific cases.
+See [`ROADMAP.md`](ROADMAP.md) for the up-to-date, actively-maintained
+version of this list, current status, and priority order — that document
+now owns tracking "what's next," so it doesn't drift out of sync with a
+second copy here. Kept brief in this document because these are
+architectural gaps, not day-to-day status:
+
+- **Human-paused conversations** (pause AI replies, reply directly without
+  triggering an escalation) — a second conversation-level pause mode
+  alongside the existing safety-floor escalation (§5), needing a
+  `Conversation` mode field, pause/resume + human-send endpoints, and a
+  `process_incoming_message` check to skip the AI while paused. Until this
+  lands, the conversation panel's thread view stays read-only.
+- **`book_or_checkout` beyond a static link** — a real Shopify/WooCommerce/
+  Calendly *connector* (auto-generating a checkout/booking link per order)
+  instead of always sending the same tenant-configured static URL
+  (`Tenant.closing_link`). REQUIREMENTS §13 step 2, not step 1.
+- Channel failure behavior beyond the health-check stub.
+- Full observability dashboard (builder's trace view vs. owner's
+  operational view).
+- Data retention/deletion policy specifics.
+- Whether/when general draft-and-approve gets added back (REQUIREMENTS §4).
 
 ## 12. Explicitly deferred to later phases
 
@@ -446,4 +485,5 @@ connectors, AI-assisted configuration, the visual flow builder. See
 ---
 
 *This document plus `REQUIREMENTS.md` together are the reference for
-starting Phase 1 development.*
+starting Phase 1 development. See [`ROADMAP.md`](ROADMAP.md) for current
+status and next steps.*
