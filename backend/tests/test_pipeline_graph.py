@@ -8,6 +8,7 @@ from app.pipeline.graph import (
     book_or_checkout,
     decide_next_step,
     keep_chatting,
+    load_history,
     log_lead_and_notify,
     route_after_decision,
     score_lead,
@@ -33,6 +34,47 @@ def _make_runtime() -> Runtime[PipelineContext]:
     return Runtime(context=PipelineContext(session=AsyncMock()))
 
 
+def _fake_message(direction: str, text: str) -> object:
+    return type("Msg", (), {"direction": direction, "text": text})()
+
+
+class TestLoadHistory:
+    async def test_excludes_the_current_message_and_formats_the_rest(self) -> None:
+        state = _make_state("How much for 6 jars?")
+        stored = [
+            _fake_message("inbound", "Do you ship to Canada?"),
+            _fake_message("outbound", "Yes, we do!"),
+            _fake_message("inbound", "How much for 6 jars?"),  # the current message
+        ]
+        with patch("app.pipeline.graph.MessageRepository") as mock_repo_cls:
+            mock_repo_cls.return_value.list_by_conversation = AsyncMock(return_value=stored)
+            result = await load_history(state, _make_runtime())
+        assert result.conversation_history == [
+            "Customer: Do you ship to Canada?",
+            "You: Yes, we do!",
+        ]
+
+    async def test_empty_for_a_conversations_first_message(self) -> None:
+        state = _make_state("Hello")
+        stored = [_fake_message("inbound", "Hello")]  # only the current message so far
+        with patch("app.pipeline.graph.MessageRepository") as mock_repo_cls:
+            mock_repo_cls.return_value.list_by_conversation = AsyncMock(return_value=stored)
+            result = await load_history(state, _make_runtime())
+        assert result.conversation_history == []
+
+    async def test_caps_at_history_max_messages(self) -> None:
+        state = _make_state("latest")
+        stored = [_fake_message("inbound", f"msg {i}") for i in range(20)] + [
+            _fake_message("inbound", "latest")
+        ]
+        with patch("app.pipeline.graph.MessageRepository") as mock_repo_cls:
+            mock_repo_cls.return_value.list_by_conversation = AsyncMock(return_value=stored)
+            result = await load_history(state, _make_runtime())
+        assert len(result.conversation_history) == 10
+        assert result.conversation_history[-1] == "Customer: msg 19"
+        assert result.conversation_history[0] == "Customer: msg 10"
+
+
 class TestUnderstandIntent:
     def test_uses_model_label_when_valid(self) -> None:
         state = _make_state("What flavors of honey do you have?")
@@ -51,6 +93,27 @@ class TestUnderstandIntent:
         with patch("app.pipeline.graph.generate_text", return_value="not a real label"):
             result = understand_intent(state)
         assert result.detected_intent == "other"
+
+    def test_includes_conversation_history_when_present(self) -> None:
+        state = _make_state("How much for 6 jars?")
+        state.conversation_history = [
+            "Customer: Do you ship to Canada?",
+            "You: Yes, we do!",
+        ]
+        with patch(
+            "app.pipeline.graph.generate_text", return_value="purchase_intent"
+        ) as mock_gen:
+            understand_intent(state)
+        prompt = mock_gen.call_args.args[0]
+        assert "Earlier in this conversation" in prompt
+        assert "Do you ship to Canada?" in prompt
+
+    def test_omits_history_block_for_a_conversations_first_message(self) -> None:
+        state = _make_state("Hello")
+        with patch("app.pipeline.graph.generate_text", return_value="small_talk") as mock_gen:
+            understand_intent(state)
+        prompt = mock_gen.call_args.args[0]
+        assert "Earlier in this conversation" not in prompt
 
 
 class TestSearchKnowledge:
@@ -110,6 +173,18 @@ class TestScoreLead:
         with patch("app.pipeline.graph.generate_text", return_value="not a real label"):
             result = score_lead(state)
         assert result.lead_score == "cold"
+
+    def test_includes_conversation_history_when_present(self) -> None:
+        state = _make_state("Let's do it")
+        state.conversation_history = [
+            "Customer: How much for 6 jars?",
+            "You: $50 total for 6!",
+        ]
+        with patch("app.pipeline.graph.generate_text", return_value="hot") as mock_gen:
+            score_lead(state)
+        prompt = mock_gen.call_args.args[0]
+        assert "Earlier in this conversation" in prompt
+        assert "How much for 6 jars?" in prompt
 
 
 class TestDecideNextStepSafetyFloor:
@@ -286,6 +361,27 @@ class TestKeepChatting:
             # The knowledge block itself shouldn't leak into a greeting reply.
             assert "We ship worldwide via DHL." not in prompt
 
+    def test_includes_history_and_continuation_instruction_when_present(self) -> None:
+        state = _make_state("What about shipping?")
+        state.detected_intent = "knowledge_question"
+        state.retrieved_chunks = ["We ship worldwide via DHL."]
+        state.conversation_history = ["Customer: Hi!", "You: Hey there!"]
+        with patch("app.pipeline.graph.generate_text", return_value="x") as mock_gen:
+            keep_chatting(state)
+        prompt = mock_gen.call_args.args[0]
+        assert "Earlier in this conversation" in prompt
+        assert "Hey there!" in prompt
+        assert "continuation of an ongoing conversation" in prompt
+
+    def test_omits_continuation_instruction_for_a_conversations_first_message(self) -> None:
+        state = _make_state("hi")
+        state.detected_intent = "small_talk"
+        with patch("app.pipeline.graph.generate_text", return_value="x") as mock_gen:
+            keep_chatting(state)
+        prompt = mock_gen.call_args.args[0]
+        assert "Earlier in this conversation" not in prompt
+        assert "continuation of an ongoing conversation" not in prompt
+
 
 class TestLogLeadAndNotify:
     async def test_always_logs_a_lead(self) -> None:
@@ -385,6 +481,21 @@ class TestBookOrCheckout:
         assert result.decision != "escalate_to_human"
         prompt = mock_gen.call_args.args[0]
         assert "https://pay.example.com/honey" in prompt
+
+    async def test_includes_conversation_history_when_present(self) -> None:
+        state = _make_state("Let's do it")
+        state.conversation_history = ["Customer: How much for 6 jars?", "You: $50 total!"]
+        fake_tenant = type("Tenant", (), {"closing_link": "https://pay.example.com/honey"})()
+        with (
+            patch("app.pipeline.graph.TenantRepository") as mock_repo_cls,
+            patch("app.pipeline.graph.generate_text", return_value="x") as mock_gen,
+        ):
+            mock_repo_cls.return_value.get = AsyncMock(return_value=fake_tenant)
+            await book_or_checkout(state, _make_runtime())
+
+        prompt = mock_gen.call_args.args[0]
+        assert "Earlier in this conversation" in prompt
+        assert "How much for 6 jars?" in prompt
 
     async def test_downgrades_to_escalation_when_no_link_configured(self) -> None:
         state = _make_state("I want to order 5 jars right now, how do I pay?")

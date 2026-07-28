@@ -13,12 +13,11 @@
 
 ## 1. Status as of 2026-07-29
 
-**PR #23 — Test Console — merged into `main` (2026-07-28).** Covered Test
-Console itself, the per-message/rail diagnostics (§3.3/§3.4), and this
-doc's own creation. **PR #24 — multi-tenant showcase seed script (§5.1) —
-open, not yet merged** (branch `feature/showcase-seed-tenants`). Check
-`gh pr view <n> --json state` before assuming either is "in main" by the
-time this is read again.
+**PR #23 (Test Console, §3.3/§3.4) and PR #24 (multi-tenant showcase
+seed script, §5.1) are both merged into `main`.** **PR #25
+(conversation-history threading, §2) is open, not yet merged** (branch
+`feature/conversation-history`). Check `gh pr view <n> --json state`
+before assuming it's "in main" by the time this is read again.
 
 **The §5.1 safety-floor finding (outcome-guarantee check missing
 safety/risk-absence language) is explicitly postponed to a later
@@ -48,13 +47,9 @@ Two real pipeline bugs were found and fixed via live Test Console use
    the underlying meaning. Likely direction: rephrase the instruction to
    describe the *situation*, not give quotable English text — needs its
    own investigation, not a one-line patch.
-2. **Conversation history is a real, known gap.** `understand_intent`/
-   `score_lead`/`keep_chatting`/`book_or_checkout` only ever see the
-   single current `state.incoming_text` — no prior messages, no thread
-   context. Every reply is generated in isolation. This blocks item §3.2
-   below (a clarifying-question flow needs the model to remember what it
-   already asked) and needs its own design pass: how much history, token
-   budget, how to thread it through four prompts.
+2. ~~Conversation history is a real, known gap.~~ **Done (2026-07-29)** —
+   see its own write-up below, right after this list, for what shipped
+   and how it was verified. Unblocks §3.2 (clarifying question).
 3. **Instagram channel integration** is still the actual pilot blocker
    underneath all of the above — Telegram is the only real channel built;
    Instagram is what the honey-seller pilot (REQUIREMENTS §12) actually
@@ -64,6 +59,45 @@ Secondary, not urgent: ~10–15s per Test Console send (up to 4 sequential
 Gemini calls, none parallelized — `search_knowledge` doesn't actually
 depend on `understand_intent`'s output, so parallelizing those two is a
 viable future latency win).
+
+### Conversation history — done (2026-07-29)
+
+`app/pipeline/graph.py` gets a new first node, `load_history`, running
+before `understand_intent` (not one of ARCHITECTURE §4's original 8
+numbered steps — a prerequisite for them, same relationship a foundation
+has to the floor above it). It loads prior messages in the conversation
+via `MessageRepository.list_by_conversation`, excludes the current
+inbound message (reliably the last row, since every caller commits it
+before invoking the pipeline — CLAUDE.md's checkpointer gotcha), caps at
+the most recent 10 (`_HISTORY_MAX_MESSAGES`, capped by message count, not
+token count — Phase 1 DMs are short enough that this is a reasonable
+starting point, not precision budgeting), and formats each as
+`"Customer: ..."`/`"You: ..."` into a new `PipelineState.conversation_history`
+field. `understand_intent`, `score_lead`, `keep_chatting`, and
+`book_or_checkout` all now include this transcript in their prompts;
+`keep_chatting` additionally gets a "this is a continuation, don't repeat
+yourself/don't re-greet" instruction when history is present.
+`search_knowledge`'s embedding query deliberately still uses only the
+current message — enriching retrieval with history is query rewriting,
+a separate change, not done here.
+
+No caller changes needed — Test Console, the real Telegram path, and
+`seed_showcase_tenants.py` all just build a `PipelineState` and call
+`run_pipeline`; history-loading happens transparently inside the graph
+now for all three.
+
+**Verified live**, not just unit-tested: a 3-turn Test Console
+conversation (Meadow & Jar Honey Co) — "Hi there!" → normal greeting
+reply; "Do you ship to Canada?" → answered without re-greeting; "How long
+does it usually take?" (ambiguous alone) → correctly resolved to the
+Canada shipping answer ("5-10 business days") using the earlier turns,
+instead of a generic or confused reply. This is the concrete thing "no
+conversation history" was blocking — a real multi-turn exchange, not just
+isolated single messages evaluated one at a time.
+
+9 new/extended unit tests in `test_pipeline_graph.py` (`load_history`
+directly, plus each of the four prompts asserting the history block is
+included when present and absent otherwise).
 
 ## 3. New feature requests — scoped 2026-07-28, not yet built
 
@@ -91,11 +125,11 @@ one clarifying question rather than escalating immediately. Example:
 `kırmızı var mı?` → `neyin kırmızısı var mı?` instead of an immediate
 escalation.
 
-**Dependency to flag:** this needs the model to remember it already asked
-the clarifying question, so the customer's next reply can be interpreted
-in context — i.e. it depends on §2's conversation-history gap. Don't build
-this ahead of at least minimal history threading, or the model will
-re-ask blindly / lose track of its own question.
+**Dependency, now satisfied:** this needs the model to remember it
+already asked the clarifying question, so the customer's next reply can
+be interpreted in context — §2's conversation-history threading
+(done 2026-07-29) is what makes that possible. Not built yet itself —
+history existing is the prerequisite, not the feature.
 
 ### 3.3 Intent/lead-score badges on the conversation rail — done (2026-07-28)
 Show intent classification and lead score as badges/colors directly on
@@ -357,17 +391,16 @@ Flagging before any design starts:
   record, not as a spec to start building from.
 
 ### Updated sequencing given 5.1–5.3
-1. ~~§3.4 (Test Console diagnostics)~~ / ~~§3.3 (rail badges)~~ / ~~§5.1
-   (multi-tenant seed + showcase scenarios)~~ — done. §5.1's safety-floor
-   finding explicitly postponed, see §1/§5.1 above.
-2. **§2 (conversation-history threading) — current focus, picked up
-   2026-07-29.** Easier to validate for real now that §5.1's diverse
-   tenants exist.
+1. ~~§3.4 (Test Console diagnostics)~~ / ~~§3.3 (rail badges)~~ /
+   ~~§5.1 (multi-tenant seed + showcase scenarios)~~ /
+   ~~§2 (conversation-history threading)~~ — all done. §5.1's
+   safety-floor finding explicitly postponed, see §1/§5.1 above.
+2. **§3.2** (clarifying question) — its blocking dependency (§2) is now
+   satisfied; a reasonable next pick.
 3. **§3.5** (SSE) — independent infrastructure, can slot in anytime.
 4. **§3.1** (escalation cover message + internal note bubble).
-5. **§3.2** (clarifying question) — blocked on §2.
-6. **§5.2** (template gallery) — natural next step once §5.1 is
+5. **§5.2** (template gallery) — natural next step once §5.1 is
    battle-tested, not before.
-7. **§5.3** (AI copilot) — longest-horizon item here; needs §5.1's
+6. **§5.3** (AI copilot) — longest-horizon item here; needs §5.1's
    scenario diversity and §3.3/§3.4's data maturing first, and its own
    dedicated design pass on the approval-point question above.

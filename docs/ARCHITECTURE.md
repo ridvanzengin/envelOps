@@ -87,7 +87,10 @@ approve on every message) but is **not part of Phase 1** — see §5.
 ## 4. Conversation pipeline
 
 Fixed 8-step sequence, run by LangGraph, same for every business (no visual
-builder in Phase 1 — see REQUIREMENTS §3):
+builder in Phase 1 — see REQUIREMENTS §3). The graph's actual entry point
+is `load_history` (docs/ROADMAP.md §2, loads prior conversation messages)
+running just before step 2 — a prerequisite for the numbered steps below,
+not one of them itself:
 
 1. Incoming message (normalized from channel)
 2. Understand intent
@@ -102,16 +105,20 @@ builder in Phase 1 — see REQUIREMENTS §3):
    step 2 if the lead replies)
 
 State object carried through the run: `tenant_id`, `conversation_id`,
-`incoming_text`, `channel_type`, `detected_intent`, `retrieved_chunks`,
-`lead_score`, `decision`, `draft_text`, `escalation_reason` (if any),
-`escalation_logged` (§5's double-log guard). This state is what
-gets checkpointed at the pause point (§5). `pipeline_traces` (defined
-alongside the rest of the data model but unused for a while) now gets one
-row per inbound Test Console message (`detected_intent`/`lead_score`/
-`decision` only, not the full state) — `app/test_console/api.py`, see
-`docs/ROADMAP.md` §3.4. Not yet written for real (Telegram) messages; the
-future observability dashboard can still largely be built by widening
-this same mechanism rather than inventing new logging.
+`incoming_text`, `channel_type`, `conversation_history` (docs/ROADMAP.md
+§2 — prior messages in the conversation, populated by the graph's own
+`load_history` node, not by any caller), `detected_intent`,
+`retrieved_chunks`, `lead_score`, `decision`, `draft_text`,
+`escalation_reason` (if any), `escalation_logged` (§5's double-log
+guard). This state is what gets checkpointed at the pause point (§5).
+`pipeline_traces` (defined alongside the rest of the data model but
+unused for a while) gets one row per inbound message (`detected_intent`/
+`lead_score`/`decision` only, not the full state) — both the real
+Telegram path (`pipeline/tasks.py`) and Test Console
+(`app/test_console/api.py`) write it now, via the same
+`PipelineTraceRepository.record_result` helper; see `docs/ROADMAP.md`
+§3.3/§3.4. The future observability dashboard can still largely be built
+by widening this same mechanism rather than inventing new logging.
 
 `channel_type` drives reply tone/structure in steps 6's `keep_chatting`/
 `book_or_checkout` branches (`app/pipeline/graph.py`'s

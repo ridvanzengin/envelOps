@@ -1,18 +1,24 @@
-"""The fixed 8-step pipeline (docs/ARCHITECTURE.md §4). Node bodies are not
-implemented yet — this file wires up the sequence/branching so the shape is
-settled before the logic (LLM calls, vector search, notifications) lands.
+"""The fixed 8-step pipeline (docs/ARCHITECTURE.md §4).
 
 Step 1 ("incoming message") happens before this graph runs — the channel
 ingestion path (§7) normalizes the message and hands off to Celery, which
-builds the initial PipelineState and invokes the graph starting at step 2.
-Step 8 (follow-up) is a separate Celery-triggered re-entry at step 2, not a
-node in this graph.
+builds the initial PipelineState and invokes the graph. The graph's actual
+entry point is load_history (docs/ROADMAP.md §2), which runs before step 2
+("understand intent") to load prior conversation context; it isn't one of
+the original 8 numbered steps, just a prerequisite for step 2 onward
+being able to see the rest of the thread. Step 8 (follow-up) is a separate
+Celery job that isn't a node in this graph — sending the follow-up itself
+is a one-off `generate_text` call (`tasks.py`'s `_send_follow_up`), not a
+graph run; a lead's *reply* to that follow-up is just a normal inbound
+message, going through the full graph (load_history included) like any
+other reply.
 """
 
 from langgraph.graph import END, StateGraph
 from langgraph.runtime import Runtime
 from langgraph.types import interrupt
 
+from app.conversations.repository import MessageRepository
 from app.core.llm import embed_text, generate_text
 from app.escalation.models import Escalation
 from app.escalation.repository import EscalationRepository, TenantTriggerPhraseRepository
@@ -25,6 +31,12 @@ from app.pipeline.state import PipelineState
 from app.tenants.repository import TenantRepository
 
 _KNOWLEDGE_SEARCH_TOP_K = 5
+
+# Capped by message count, not token count -- Phase 1 DMs are short, and
+# precise token budgeting is overkill at this scale (docs/ROADMAP.md §2).
+# Revisit if a real tenant's conversations turn out to run long enough for
+# this to matter.
+_HISTORY_MAX_MESSAGES = 10
 
 # First-pass taxonomy, not a validated product design (REQUIREMENTS.md §2
 # says per-business config is deferred) — deliberately generic across all
@@ -88,6 +100,44 @@ _CHANNEL_TONE_GUIDANCE: dict[str, str] = {
 _DEFAULT_CHANNEL_TONE = _CHANNEL_TONE_GUIDANCE["telegram"]
 
 
+async def load_history(
+    state: PipelineState, runtime: Runtime[PipelineContext]
+) -> PipelineState:
+    """First node in the graph (docs/ROADMAP.md §2) -- loads prior messages
+    in this conversation so understand_intent/score_lead/keep_chatting/
+    book_or_checkout below aren't generated in total isolation from the
+    rest of the thread, the gap flagged after Test Console usage showed
+    every reply as a one-off.
+
+    The caller (channel webhook, Test Console, seed scripts) always
+    commits the current inbound message before invoking the pipeline
+    (CLAUDE.md's checkpointer gotcha), so it's already the most recent row
+    here -- excluded from history by dropping the last message, not by
+    message id (PipelineState doesn't carry one, and doesn't need to just
+    for this).
+
+    Deliberately not used to enrich search_knowledge's embedding query --
+    that's query rewriting, a separate, more involved change than
+    threading history through the generation/classification prompts
+    below; left as a known scoping boundary, not an oversight.
+    """
+    message_repo = MessageRepository(runtime.context.session)
+    messages = await message_repo.list_by_conversation(state.tenant_id, state.conversation_id)
+    prior_messages = messages[:-1] if messages else []
+    state.conversation_history = [
+        f"{'Customer' if message.direction == 'inbound' else 'You'}: {message.text}"
+        for message in prior_messages[-_HISTORY_MAX_MESSAGES:]
+    ]
+    return state
+
+
+def _history_block(state: PipelineState) -> str:
+    if not state.conversation_history:
+        return ""
+    transcript = "\n".join(state.conversation_history)
+    return f"Earlier in this conversation:\n{transcript}\n\n"
+
+
 def understand_intent(state: PipelineState) -> PipelineState:
     # Explicit per-label definitions, not just the label names -- found via
     # REQUIREMENTS §12 stage 1 synthetic testing:
@@ -116,7 +166,8 @@ def understand_intent(state: PipelineState) -> PipelineState:
         "- other: doesn't fit any of the above.\n\n"
         "Respond in neither Turkish nor English — just the single label, "
         "nothing else, no punctuation.\n\n"
-        f"Message: {state.incoming_text}"
+        f"{_history_block(state)}"
+        f"Latest message: {state.incoming_text}"
     )
     raw = generate_text(prompt).strip().lower()
     # The model doesn't always follow the "just the label" instruction
@@ -143,10 +194,14 @@ def score_lead(state: PipelineState) -> PipelineState:
         "Score how ready-to-buy/book this customer is, as exactly one of: "
         "hot, warm, cold. hot = clear purchase/booking intent or urgency; "
         "warm = interested but not decided yet; cold = browsing or a "
-        "general question, no buying signal. The message may be in "
-        "Turkish or English. Reply with only the single label, nothing "
+        "general question, no buying signal. Consider the whole "
+        "conversation so far, not just the latest message — someone who's "
+        "asked several questions and now says \"let's do it\" is hotter "
+        "than that message would suggest in isolation. The message may be "
+        "in Turkish or English. Reply with only the single label, nothing "
         "else, no punctuation.\n\n"
-        f"Message: {state.incoming_text}\n"
+        f"{_history_block(state)}"
+        f"Latest message: {state.incoming_text}\n"
         f"Detected intent: {state.detected_intent}"
     )
     raw = generate_text(prompt).strip().lower()
@@ -287,12 +342,26 @@ def keep_chatting(state: PipelineState) -> PipelineState:
             "will follow up; nothing was actually asked.\n\n"
         )
 
+    history_block = _history_block(state)
+    # Only relevant once there's actually a prior turn to not repeat --
+    # an empty instruction here for a conversation's first message, same
+    # behavior as before conversation_history existed.
+    continuation_instruction = (
+        "This is a continuation of an ongoing conversation -- don't repeat "
+        "information you've already given, and don't greet them again "
+        "since you already have.\n\n"
+        if history_block
+        else ""
+    )
+
     prompt = (
         "You are a helpful customer support assistant for a small business, "
         f"replying directly to a customer's message. {tone_guidance}\n\n"
         f"{content_instruction}"
-        "Customer message (your reply MUST be in this exact same language "
-        f"— do not translate, do not switch languages): {state.incoming_text}"
+        f"{history_block}"
+        f"{continuation_instruction}"
+        "Customer's latest message (your reply MUST be in this exact same "
+        f"language — do not translate, do not switch languages): {state.incoming_text}"
     )
     state.draft_text = generate_text(prompt)
     return state
@@ -348,8 +417,9 @@ async def book_or_checkout(
             "you don't have a direct link to send them — let them know "
             "briefly (not apologetic or corporate-sounding) that someone "
             "from the team will follow up shortly to complete this.\n\n"
-            "Customer message (your reply MUST be in this exact same "
-            f"language — do not translate): {state.incoming_text}"
+            f"{_history_block(state)}"
+            "Customer's latest message (your reply MUST be in this exact "
+            f"same language — do not translate): {state.incoming_text}"
         )
         return state
 
@@ -360,8 +430,9 @@ async def book_or_checkout(
         "customer is ready to buy/book right now — reply naturally and "
         "include this exact link so they can complete it themselves: "
         f"{closing_link}\n\n"
-        "Customer message (your reply MUST be in this exact same language "
-        f"— do not translate, do not switch languages): {state.incoming_text}"
+        f"{_history_block(state)}"
+        "Customer's latest message (your reply MUST be in this exact same "
+        f"language — do not translate, do not switch languages): {state.incoming_text}"
     )
     state.draft_text = generate_text(prompt)
     return state
@@ -415,6 +486,7 @@ async def log_lead_and_notify(
 def build_pipeline_graph() -> StateGraph[PipelineState, PipelineContext]:
     graph = StateGraph(PipelineState, context_schema=PipelineContext)
 
+    graph.add_node("load_history", load_history)
     graph.add_node("understand_intent", understand_intent)
     graph.add_node("search_knowledge", search_knowledge)
     graph.add_node("score_lead", score_lead)
@@ -424,7 +496,8 @@ def build_pipeline_graph() -> StateGraph[PipelineState, PipelineContext]:
     graph.add_node("book_or_checkout", book_or_checkout)
     graph.add_node("log_lead_and_notify", log_lead_and_notify)
 
-    graph.set_entry_point("understand_intent")
+    graph.set_entry_point("load_history")
+    graph.add_edge("load_history", "understand_intent")
     graph.add_edge("understand_intent", "search_knowledge")
     graph.add_edge("search_knowledge", "score_lead")
     graph.add_edge("score_lead", "decide_next_step")
