@@ -24,6 +24,13 @@ class Settings(BaseSettings):
     # tenant-configurable (same "fixed pipeline" reasoning as the rest of
     # the pipeline's business-rule constants).
     follow_up_delay_hours: int = 24
+    # Dev-only tenant switcher (docs/ROADMAP.md) -- lets the frontend log in
+    # as any tenant's owner with no password, via GET /auth/dev-tenants +
+    # POST /auth/dev-login. This is a COMPLETE authentication bypass, not a
+    # lesser-privilege dev mode -- both endpoints 404 (not 403) when this is
+    # off, so a real deployment doesn't even reveal the feature exists.
+    # MUST stay false outside a local/throwaway environment.
+    dev_auth_bypass_enabled: bool = False
 
     model_config = SettingsConfigDict(env_file=_ENV_FILE, env_prefix="ENVELOPS_")
 
