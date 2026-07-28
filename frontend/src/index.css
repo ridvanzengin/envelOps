@@ -41,7 +41,7 @@
   color-scheme: light;
 }
 
-#root { display: flex; flex-direction: column; min-height: 100svh; }
+#root { min-height: 100svh; }
 body { margin: 0; }
 h1, h2, h3 { font-family: var(--sans); font-weight: 600; color: var(--text-h); }
 h1 { font-size: 28px; letter-spacing: -0.3px; margin: 0 0 8px; }

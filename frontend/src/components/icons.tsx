@@ -121,7 +121,8 @@ export function TelegramIcon(props: SVGProps<SVGSVGElement>) {
 export function WhatsAppIcon(props: SVGProps<SVGSVGElement>) {
   return (
     <Icon {...props}>
-      <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8Z" />
+      <path d="M4 20l1.4-3.8a8 8 0 1 1 3 2.7L4 20Z" />
+      <path d="M9.5 10c0-.5.5-1 1-1s.5.5.5 1v1a4 4 0 0 0 4 4h1c.5 0 1 0 1-.5s-.5-1-1-1" />
     </Icon>
   );
 }

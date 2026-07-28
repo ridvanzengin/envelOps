@@ -1,7 +1,19 @@
 import { useTranslation } from "react-i18next";
 
+import { useAuth } from "../auth/useAuth";
 import { useConversationPanel } from "../context/conversationPanel/useConversationPanel";
-import { EmailIcon, FacebookIcon, InstagramIcon, TelegramIcon, WhatsAppIcon } from "./icons";
+import { useTheme } from "../context/theme/useTheme";
+import {
+  EmailIcon,
+  FacebookIcon,
+  InstagramIcon,
+  LogoutIcon,
+  MoonIcon,
+  SunIcon,
+  TelegramIcon,
+  WhatsAppIcon,
+} from "./icons";
+import { LanguageSwitcher } from "./LanguageSwitcher";
 import "./ChannelRail.css";
 
 // Only Telegram is a real, built channel (app/channels/ backend) -- the
@@ -18,10 +30,38 @@ const DISABLED_CHANNELS = [
 
 export function ChannelRail() {
   const { t } = useTranslation();
+  const { theme, toggleTheme } = useTheme();
+  const { logout } = useAuth();
   const { isOpen, openPanel, closePanel, pendingEscalationCount } = useConversationPanel();
 
   return (
     <nav className="channel-rail">
+      <LanguageSwitcher showLabel={false} className="channel-rail__icon" />
+      <button
+        type="button"
+        className="channel-rail__icon"
+        onClick={toggleTheme}
+        title={t("theme.toggle")}
+        aria-label={t("theme.toggle")}
+      >
+        {theme === "dark" ? (
+          <SunIcon className="channel-rail__svg" />
+        ) : (
+          <MoonIcon className="channel-rail__svg" />
+        )}
+      </button>
+      <button
+        type="button"
+        className="channel-rail__icon"
+        onClick={logout}
+        title={t("auth.logout")}
+        aria-label={t("auth.logout")}
+      >
+        <LogoutIcon className="channel-rail__svg" />
+      </button>
+
+      <div className="channel-rail__divider" />
+
       <button
         type="button"
         className={`channel-rail__icon channel-rail__icon--telegram${

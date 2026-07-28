@@ -1,16 +1,7 @@
 import { NavLink } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 
-import { useTheme } from "../context/theme/useTheme";
-import {
-  DashboardIcon,
-  KnowledgeIcon,
-  LogoMark,
-  LogoutIcon,
-  MoonIcon,
-  SettingsIcon,
-  SunIcon,
-} from "./icons";
+import { DashboardIcon, KnowledgeIcon, LogoMark, SettingsIcon } from "./icons";
 import "./Sidebar.css";
 
 interface NavItem {
@@ -20,9 +11,8 @@ interface NavItem {
   end?: boolean;
 }
 
-export function Sidebar({ onLogout }: { onLogout: () => void }) {
+export function Sidebar() {
   const { t } = useTranslation();
-  const { theme, toggleTheme } = useTheme();
 
   const navItems: NavItem[] = [
     { label: t("nav.dashboard"), to: "/", icon: DashboardIcon, end: true },
@@ -58,30 +48,6 @@ export function Sidebar({ onLogout }: { onLogout: () => void }) {
           );
         })}
       </nav>
-      <div className="sidebar__footer">
-        <button
-          type="button"
-          className="sidebar__link sidebar__link--button"
-          onClick={toggleTheme}
-          aria-label={t("theme.toggle")}
-          title={t("theme.toggle")}
-        >
-          {theme === "dark" ? (
-            <SunIcon className="sidebar__icon" />
-          ) : (
-            <MoonIcon className="sidebar__icon" />
-          )}
-          {t("theme.toggle")}
-        </button>
-        <button
-          type="button"
-          className="sidebar__link sidebar__link--button"
-          onClick={onLogout}
-        >
-          <LogoutIcon className="sidebar__icon" />
-          {t("auth.logout")}
-        </button>
-      </div>
     </aside>
   );
 }

@@ -3,6 +3,7 @@ import type { FormEvent } from "react";
 import { useTranslation } from "react-i18next";
 
 import { useAuth } from "../auth/useAuth";
+import { LanguageSwitcher } from "../components/LanguageSwitcher";
 
 export default function Login() {
   const { t } = useTranslation();
@@ -28,7 +29,10 @@ export default function Login() {
   }
 
   return (
-    <section className="page">
+    <section className="page login-page">
+      <div className="login-page__corner">
+        <LanguageSwitcher />
+      </div>
       <h1>{t("auth.loginTitle")}</h1>
       <form onSubmit={(event) => void handleSubmit(event)}>
         <label>
