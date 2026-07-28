@@ -15,6 +15,13 @@ class PipelineState(BaseModel):
     # channel-specific reply tone (app/pipeline/graph.py); an unrecognized
     # value falls back to the chat-style default there rather than erroring.
     channel_type: str
+    # Populated by load_history, the graph's own first node (docs/ROADMAP.md
+    # §2) -- callers never set this themselves, unlike every other field
+    # above. Prior messages in this conversation, oldest first, each
+    # pre-formatted as "Customer: ..."/"You: ...", capped to the most
+    # recent load_history._HISTORY_MAX_MESSAGES. Empty for a conversation's
+    # first message, same as before this field existed.
+    conversation_history: list[str] = []
     detected_intent: str | None = None
     retrieved_chunks: list[str] = []
     lead_score: str | None = None
