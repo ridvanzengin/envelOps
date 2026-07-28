@@ -62,3 +62,7 @@ export function apiPost<T>(
 ): Promise<T> {
   return request<T>(path, { method: "POST", token, body });
 }
+
+export function apiDelete(path: string, token: string | null): Promise<void> {
+  return request<void>(path, { method: "DELETE", token });
+}

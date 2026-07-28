@@ -150,9 +150,6 @@ async def add_trigger_phrase(
     current_user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> TriggerPhraseResponse:
-    """Additive only (TenantTriggerPhrase's own docstring) -- no delete/
-    edit endpoint, matching REQUIREMENTS.md §6's framing of tenant
-    additions to the safety floor as something that only grows."""
     stripped = body.phrase.strip()
     if not stripped:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "phrase must not be blank")
@@ -163,3 +160,25 @@ async def add_trigger_phrase(
     )
     await session.commit()
     return TriggerPhraseResponse.model_validate(phrase)
+
+
+@router.delete("/trigger-phrases/{phrase_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_trigger_phrase(
+    phrase_id: uuid.UUID,
+    current_user: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> None:
+    """Deletable as of 2026-07-29 -- a deliberate reversal of the original
+    additive-only design (REQUIREMENTS.md §6 has the full reasoning, both
+    the original and why it changed): the trade-off of a tenant being able
+    to remove a phrase it added (and so weaken its own floor) was accepted
+    over leaving a mistaken/typo'd phrase permanently stuck. System
+    defaults are unaffected either way -- they're compiled regex in
+    safety_gate.py, not rows in this table, so there is still no code path
+    that touches them."""
+    phrase_repo = TenantTriggerPhraseRepository(session)
+    phrase = await phrase_repo.get(current_user.tenant_id, phrase_id)
+    if phrase is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "trigger phrase not found")
+    await phrase_repo.delete(phrase)
+    await session.commit()

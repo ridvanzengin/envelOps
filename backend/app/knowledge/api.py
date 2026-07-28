@@ -170,3 +170,25 @@ async def refresh_knowledge_source(
         last_synced_at=source.last_synced_at,
         chunk_count=chunk_count,
     )
+
+
+@router.delete("/sources/{source_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_knowledge_source(
+    source_id: uuid.UUID,
+    current_user: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> None:
+    """Added 2026-07-29 -- previously the only way to correct a bad manual
+    entry was refresh's own error message ("delete and re-add instead"),
+    which wasn't actually possible since this endpoint didn't exist yet.
+    Cascades to the source's own chunks via the same
+    KnowledgeChunkRepository.delete_by_source refresh already uses, not a
+    new deletion path."""
+    source_repo = KnowledgeSourceRepository(session)
+    source = await source_repo.get(current_user.tenant_id, source_id)
+    if source is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "knowledge source not found")
+
+    await KnowledgeChunkRepository(session).delete_by_source(current_user.tenant_id, source_id)
+    await source_repo.delete(source)
+    await session.commit()

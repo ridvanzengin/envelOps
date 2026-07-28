@@ -2,8 +2,9 @@ import { useCallback, useEffect, useState } from "react";
 import type { FormEvent } from "react";
 import { useTranslation } from "react-i18next";
 
-import { apiGet, apiPost, ApiError } from "../api/client";
+import { apiDelete, apiGet, apiPost, ApiError } from "../api/client";
 import { useAuth } from "../auth/useAuth";
+import { TrashIcon } from "../components/icons";
 
 interface KnowledgeSource {
   id: string;
@@ -21,6 +22,7 @@ export default function KnowledgeSources() {
   const [sources, setSources] = useState<KnowledgeSource[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [refreshingId, setRefreshingId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const [type, setType] = useState<SourceType>("manual");
   const [content, setContent] = useState("");
@@ -91,6 +93,24 @@ export default function KnowledgeSources() {
       setError(err instanceof ApiError ? err.message : t("knowledgeSources.refreshError"));
     } finally {
       setRefreshingId(null);
+    }
+  }
+
+  async function handleDelete(id: string) {
+    if (!window.confirm(t("knowledgeSources.deleteConfirm"))) return;
+    setError(null);
+    setDeletingId(id);
+    try {
+      await apiDelete(`/knowledge/sources/${id}`, token);
+      setSources((current) => current?.filter((row) => row.id !== id) ?? null);
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        logout();
+        return;
+      }
+      setError(err instanceof ApiError ? err.message : t("knowledgeSources.deleteError"));
+    } finally {
+      setDeletingId(null);
     }
   }
 
@@ -167,7 +187,7 @@ export default function KnowledgeSources() {
                         ? new Date(source.last_synced_at).toLocaleString()
                         : "—"}
                     </td>
-                    <td>
+                    <td className="table__actions">
                       {source.type === "url" && (
                         <button
                           type="button"
@@ -180,6 +200,16 @@ export default function KnowledgeSources() {
                             : t("knowledgeSources.refresh")}
                         </button>
                       )}
+                      <button
+                        type="button"
+                        className="button button--danger"
+                        disabled={deletingId === source.id}
+                        onClick={() => void handleDelete(source.id)}
+                        aria-label={t("knowledgeSources.delete")}
+                        title={t("knowledgeSources.delete")}
+                      >
+                        <TrashIcon />
+                      </button>
                     </td>
                   </tr>
                 ))}

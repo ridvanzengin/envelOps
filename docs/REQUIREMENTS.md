@@ -121,18 +121,25 @@ Two layers:
 - **Layer 2 — business-owned, configurable**: ordinary rules the owner sets
   (budget thresholds, business-hours routing, competitor mentions).
 
-**Layer 1 is platform defaults plus tenant additions — additive only.** The
-business owner can see the full default phrase/pattern list in the UI
-(shown disabled/locked, not hidden — transparency about what's being
-checked matters) and can add their own domain-specific trigger phrases on
-top, but can't edit or remove a default. This keeps "non-negotiable"
-actually true: a business optimizing for fewer escalations has a real
-incentive to weaken this list if it were editable, so the only direction
-tenant customization is allowed to move it is stricter, never looser.
-Adding a phrase is the whole interaction — no regex, no categories to
-choose, since business owners think in phrases ("mad honey" / *deli bal*),
-not pattern syntax. Layer 2 stays fully tenant-controlled (add/edit/remove)
-since it's ordinary business rules, not safety.
+**Layer 1 is platform defaults plus tenant additions.** The business owner
+can see the full default phrase/pattern list in the UI (shown disabled/
+locked, not hidden — transparency about what's being checked matters) and
+can add their own domain-specific trigger phrases on top, but can't edit
+or remove a default — that half stays completely immutable, which is what
+keeps the platform floor itself non-negotiable.
+
+Tenant-added phrases, unlike defaults, **can be removed** — decided
+2026-07-29, reversing this section's original "additive only, tenant
+customization only ever gets stricter" framing. The original reasoning
+still stands as a real trade-off, not a mistake: a business optimizing
+for fewer escalations now *can* remove a phrase it added and later found
+inconvenient, weakening its own floor. Accepted deliberately anyway — a
+permanently-stuck typo'd or mistakenly-added phrase, with no way to
+correct it, was judged the worse failure mode of the two. Adding a phrase
+is still the whole interaction otherwise — no regex, no categories to
+choose, since business owners think in phrases ("mad honey" / *deli
+bal*), not pattern syntax. Layer 2 stays fully tenant-controlled
+(add/edit/remove) since it's ordinary business rules, not safety.
 
 **The safety check must not be the same model self-assessing its own answer.**
 It should be a separate, narrower check, and its result is a hard gate, not a

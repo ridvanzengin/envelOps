@@ -49,6 +49,13 @@ async def _get(path: str, token: str | None) -> httpx.Response:
         return await client.get(path, headers=headers)
 
 
+async def _delete(path: str, token: str | None) -> httpx.Response:
+    headers = {"Authorization": f"Bearer {token}"} if token else {}
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        return await client.delete(path, headers=headers)
+
+
 class TestCreateKnowledgeSource:
     async def test_rejects_missing_token(self) -> None:
         response = await _post("/knowledge/sources", {"type": "manual", "content": "x"}, None)
@@ -209,3 +216,36 @@ class TestRefreshKnowledgeSource:
         )
         stored_chunk = mock_chunk_repo_cls.return_value.add.call_args.args[0]
         assert stored_chunk.content == "Updated info."
+
+
+class TestDeleteKnowledgeSource:
+    async def test_rejects_missing_token(self) -> None:
+        response = await _delete(f"/knowledge/sources/{uuid.uuid4()}", None)
+        assert response.status_code == 401
+
+    async def test_404_when_not_found_or_wrong_tenant(self) -> None:
+        with patch("app.knowledge.api.KnowledgeSourceRepository") as mock_repo_cls:
+            mock_repo_cls.return_value.get = AsyncMock(return_value=None)
+            response = await _delete(f"/knowledge/sources/{uuid.uuid4()}", _token())
+        assert response.status_code == 404
+
+    async def test_deletes_source_and_its_chunks(self) -> None:
+        # Any type, not just manual -- refresh has its own type-specific
+        # rules, but delete doesn't need to care what kind of source this is.
+        tenant_id = uuid.uuid4()
+        token = _token(tenant_id)
+        source = _fake_source(tenant_id, type="url", source_uri="https://example.com/faq")
+        with (
+            patch("app.knowledge.api.KnowledgeSourceRepository") as mock_source_repo_cls,
+            patch("app.knowledge.api.KnowledgeChunkRepository") as mock_chunk_repo_cls,
+        ):
+            mock_source_repo_cls.return_value.get = AsyncMock(return_value=source)
+            mock_source_repo_cls.return_value.delete = AsyncMock()
+            mock_chunk_repo_cls.return_value.delete_by_source = AsyncMock()
+            response = await _delete(f"/knowledge/sources/{source.id}", token)
+
+        assert response.status_code == 204
+        mock_chunk_repo_cls.return_value.delete_by_source.assert_called_once_with(
+            tenant_id, source.id
+        )
+        mock_source_repo_cls.return_value.delete.assert_called_once_with(source)

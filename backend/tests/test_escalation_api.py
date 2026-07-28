@@ -76,6 +76,15 @@ async def _add_trigger_phrase(phrase: str, token: str | None) -> httpx.Response:
         )
 
 
+async def _delete_trigger_phrase(phrase_id: uuid.UUID, token: str | None) -> httpx.Response:
+    headers = {"Authorization": f"Bearer {token}"} if token else {}
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        return await client.delete(
+            f"/escalations/trigger-phrases/{phrase_id}", headers=headers
+        )
+
+
 class TestListEscalations:
     async def test_rejects_missing_token(self) -> None:
         response = await _list_escalations(None)
@@ -220,3 +229,34 @@ class TestAddTriggerPhrase:
         added = mock_repo_cls.return_value.add.call_args.args[0]
         assert added.tenant_id == tenant_id
         assert added.phrase == "mad honey"
+
+
+class TestDeleteTriggerPhrase:
+    # Deletable as of 2026-07-29 -- a deliberate reversal of the original
+    # additive-only design (REQUIREMENTS.md §6). Only ever touches a
+    # tenant's own rows; system defaults have no rows to delete in the
+    # first place (they're compiled regex in safety_gate.py).
+    async def test_rejects_missing_token(self) -> None:
+        response = await _delete_trigger_phrase(uuid.uuid4(), None)
+        assert response.status_code == 401
+
+    async def test_404_when_not_found_or_wrong_tenant(self) -> None:
+        with patch("app.escalation.api.TenantTriggerPhraseRepository") as mock_repo_cls:
+            mock_repo_cls.return_value.get = AsyncMock(return_value=None)
+            response = await _delete_trigger_phrase(uuid.uuid4(), create_access_token(
+                user_id=uuid.uuid4(), tenant_id=uuid.uuid4(), role="owner"
+            ))
+        assert response.status_code == 404
+
+    async def test_deletes_the_tenants_own_phrase(self) -> None:
+        tenant_id = uuid.uuid4()
+        token = create_access_token(user_id=uuid.uuid4(), tenant_id=tenant_id, role="owner")
+        row = _fake_trigger_phrase(tenant_id, phrase="mad honey")
+        with patch("app.escalation.api.TenantTriggerPhraseRepository") as mock_repo_cls:
+            mock_repo_cls.return_value.get = AsyncMock(return_value=row)
+            mock_repo_cls.return_value.delete = AsyncMock()
+            response = await _delete_trigger_phrase(row.id, token)
+
+        assert response.status_code == 204
+        mock_repo_cls.return_value.get.assert_called_once_with(tenant_id, row.id)
+        mock_repo_cls.return_value.delete.assert_called_once_with(row)
