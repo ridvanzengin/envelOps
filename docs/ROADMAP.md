@@ -170,20 +170,10 @@ conversation gets escalated. No SSE exists yet in this codebase — the
 sibling project `iotops-workspace` already has a working SSE
 implementation to use as a reference rather than designing from scratch.
 
-### Recommended sequencing (proposed, not yet agreed)
-1. ~~§3.4 (Test Console diagnostics)~~ — done.
-2. ~~§3.3 (rail badges)~~ — done.
-3. **§2 (conversation-history threading)** — user-flagged 2026-07-28:
-   further pipeline-behavior testing/tuning has limited value while every
-   message is still evaluated in total isolation, so this is the next
-   thing worth designing, ahead of more Test-Console-driven debugging.
-   Also unblocks §3.2.
-4. **§3.5** (SSE) — infra step, unblocks "live" feeling for §3.3/§3.4's
-   badges; crib from iotops-workspace's implementation. Independent of
-   §2, can slot in before or after it.
-5. **§3.1** (escalation cover message + internal note bubble) — its own
-   design pass (message visibility model + pipeline change).
-6. **§3.2** (clarifying question) — blocked on §2, do after it.
+### Recommended sequencing
+Superseded by §5's "Updated sequencing given 5.1–5.3" below — kept this
+pointer rather than two separately-maintained orderings that could drift
+apart and disagree.
 
 ## 4. Other open items carried from ARCHITECTURE.md
 
@@ -210,7 +200,118 @@ Still real, not yet designed in detail, not currently being worked:
   categories "graduate" to auto-send based on approval history (REQUIREMENTS
   §4).
 
-Product-level deferred items (template gallery, graph-augmented retrieval,
-fine-tuning, multi-user roles beyond "owner," AI-assisted configuration,
-the visual flow builder) are tracked in REQUIREMENTS.md §10/§13 — not
-duplicated here since they're phase-level, not session-level, decisions.
+Product-level deferred items (graph-augmented retrieval, fine-tuning,
+multi-user roles beyond "owner," the visual flow builder) are tracked in
+REQUIREMENTS.md §10/§13 — not duplicated here since they're phase-level,
+not session-level, decisions. Template gallery and AI-assisted
+configuration are also named there, but now have their own elaborated
+entries below (§5.2, §5.3) since the user scoped them further this
+session — REQUIREMENTS still holds the original phase-level reasoning for
+both.
+
+## 5. Platform-level requests — scoped 2026-07-29, not yet built
+
+Longer-horizon than §3's items — these are about testing infrastructure,
+onboarding, and a self-improving layer on top of the pipeline, not a
+single feature. Captured here so the ambition doesn't live only in chat
+history; none of this is designed in detail yet.
+
+### 5.1 Multi-tenant synthetic seed script with showcase scenarios visible in the rail
+Turn the existing single-tenant synthetic harness
+(`scripts/run_synthetic_conversations.py` — one tenant, "Synthetic Test —
+Honey Co") into a proper seed script covering multiple fake tenants
+across different verticals (REQUIREMENTS §2's table: service/appointment,
+product/e-commerce, local/booking, B2B/high-ticket), each with its own
+distinct knowledge sources and settings (`closing_action`, trigger
+phrases, channel types), and a genuinely diverse set of test
+conversations per tenant — not just one business's order/shipping/returns
+list reused everywhere.
+
+**Concrete gap in the current script, directly relevant to "visible
+through the rail":** it writes real `Tenant`/`Channel`/`Conversation`/
+`Message` rows but creates **no `User` row** — there's no login for that
+tenant, so today nobody can actually see this synthetic data in the UI,
+only by querying the DB directly. A seed script whose entire point is
+dashboard-visible showcases needs to create a login-able user per tenant
+too (and surface the credentials somewhere, e.g. printed at the end of
+the run).
+
+**On "chats and emails":** `email` is already one of the five ChannelRail
+platform types (`_CHANNEL_TONE_GUIDANCE`/frontend `PLATFORMS`), but there
+is no real email channel integration — same not-built status as
+WhatsApp/Instagram/Facebook. Seeding "email scenarios" realistically means
+seeding them through Test Console-style (`Channel.is_test`) channels, not
+a real email integration that doesn't exist yet. Worth being explicit
+about that when this gets built, so it doesn't quietly turn into "also
+build a real email channel."
+
+**Practical constraint worth flagging now, not discovering later:** the
+existing harness needs a 20s gap between messages just to stay under
+Gemini free-tier's 15 req/min cap with a *single* tenant (`core/llm.py`).
+Multiple tenants × multiple diverse conversations × up to 3-4 LLM calls
+each will multiply run time substantially on the free tier, and CLAUDE.md
+already documents models that silently sit at a *permanent* zero quota,
+not just a slow one. This may force a real "check/upgrade the Gemini
+tier" decision sooner than REQUIREMENTS §12 stage 2 (real customer
+traffic) originally implied.
+
+**Why this might jump the queue (flagged by the user, not decided yet):**
+richer, multi-tenant, multi-vertical scenarios would make §2's
+conversation-history design — and any pipeline tuning after it — far more
+meaningfully testable than the current single honey-seller harness. Worth
+deciding explicitly whether this comes before or after §2, rather than
+defaulting to whatever order this document happened to list things in.
+
+### 5.2 Template gallery, built from the battle-tested seed scenarios
+Once 5.1's tenant/knowledge/settings configurations have been exercised
+enough to trust, turn them into REQUIREMENTS §10's already-deferred
+"starter template gallery" (pre-built configurations a business owner
+picks and edits at onboarding, replacing Phase 1's single minimal
+default). Not new scope conceptually — REQUIREMENTS §10/§13 already name
+this as deferred-not-cut — but 5.1 is now the concrete path to it: the
+fake showcase tenants become the literal template source rather than a
+separate design effort later.
+
+### 5.3 AI copilot for setup, tuning, and conversation monitoring
+Goes a step further than REQUIREMENTS §10's already-deferred "AI-assisted
+configuration" (an assistant that helps a business owner set up their own
+flow) and ARCHITECTURE §11's observability dashboard: a copilot that (a)
+helps set up knowledge bases and recommends settings from a description
+of the business, (b) monitors live conversation quality — presumably
+reading `pipeline_traces`/escalations/lead outcomes, the same data
+§3.3/§3.4 just started populating — and (c) proactively suggests setting
+changes based on what it observes.
+
+This is real new scope, not just "the already-deferred item, built."
+Flagging before any design starts:
+- (b)/(c) is a system that watches its own output and suggests changing
+  its own configuration — that needs a human-approval point somewhere,
+  not silent auto-apply. Echoes REQUIREMENTS §4's cut general
+  draft-and-approve and its own shelved "graduation path" idea (the
+  approved-as-is/edited/rejected data hook already flagged as cheap to
+  capture even without the feature) — likely the right shape to reuse
+  here rather than inventing a second approval mechanism.
+- Needs 5.1's diverse multi-tenant scenarios to have anything meaningful
+  to validate "did the copilot's advice actually help" against — one
+  honey-seller tenant isn't enough signal to trust or distrust its
+  suggestions.
+- Not designed at all yet — this entry exists so the ambition is on
+  record, not as a spec to start building from.
+
+### Updated sequencing given 5.1–5.3 (proposed, not yet agreed)
+1. ~~§3.4 (Test Console diagnostics)~~ / ~~§3.3 (rail badges)~~ — done.
+2. **§5.1** (multi-tenant seed + showcase scenarios) — user-flagged as
+   possibly belonging here, ahead of §2: makes every subsequent testing
+   step (§2, and any pipeline tuning after it) meaningfully more robust.
+   Also needs its own look at Gemini quota headroom before it can run at
+   the scale implied (see constraint above).
+3. **§2** (conversation-history threading) — easier to validate for real
+   once §5.1 exists.
+4. **§3.5** (SSE) — independent infrastructure, can slot in anytime.
+5. **§3.1** (escalation cover message + internal note bubble).
+6. **§3.2** (clarifying question) — blocked on §2.
+7. **§5.2** (template gallery) — natural next step once §5.1 is
+   battle-tested, not before.
+8. **§5.3** (AI copilot) — longest-horizon item here; needs §5.1's
+   scenario diversity and §3.3/§3.4's data maturing first, and its own
+   dedicated design pass on the approval-point question above.
