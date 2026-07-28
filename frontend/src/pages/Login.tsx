@@ -33,33 +33,39 @@ export default function Login() {
       <div className="login-page__corner">
         <LanguageSwitcher />
       </div>
-      <h1>{t("auth.loginTitle")}</h1>
-      <form onSubmit={(event) => void handleSubmit(event)}>
-        <label>
-          {t("auth.email")}
-          <input
-            type="email"
-            value={email}
-            onChange={(event) => setEmail(event.target.value)}
-            required
-            autoComplete="username"
-          />
-        </label>
-        <label>
-          {t("auth.password")}
-          <input
-            type="password"
-            value={password}
-            onChange={(event) => setPassword(event.target.value)}
-            required
-            autoComplete="current-password"
-          />
-        </label>
-        <button type="submit" disabled={submitting}>
-          {submitting ? t("auth.loggingIn") : t("auth.login")}
-        </button>
-        {error && <p role="alert">{error}</p>}
-      </form>
+      <div className="login-page__card">
+        <h1>{t("auth.loginTitle")}</h1>
+        <form className="form" onSubmit={(event) => void handleSubmit(event)}>
+          <label className="form__field">
+            {t("auth.email")}
+            <input
+              type="email"
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+              required
+              autoComplete="username"
+            />
+          </label>
+          <label className="form__field">
+            {t("auth.password")}
+            <input
+              type="password"
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              required
+              autoComplete="current-password"
+            />
+          </label>
+          <button type="submit" className="button button--primary" disabled={submitting}>
+            {submitting ? t("auth.loggingIn") : t("auth.login")}
+          </button>
+          {error && (
+            <p className="error-message" role="alert">
+              {error}
+            </p>
+          )}
+        </form>
+      </div>
     </section>
   );
 }
