@@ -382,6 +382,47 @@ class TestKeepChatting:
         assert "Earlier in this conversation" not in prompt
         assert "continuation of an ongoing conversation" not in prompt
 
+    def test_grounding_instruction_includes_clarifying_question_branch(self) -> None:
+        # docs/ROADMAP.md §3.2 -- an ambiguous knowledge_question ("kırmızı
+        # var mı?" with no product named) should be able to get exactly one
+        # clarifying question instead of always falling to the "I don't
+        # have that information" disclaimer. This only checks the
+        # instruction reaches the model; the model's actual judgment call
+        # isn't something a unit test can exercise.
+        state = _make_state("kırmızı var mı?")
+        state.detected_intent = "knowledge_question"
+        state.retrieved_chunks = ["Available colors: blue, green, black."]
+        with patch("app.pipeline.graph.generate_text", return_value="x") as mock_gen:
+            keep_chatting(state)
+        prompt = mock_gen.call_args.args[0]
+        assert "ask exactly ONE short, natural clarifying question" in prompt
+        assert "not an escalation" in prompt
+
+    def test_clarifying_question_branch_not_offered_for_small_talk(self) -> None:
+        # Small talk/other still skip the whole grounding instruction (no
+        # question was asked at all), so the clarifying-question branch
+        # shouldn't leak in there either.
+        state = _make_state("hi")
+        state.detected_intent = "small_talk"
+        with patch("app.pipeline.graph.generate_text", return_value="x") as mock_gen:
+            keep_chatting(state)
+        prompt = mock_gen.call_args.args[0]
+        assert "clarifying question" not in prompt
+
+    def test_prior_clarifying_question_is_visible_in_history_for_the_followup(self) -> None:
+        # The mechanism that keeps this to *exactly* one question: if the
+        # model already asked one last turn, it's right there in the
+        # history block, so the customer's follow-up reply lands in
+        # branch 2/3 of the instruction instead of triggering another ask.
+        state = _make_state("kırmızısı")
+        state.detected_intent = "knowledge_question"
+        state.retrieved_chunks = ["Available colors: blue, green, black."]
+        state.conversation_history = ["Customer: kırmızı var mı?", "You: neyin kırmızısı?"]
+        with patch("app.pipeline.graph.generate_text", return_value="x") as mock_gen:
+            keep_chatting(state)
+        prompt = mock_gen.call_args.args[0]
+        assert "neyin kırmızısı?" in prompt
+
 
 class TestLogLeadAndNotify:
     async def test_always_logs_a_lead(self) -> None:
