@@ -461,7 +461,6 @@ class TestKeepChatting:
                 await keep_chatting(state, _make_runtime())
             prompt = mock_gen.call_args.args[0]
             assert "Ground your reply ONLY in the knowledge" not in prompt
-            assert "isn't asking a specific question" in prompt
             # The knowledge block itself shouldn't leak into a greeting reply.
             assert "We ship worldwide via DHL." not in prompt
 
@@ -476,8 +475,28 @@ class TestKeepChatting:
         with patch("app.pipeline.graph.generate_text", return_value="x") as mock_gen:
             await keep_chatting(state, _make_runtime())
         prompt = mock_gen.call_args.args[0]
+        assert "isn't asking a specific question" in prompt
         assert "not a personal friend" in prompt
         assert "how their day is going" in prompt
+
+    async def test_other_intent_gets_its_own_non_echo_instruction(self) -> None:
+        # Found live (2026-07-29): "other" (understand_intent's genuine
+        # catch-all, "doesn't fit any of the above") used to share
+        # small_talk's instruction, which falsely claims "nothing was
+        # actually asked" -- false for something like "where is mahmood?"
+        # (a real message, just not a business question/complaint/
+        # purchase interest). That false premise produced a confused
+        # reply, up to literally echoing the customer's own message back.
+        # "other" now gets its own instruction that acknowledges something
+        # was said and explicitly rules out parroting it back.
+        state = _make_state("where is mahmood?")
+        state.detected_intent = "other"
+        with patch("app.pipeline.graph.generate_text", return_value="x") as mock_gen:
+            await keep_chatting(state, _make_runtime())
+        prompt = mock_gen.call_args.args[0]
+        assert "isn't asking a specific question" not in prompt
+        assert "something WAS actually said" in prompt
+        assert "Never repeat or echo the customer's own message" in prompt
 
     async def test_includes_history_and_continuation_instruction_when_present(self) -> None:
         state = _make_state("What about shipping?")
@@ -620,6 +639,62 @@ class TestKeepChatting:
         ):
             result = await keep_chatting(state, _make_runtime())
         assert result.draft_text == "Sure, we ship worldwide!"
+        assert result.decision is None
+
+    async def test_untagged_disclaimer_content_still_escalates(self) -> None:
+        # Found live (2026-07-29), real DB evidence, not a hypothetical:
+        # the EMAIL channel's own tone guidance ("brief greeting... short
+        # sign-off") competes with the STATUS-tag instruction, and the
+        # model dropped the tag entirely while still writing the exact
+        # pre-fix disclaimer content ("Dear Customer, ... we do not have
+        # that information, and a person will confirm ... Best regards,
+        # Customer Support") -- silently reverting to the dead end this
+        # whole fix was for. _looks_like_not_found_disclaimer is the
+        # content-based safety net for exactly this: no tag, but the text
+        # still says the disclaimer.
+        state = _make_state("which models do you have")
+        state.detected_intent = "knowledge_question"
+        state.channel_type = "email"
+        state.retrieved_chunks = []
+        fake_escalation = type("Esc", (), {"id": uuid.uuid4()})()
+        with (
+            patch("app.pipeline.graph.EscalationRepository") as mock_escalation_repo_cls,
+            patch("app.pipeline.graph.MessageRepository") as mock_message_repo_cls,
+            patch(
+                "app.pipeline.graph.generate_text",
+                side_effect=[
+                    "Dear Customer,\n\nWe do not have that information, and a "
+                    "person will confirm the available models for you.\n\n"
+                    "Best regards,\nCustomer Support",
+                    "Let me check with a colleague and follow up shortly!",
+                ],
+            ),
+        ):
+            mock_escalation_repo_cls.return_value.add = AsyncMock(return_value=fake_escalation)
+            mock_message_repo_cls.return_value.add = AsyncMock()
+            result = await keep_chatting(state, _make_runtime())
+
+        assert result.decision == "escalate_to_human"
+        assert result.escalation_logged is True
+        assert result.draft_text == "Let me check with a colleague and follow up shortly!"
+        logged = mock_escalation_repo_cls.return_value.add.call_args.args[0]
+        assert logged.layer == "knowledge_gap"
+
+    async def test_untagged_answered_text_does_not_falsely_escalate(self) -> None:
+        # The content-based fallback must not fire on ordinary untagged
+        # replies that don't contain disclaimer language -- covered
+        # separately from test_unparseable_status_falls_back... above to
+        # make the "no false positive" property explicit in its own right.
+        state = _make_state("Do you ship internationally?")
+        state.detected_intent = "knowledge_question"
+        state.retrieved_chunks = ["We ship worldwide via DHL."]
+        with patch(
+            "app.pipeline.graph.generate_text",
+            return_value="Yes, we ship worldwide via DHL!",
+        ):
+            result = await keep_chatting(state, _make_runtime())
+        assert result.decision is None
+        assert result.escalation_reason is None
         assert result.decision is None
 
 

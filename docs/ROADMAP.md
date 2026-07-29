@@ -608,6 +608,128 @@ real instead of silently dropping.
 don't escalate, unparseable-status falls back safely, the small-talk
 tone rewording) — full suite (178 tests), ruff, and mypy all clean.
 
+**Hardened same day, real regression caught live within hours of
+shipping:** the STATUS-tag approach above relies on the model reliably
+prefixing its own reply — not reliable enough on its own. Found via a
+real multi-turn Test Console conversation on the **email** channel: its
+own tone guidance ("brief greeting... short sign-off") competes with
+"your entire response must be exactly this shape: STATUS then your
+reply," and the model resolved that conflict by dropping the tag while
+still writing the exact disclaimer content verbatim ("Dear Customer,
+... we do not have that information, and a person will confirm ...
+Best regards, Customer Support") — silently reverting to the pre-fix
+dead end this fix was supposed to close, confirmed via direct DB query
+(no internal note, no escalation row for that message). Fixed with a
+content-based fallback, `_looks_like_not_found_disclaimer` — only
+consulted when the STATUS tag is missing, never overrides an explicit
+tag, matches the exact English wording the instruction asks for plus a
+couple of Turkish equivalents seen in testing. Same layered-detection
+principle `escalation/safety_gate.py` already uses, applied here
+because a single free-text formatting instruction isn't a strong enough
+guarantee for something that decides whether a customer actually gets
+escalated.
+
+**Verified live** by reproducing the real failing conversation
+end-to-end against the rebuilt backend (multi-turn, email channel,
+watches → Rolex → "which models do you have") — the knowledge-gap
+turn now correctly produces `decision: escalate_to_human`, a real
+`Escalation` row (`layer: knowledge_gap`), and an internal note, where
+before it silently fell back to `keep_chatting` with no escalation at
+all. 2 more unit tests (`test_untagged_disclaimer_content_still_escalates`,
+`test_untagged_answered_text_does_not_falsely_escalate` — the latter
+confirming the fallback doesn't false-positive on ordinary replies) —
+full suite (180 tests), ruff, mypy all clean.
+
+Also added `.claude/skills/run/SKILL.md` while chasing this down live in
+a browser — no `chromium-cli` in this environment, and getting
+Playwright actually launching (right `NODE_PATH` into an npx cache dir,
+`executablePath` pointing at the one cached Chrome binary whose
+revision doesn't need a missing `headless_shell`) cost real time the
+first time. Documented so it isn't rediscovered from scratch next
+session, per direct instruction after the first pass wasted time on
+exactly that.
+
+**Second real behavior bug, same live conversation, flagged directly by
+the user: the clarifying-question branch (§3.2) looped three times
+asking "which watch / which model / which Rolex model" on a business
+that sells honey, instead of recognizing on the very first message that
+watches aren't something it has any information about at all.** Root
+cause, found by reading `search_knowledge` directly rather than
+assuming: `KnowledgeChunkRepository.search_similar` has no relevance
+floor — it's a plain `ORDER BY cosine_distance LIMIT k`, so it always
+returns the top-K *nearest* chunks regardless of whether any of them
+are actually about what's being asked. The model always saw *some*
+knowledge block (honey facts) sitting next to a completely unrelated
+question and kept treating it as "just needs narrowing down" rather
+than "wrong category entirely." Branch 1's instruction now explicitly
+requires the knowledge below to already be about the same general
+product/topic being asked about before a clarifying question is
+appropriate; branch 3 explicitly covers "the knowledge below has
+nothing to do with what's being asked at all" as its own trigger,
+separate from "specific enough but the fact isn't there." Prompt-only
+change — deliberately not the deeper fix (a real similarity/distance
+threshold on `search_similar` itself, filtering irrelevant chunks out
+of `retrieved_chunks` before they ever reach the prompt), which would
+need real calibration against actual retrieval data before trusting a
+cutoff value, not a same-session guess.
+
+**Verified live**, reproducing the exact first message from the real
+conversation ("hello do you sell watches", email channel, Meadow & Jar
+Honey Co): now correctly escalates on the **first message** — `decision:
+escalate_to_human`, a real `Escalation` row, natural cover reply — where
+before it took three rounds of pointless clarifying questions to get
+there. Existing `TestKeepChatting` clarifying-question tests (which use
+retrieved_chunks that genuinely are about the same topic being asked,
+e.g. "kırmızı var mı?" against `["Available colors: blue, green,
+black."]`) still pass unchanged, confirming the legitimate
+same-topic-ambiguity case wasn't broken by the tightened wording.
+
+**Third thing checked live, this one *not* a bug:** the user also asked
+whether the escalation "successfully" reached the activity/rail badge,
+since an earlier test (before the hardening fix above) showed the
+disclaimer text but nothing on the badge. Re-verified directly with
+Playwright against the rebuilt backend, targeting the **Email** icon
+specifically (the real conversation's actual channel, not Telegram):
+badge went **1 → 2** live, zero clicks, zero reloads — the earlier
+"nothing appeared" report matches exactly what pre-hardening code would
+do, since that message never created a real `Escalation` row to begin
+with (confirmed via direct DB query at the time). Nothing left to fix
+here specifically; recorded so a future report of "badge didn't update"
+isn't re-investigated as if it were still open.
+
+**Fourth thing found live, same day, real conversation-quality bug —
+"other" intent could echo the customer's own message back verbatim.**
+A follow-up multi-turn test ("what time is it?", "where is mahmood?",
+"yes the boss" — all genuinely off-topic for a honey seller) surfaced
+that `understand_intent`'s `other` label (its own genuine catch-all,
+"doesn't fit any of the above") was sharing `small_talk`'s instruction
+in `keep_chatting`, which opens with "nothing was actually asked" — a
+false premise for a real, if odd, message. That false premise produced
+confused output, including two turns where the reply was literally the
+customer's own message echoed back unchanged. Gave `other` its own
+instruction: acknowledge something was actually said, redirect to how
+the business can help, explicit "never repeat or echo the customer's
+own message back" guardrail. **Verified live**, reproducing the same
+three messages: all three now get a sensible acknowledge-and-redirect
+reply ("I am unable to provide information regarding individuals'
+locations, but I am happy to assist you with any questions related to
+our business offerings...") instead of either a non-responsive
+"Hi, how can I help?" or an echo. 1 new/updated unit test in
+`test_pipeline_graph.py` (`other` and `small_talk` now assert different
+instruction content; a dedicated `other`-intent test checks both the
+non-echo guardrail and the absence of the false "nothing was asked"
+premise) — full suite (181 tests), ruff, mypy all clean.
+
+**Also worth naming plainly, not just fixing the individual symptoms:**
+four real behavior/quality bugs surfaced from live use in this single
+session (the knowledge-gap dead end, the dropped-STATUS-tag regression,
+the out-of-domain clarify loop, and this echo bug) — all in
+`keep_chatting`, the single highest-surface-area node in the pipeline.
+Matches the user's own read after seeing this dialogue: the assistant
+is meaningfully short of "smooth store assistant" quality yet, not a
+one-bug problem. No single further fix closes that gap — it's a
+direction for ongoing work, not a checklist item.
+
 ### Recommended sequencing
 Superseded by §5's "Updated sequencing given 5.1–5.3" below — kept this
 pointer rather than two separately-maintained orderings that could drift

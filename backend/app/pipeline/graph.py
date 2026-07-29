@@ -70,6 +70,33 @@ _KEEP_CHATTING_STATUS_RE = re.compile(
     r"^\s*(CLARIFY|ANSWERED|NOT_FOUND)\b[:\-]?\s*", re.IGNORECASE
 )
 
+# Content-based fallback for when the model drops the STATUS tag entirely --
+# found live (2026-07-29): the email channel's own tone guidance ("brief
+# greeting... short sign-off") competes with "your entire response must be
+# exactly this shape: [STATUS] then your reply" and the model resolved that
+# conflict by dropping the tag and just writing the greeting/sign-off email
+# it's been doing all conversation, landing right back on the pre-fix
+# disclaimer text with no escalation created. A required-format instruction
+# alone isn't reliable enough for something that decides whether a customer
+# gets escalated for real -- this is not exhaustive (matches the exact
+# English wording this instruction asks for, plus a couple of common
+# Turkish equivalents actually seen in testing), but it means a model that
+# forgets the tag while still writing disclaimer-shaped prose is still
+# caught, same layered-detection spirit as escalation/safety_gate.py.
+_DISCLAIMER_CONTENT_MARKERS = (
+    "don't have that information",
+    "do not have that information",
+    "a person will confirm",
+    "bu bilgiye sahip değilim",
+    "bilgim yok",
+    "bir kişi",
+)
+
+
+def _looks_like_not_found_disclaimer(text: str) -> bool:
+    lowered = text.lower()
+    return any(marker in lowered for marker in _DISCLAIMER_CONTENT_MARKERS)
+
 # Also a first-pass default, not tenant-configurable yet (ARCHITECTURE §4:
 # "plain LLM call for now"; REQUIREMENTS §2: "what counts as a hot lead"
 # must eventually be per-business config). "cold" is the fallback on an
@@ -470,26 +497,44 @@ async def keep_chatting(
         # ask at most one: if the model already asked a clarifying question
         # last turn, it shows up in the history block below, so the
         # customer's reply lands in branch 2/3 instead of asking again.
+        #
+        # Branch 1 explicitly requires the knowledge below to already be
+        # about the same general topic -- found live (2026-07-29):
+        # search_knowledge (KnowledgeChunkRepository.search_similar) has no
+        # relevance floor, it always returns the top-K nearest chunks by
+        # cosine distance regardless of whether any of them are actually
+        # about what's being asked. Without this qualifier the model saw
+        # *some* knowledge block (honey facts) next to an entirely
+        # unrelated question ("do you sell watches?") and kept asking
+        # which specific watch/model/brand across three turns instead of
+        # recognizing the whole category isn't something it has any
+        # information about at all -- no amount of narrowing down "which
+        # watch" would ever produce an answer that isn't there.
         content_instruction = (
             "Ground your reply ONLY in the knowledge listed below. Decide "
             "which of these three situations applies, in this order:\n"
-            "1. The message is missing a detail you'd need before you could "
-            "even look this up -- e.g. asking about the price/availability/"
-            "color of \"it\" or \"the red one\" without saying which product, "
-            "and the earlier conversation doesn't already say which one. "
-            "In this case, ask exactly ONE short, natural clarifying "
-            "question to find out what they mean -- do not guess, do not "
-            "answer partially, and do not say a person will confirm "
-            "anything, since this is just one follow-up question, not an "
-            "escalation.\n"
+            "1. The knowledge below IS about the same general product or "
+            "topic being asked about, but the message is missing a detail "
+            "you'd need before you could pick the right answer -- e.g. "
+            "asking about the price/availability/color of \"it\" or \"the "
+            "red one\" without saying which product, when the knowledge "
+            "below does cover that kind of product, and the earlier "
+            "conversation doesn't already say which one. In this case, ask "
+            "exactly ONE short, natural clarifying question to find out "
+            "what they mean -- do not guess, do not answer partially, and "
+            "do not say a person will confirm anything, since this is just "
+            "one follow-up question, not an escalation.\n"
             "2. Otherwise, the knowledge below explicitly contains the "
             "answer -- answer using only that information.\n"
-            "3. Otherwise (the question is specific enough, but the "
-            "answer — including specific facts like prices, policies, or "
-            "guarantees — simply isn't in the knowledge below), you MUST "
-            "say you don't have that information and a person will "
-            "confirm, rather than guessing or inferring an answer that "
-            "merely sounds plausible.\n"
+            "3. Otherwise -- either the knowledge below has nothing to do "
+            "with what's being asked at all (a different product/topic "
+            "entirely, not just an unspecified variant of one the "
+            "knowledge below does cover), or it's a specific-enough "
+            "question but the answer, including specific facts like "
+            "prices, policies, or guarantees, simply isn't in the "
+            "knowledge below -- you MUST say you don't have that "
+            "information and a person will confirm, rather than guessing "
+            "or inferring an answer that merely sounds plausible.\n"
             "Apply this the same way in every language; do not be any less "
             "careful in Turkish than you would be in English.\n\n"
             "Your entire response must be exactly this shape: a first line "
@@ -500,7 +545,7 @@ async def keep_chatting(
             "mention which case this is anywhere in the reply itself.\n\n"
             f"Relevant knowledge:\n{context_block}\n\n"
         )
-    else:
+    elif state.detected_intent == "small_talk":
         content_instruction = (
             "This message isn't asking a specific question (it's a greeting, "
             "small talk, or similar) -- there's nothing to ground in a "
@@ -511,6 +556,30 @@ async def keep_chatting(
             "small talk like asking how their day is going. Do not say "
             "you don't have information or that someone will follow up; "
             "nothing was actually asked.\n\n"
+        )
+    else:
+        # "other" is understand_intent's genuine catch-all ("doesn't fit
+        # any of the above") -- found live (2026-07-29): this used to
+        # share small_talk's instruction, which falsely claims "nothing
+        # was actually asked." For something like "where is mahmood?" or
+        # "yes the boss" -- a real message, just not a business question,
+        # complaint, or purchase interest -- that false premise produced
+        # a confused reply, up to and including literally echoing the
+        # customer's own message back verbatim. This gets its own
+        # instruction: acknowledge something was actually said, don't
+        # pretend otherwise, and explicitly rule out parroting it back.
+        content_instruction = (
+            "This message doesn't fit a specific business question, "
+            "complaint, or purchase interest -- it may be off-topic, "
+            "unclear, or unrelated to what this business offers, but "
+            "something WAS actually said. Acknowledge that briefly and "
+            "naturally, without pretending nothing was asked, then "
+            "redirect to how you can help with this business specifically "
+            "(e.g. \"I'm not sure I can help with that, but happy to "
+            "answer anything about [what this business does]!\"). Never "
+            "repeat or echo the customer's own message back to them as "
+            "your reply, and never guess or invent an answer to something "
+            "you don't actually know.\n\n"
         )
 
     history_block = _history_block(state)
@@ -536,11 +605,8 @@ async def keep_chatting(
     )
     raw = generate_text(prompt).strip()
 
-    status_match = (
-        _KEEP_CHATTING_STATUS_RE.match(raw)
-        if state.detected_intent in _INTENTS_NEEDING_GROUNDING
-        else None
-    )
+    needs_grounding = state.detected_intent in _INTENTS_NEEDING_GROUNDING
+    status_match = _KEEP_CHATTING_STATUS_RE.match(raw) if needs_grounding else None
     state.draft_text = raw[status_match.end() :].strip() if status_match else raw
 
     # Real escalation, not a dead end -- found live (2026-07-29): this
@@ -554,7 +620,23 @@ async def keep_chatting(
     # reusing state.decision/escalation_reason/escalation_logged the same
     # way so publish_pipeline_events (runner.py) picks this up as a real
     # "escalation" SSE event for free, no caller-side changes needed.
-    if status_match and status_match.group(1).upper() == "NOT_FOUND":
+    #
+    # is_not_found doesn't just trust status_match -- found live the same
+    # day this shipped: the email channel's tone guidance ("brief
+    # greeting... short sign-off") competes with the STATUS-tag
+    # instruction, and the model dropped the tag while still writing the
+    # exact disclaimer content, silently reverting to the pre-fix dead
+    # end. _looks_like_not_found_disclaimer is the fallback net for
+    # exactly that case -- only consulted when the tag is missing, never
+    # overrides an explicit CLARIFY/ANSWERED tag.
+    tagged_not_found = (
+        status_match is not None and status_match.group(1).upper() == "NOT_FOUND"
+    )
+    untagged_but_looks_like_it = (
+        status_match is None and needs_grounding and _looks_like_not_found_disclaimer(raw)
+    )
+    is_not_found = tagged_not_found or untagged_but_looks_like_it
+    if is_not_found:
         state.escalation_reason = f"knowledge base has no answer for: {state.incoming_text!r}"
         state.decision = "escalate_to_human"
         state.escalation_logged = True
