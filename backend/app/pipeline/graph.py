@@ -14,6 +14,7 @@ message, going through the full graph (load_history included) like any
 other reply.
 """
 
+import re
 import uuid
 from datetime import UTC, datetime
 
@@ -57,6 +58,16 @@ _INTENT_LABELS = frozenset(
 # is treated as a real information request.
 _INTENTS_NEEDING_GROUNDING = frozenset(
     {"knowledge_question", "purchase_intent", "complaint_or_problem"}
+)
+
+# Parses keep_chatting's own requested "STATUS\n<reply>" response shape
+# (only requested when detected_intent needs grounding -- see the prompt
+# built there). Matched leniently at the start of the raw response rather
+# than requiring an exact two-line shape, since the model won't always
+# follow formatting instructions to the letter; group(1) is the keyword,
+# match.end() is where the actual customer-facing reply starts.
+_KEEP_CHATTING_STATUS_RE = re.compile(
+    r"^\s*(CLARIFY|ANSWERED|NOT_FOUND)\b[:\-]?\s*", re.IGNORECASE
 )
 
 # Also a first-pass default, not tenant-configurable yet (ARCHITECTURE §4:
@@ -421,7 +432,9 @@ def route_after_decision(state: PipelineState) -> str:
     return state.decision
 
 
-def keep_chatting(state: PipelineState) -> PipelineState:
+async def keep_chatting(
+    state: PipelineState, runtime: Runtime[PipelineContext]
+) -> PipelineState:
     tone_guidance = _CHANNEL_TONE_GUIDANCE.get(state.channel_type, _DEFAULT_CHANNEL_TONE)
 
     # Found via real Test Console usage (not synthetic testing -- REQUIREMENTS
@@ -479,16 +492,25 @@ def keep_chatting(state: PipelineState) -> PipelineState:
             "merely sounds plausible.\n"
             "Apply this the same way in every language; do not be any less "
             "careful in Turkish than you would be in English.\n\n"
+            "Your entire response must be exactly this shape: a first line "
+            "containing only the single word CLARIFY, ANSWERED, or "
+            "NOT_FOUND (matching whichever of the three situations above "
+            "applies), then your reply to the customer starting on the "
+            "next line -- nothing else on that first line, and don't "
+            "mention which case this is anywhere in the reply itself.\n\n"
             f"Relevant knowledge:\n{context_block}\n\n"
         )
     else:
         content_instruction = (
             "This message isn't asking a specific question (it's a greeting, "
             "small talk, or similar) -- there's nothing to ground in a "
-            "knowledge base here, so just reply naturally and "
-            "conversationally instead (e.g. a greeting gets a greeting "
-            "back). Do not say you don't have information or that someone "
-            "will follow up; nothing was actually asked.\n\n"
+            "knowledge base here. Reply briefly and warmly, but as a "
+            "business assistant greeting a customer, not a personal friend "
+            "-- e.g. a greeting should get a greeting back plus an offer "
+            "to help (\"Hi! How can I help you today?\"), not personal "
+            "small talk like asking how their day is going. Do not say "
+            "you don't have information or that someone will follow up; "
+            "nothing was actually asked.\n\n"
         )
 
     history_block = _history_block(state)
@@ -512,7 +534,44 @@ def keep_chatting(state: PipelineState) -> PipelineState:
         "Customer's latest message (your reply MUST be in this exact same "
         f"language — do not translate, do not switch languages): {state.incoming_text}"
     )
-    state.draft_text = generate_text(prompt)
+    raw = generate_text(prompt).strip()
+
+    status_match = (
+        _KEEP_CHATTING_STATUS_RE.match(raw)
+        if state.detected_intent in _INTENTS_NEEDING_GROUNDING
+        else None
+    )
+    state.draft_text = raw[status_match.end() :].strip() if status_match else raw
+
+    # Real escalation, not a dead end -- found live (2026-07-29): this
+    # branch previously just told the customer "a person will confirm"
+    # without ever actually notifying anyone or creating an Escalation
+    # row, unlike the other two decide_next_step escalation sites. Same
+    # non-blocking shape as log_lead_and_notify's book_or_checkout
+    # fallback below (blocks_pipeline=False -- the graph already ran to
+    # completion, no interrupt() pause, so a customer asking something
+    # else afterward shouldn't be frozen over one unanswered question),
+    # reusing state.decision/escalation_reason/escalation_logged the same
+    # way so publish_pipeline_events (runner.py) picks this up as a real
+    # "escalation" SSE event for free, no caller-side changes needed.
+    if status_match and status_match.group(1).upper() == "NOT_FOUND":
+        state.escalation_reason = f"knowledge base has no answer for: {state.incoming_text!r}"
+        state.decision = "escalate_to_human"
+        state.escalation_logged = True
+        escalation_repo = EscalationRepository(runtime.context.session)
+        created = await escalation_repo.add(
+            Escalation(
+                tenant_id=state.tenant_id,
+                conversation_id=state.conversation_id,
+                reason=state.escalation_reason,
+                layer="knowledge_gap",
+                status="pending",
+                blocks_pipeline=False,
+            )
+        )
+        state.draft_text = _generate_cover_reply(state)
+        await _write_internal_note(runtime, state, created.id, state.escalation_reason)
+
     return state
 
 

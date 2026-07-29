@@ -407,29 +407,31 @@ class TestDecideNextStepRouting:
 
 
 class TestKeepChatting:
-    def test_sets_draft_text_from_model_response(self) -> None:
+    async def test_sets_draft_text_from_model_response(self) -> None:
         state = _make_state("Do you ship internationally?")
         state.detected_intent = "knowledge_question"
         state.retrieved_chunks = ["We ship worldwide via DHL."]
         with patch(
-            "app.pipeline.graph.generate_text", return_value="Yes, we ship worldwide!"
+            "app.pipeline.graph.generate_text",
+            return_value="ANSWERED\nYes, we ship worldwide!",
         ):
-            result = keep_chatting(state)
+            result = await keep_chatting(state, _make_runtime())
         assert result.draft_text == "Yes, we ship worldwide!"
 
-    def test_handles_no_retrieved_chunks_without_erroring(self) -> None:
+    async def test_handles_no_retrieved_chunks_without_erroring(self) -> None:
         state = _make_state("Do you ship internationally?")
         state.detected_intent = "knowledge_question"
         state.retrieved_chunks = []
         with patch(
-            "app.pipeline.graph.generate_text", return_value="Let me check on that."
+            "app.pipeline.graph.generate_text",
+            return_value="ANSWERED\nLet me check on that.",
         ) as mock_gen:
-            result = keep_chatting(state)
+            result = await keep_chatting(state, _make_runtime())
         assert result.draft_text == "Let me check on that."
         prompt = mock_gen.call_args.args[0]
         assert "no matching knowledge found" in prompt
 
-    def test_grounds_reply_for_information_seeking_intents(self) -> None:
+    async def test_grounds_reply_for_information_seeking_intents(self) -> None:
         # knowledge_question/purchase_intent/complaint_or_problem all get
         # the strict "don't guess" grounding instruction + the knowledge
         # block -- there's a real question to ground an answer in.
@@ -437,13 +439,15 @@ class TestKeepChatting:
             state = _make_state("Do you ship internationally?")
             state.detected_intent = intent
             state.retrieved_chunks = ["We ship worldwide via DHL."]
-            with patch("app.pipeline.graph.generate_text", return_value="x") as mock_gen:
-                keep_chatting(state)
+            with patch(
+                "app.pipeline.graph.generate_text", return_value="ANSWERED\nx"
+            ) as mock_gen:
+                await keep_chatting(state, _make_runtime())
             prompt = mock_gen.call_args.args[0]
             assert "Ground your reply ONLY in the knowledge" in prompt
             assert "We ship worldwide via DHL." in prompt
 
-    def test_skips_grounding_for_small_talk_and_other(self) -> None:
+    async def test_skips_grounding_for_small_talk_and_other(self) -> None:
         # Found via real usage, not synthetic testing: a bare greeting
         # ("merhaba") or a "you there?" check-in isn't asking anything, so
         # forcing the "I don't have that information" disclaimer onto it
@@ -454,35 +458,53 @@ class TestKeepChatting:
             state.detected_intent = intent
             state.retrieved_chunks = ["We ship worldwide via DHL."]
             with patch("app.pipeline.graph.generate_text", return_value="x") as mock_gen:
-                keep_chatting(state)
+                await keep_chatting(state, _make_runtime())
             prompt = mock_gen.call_args.args[0]
             assert "Ground your reply ONLY in the knowledge" not in prompt
             assert "isn't asking a specific question" in prompt
             # The knowledge block itself shouldn't leak into a greeting reply.
             assert "We ship worldwide via DHL." not in prompt
 
-    def test_includes_history_and_continuation_instruction_when_present(self) -> None:
+    async def test_small_talk_instruction_steers_away_from_personal_small_talk(self) -> None:
+        # Found live (2026-07-29): "reply naturally and conversationally"
+        # was loose enough that the model sometimes answered a greeting
+        # with personal small talk ("hi, how's your day going?") instead
+        # of a business assistant offering help -- reworded to explicitly
+        # rule that out.
+        state = _make_state("hi")
+        state.detected_intent = "small_talk"
+        with patch("app.pipeline.graph.generate_text", return_value="x") as mock_gen:
+            await keep_chatting(state, _make_runtime())
+        prompt = mock_gen.call_args.args[0]
+        assert "not a personal friend" in prompt
+        assert "how their day is going" in prompt
+
+    async def test_includes_history_and_continuation_instruction_when_present(self) -> None:
         state = _make_state("What about shipping?")
         state.detected_intent = "knowledge_question"
         state.retrieved_chunks = ["We ship worldwide via DHL."]
         state.conversation_history = ["Customer: Hi!", "You: Hey there!"]
-        with patch("app.pipeline.graph.generate_text", return_value="x") as mock_gen:
-            keep_chatting(state)
+        with patch(
+            "app.pipeline.graph.generate_text", return_value="ANSWERED\nx"
+        ) as mock_gen:
+            await keep_chatting(state, _make_runtime())
         prompt = mock_gen.call_args.args[0]
         assert "Earlier in this conversation" in prompt
         assert "Hey there!" in prompt
         assert "continuation of an ongoing conversation" in prompt
 
-    def test_omits_continuation_instruction_for_a_conversations_first_message(self) -> None:
+    async def test_omits_continuation_instruction_for_a_conversations_first_message(
+        self,
+    ) -> None:
         state = _make_state("hi")
         state.detected_intent = "small_talk"
         with patch("app.pipeline.graph.generate_text", return_value="x") as mock_gen:
-            keep_chatting(state)
+            await keep_chatting(state, _make_runtime())
         prompt = mock_gen.call_args.args[0]
         assert "Earlier in this conversation" not in prompt
         assert "continuation of an ongoing conversation" not in prompt
 
-    def test_grounding_instruction_includes_clarifying_question_branch(self) -> None:
+    async def test_grounding_instruction_includes_clarifying_question_branch(self) -> None:
         # docs/ROADMAP.md §3.2 -- an ambiguous knowledge_question ("kırmızı
         # var mı?" with no product named) should be able to get exactly one
         # clarifying question instead of always falling to the "I don't
@@ -492,24 +514,28 @@ class TestKeepChatting:
         state = _make_state("kırmızı var mı?")
         state.detected_intent = "knowledge_question"
         state.retrieved_chunks = ["Available colors: blue, green, black."]
-        with patch("app.pipeline.graph.generate_text", return_value="x") as mock_gen:
-            keep_chatting(state)
+        with patch(
+            "app.pipeline.graph.generate_text", return_value="CLARIFY\nx"
+        ) as mock_gen:
+            await keep_chatting(state, _make_runtime())
         prompt = mock_gen.call_args.args[0]
         assert "ask exactly ONE short, natural clarifying question" in prompt
         assert "not an escalation" in prompt
 
-    def test_clarifying_question_branch_not_offered_for_small_talk(self) -> None:
+    async def test_clarifying_question_branch_not_offered_for_small_talk(self) -> None:
         # Small talk/other still skip the whole grounding instruction (no
         # question was asked at all), so the clarifying-question branch
         # shouldn't leak in there either.
         state = _make_state("hi")
         state.detected_intent = "small_talk"
         with patch("app.pipeline.graph.generate_text", return_value="x") as mock_gen:
-            keep_chatting(state)
+            await keep_chatting(state, _make_runtime())
         prompt = mock_gen.call_args.args[0]
         assert "clarifying question" not in prompt
 
-    def test_prior_clarifying_question_is_visible_in_history_for_the_followup(self) -> None:
+    async def test_prior_clarifying_question_is_visible_in_history_for_the_followup(
+        self,
+    ) -> None:
         # The mechanism that keeps this to *exactly* one question: if the
         # model already asked one last turn, it's right there in the
         # history block, so the customer's follow-up reply lands in
@@ -518,10 +544,83 @@ class TestKeepChatting:
         state.detected_intent = "knowledge_question"
         state.retrieved_chunks = ["Available colors: blue, green, black."]
         state.conversation_history = ["Customer: kırmızı var mı?", "You: neyin kırmızısı?"]
-        with patch("app.pipeline.graph.generate_text", return_value="x") as mock_gen:
-            keep_chatting(state)
+        with patch(
+            "app.pipeline.graph.generate_text", return_value="ANSWERED\nx"
+        ) as mock_gen:
+            await keep_chatting(state, _make_runtime())
         prompt = mock_gen.call_args.args[0]
         assert "neyin kırmızısı?" in prompt
+
+    async def test_not_found_status_creates_a_real_non_blocking_escalation(self) -> None:
+        # Found live (2026-07-29): this branch used to just tell the
+        # customer "a person will confirm" without ever actually creating
+        # an Escalation row or notifying anyone -- a false promise, not
+        # just an unhelpful dead end. Now it escalates for real, same
+        # non-blocking shape as log_lead_and_notify's book_or_checkout
+        # fallback (blocks_pipeline=False -- no interrupt() pause here).
+        state = _make_state("What are the business hours?")
+        state.detected_intent = "knowledge_question"
+        state.retrieved_chunks = []
+        fake_escalation = type("Esc", (), {"id": uuid.uuid4()})()
+        with (
+            patch("app.pipeline.graph.EscalationRepository") as mock_escalation_repo_cls,
+            patch("app.pipeline.graph.MessageRepository") as mock_message_repo_cls,
+            patch(
+                "app.pipeline.graph.generate_text",
+                side_effect=[
+                    "NOT_FOUND\nI don't have that information and a person will confirm.",
+                    "We'll double check and get right back to you!",
+                ],
+            ),
+        ):
+            mock_escalation_repo_cls.return_value.add = AsyncMock(return_value=fake_escalation)
+            mock_message_repo_cls.return_value.add = AsyncMock()
+            result = await keep_chatting(state, _make_runtime())
+
+        assert result.decision == "escalate_to_human"
+        assert result.escalation_logged is True
+        assert result.escalation_reason is not None
+        # The cover reply (second generate_text call) replaces the raw
+        # disclaimer -- the customer never sees the NOT_FOUND-branch text.
+        assert result.draft_text == "We'll double check and get right back to you!"
+        logged = mock_escalation_repo_cls.return_value.add.call_args.args[0]
+        assert logged.layer == "knowledge_gap"
+        assert logged.blocks_pipeline is False
+        assert logged.status == "pending"
+        note = mock_message_repo_cls.return_value.add.call_args.args[0]
+        assert note.escalation_id == fake_escalation.id
+        assert note.audience == "internal"
+
+    async def test_answered_and_clarify_status_do_not_escalate(self) -> None:
+        for status, reply in (
+            ("ANSWERED", "We ship worldwide via DHL."),
+            ("CLARIFY", "Which product did you mean?"),
+        ):
+            state = _make_state("Do you ship internationally?")
+            state.detected_intent = "knowledge_question"
+            state.retrieved_chunks = ["We ship worldwide via DHL."]
+            with patch(
+                "app.pipeline.graph.generate_text", return_value=f"{status}\n{reply}"
+            ):
+                result = await keep_chatting(state, _make_runtime())
+            assert result.draft_text == reply
+            assert result.decision is None
+            assert result.escalation_reason is None
+
+    async def test_unparseable_status_falls_back_to_raw_text_without_erroring(self) -> None:
+        # The model won't always follow the STATUS-line format perfectly --
+        # falling back to the raw text (pre-fix behavior) is safer than
+        # crashing or silently dropping the reply.
+        state = _make_state("Do you ship internationally?")
+        state.detected_intent = "knowledge_question"
+        state.retrieved_chunks = ["We ship worldwide via DHL."]
+        with patch(
+            "app.pipeline.graph.generate_text",
+            return_value="Sure, we ship worldwide!",
+        ):
+            result = await keep_chatting(state, _make_runtime())
+        assert result.draft_text == "Sure, we ship worldwide!"
+        assert result.decision is None
 
 
 class TestLogLeadAndNotify:
