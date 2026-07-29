@@ -322,14 +322,38 @@ def keep_chatting(state: PipelineState) -> PipelineState:
         # English equivalent correctly declined to guess. The original
         # single soft "say so honestly" line wasn't forceful enough for
         # the model to hold the line equally well in both languages.
+        #
+        # The clarifying-question branch (docs/ROADMAP.md §3.2) is checked
+        # FIRST, before the disclaimer -- an ambiguous question ("kırmızı
+        # var mı?" with no product named) isn't "missing from the
+        # knowledge base," it's missing a detail needed to even look it up,
+        # and the honest disclaimer was the wrong response to that case,
+        # not just an unhelpful one. Relies on conversation_history (§2) to
+        # ask at most one: if the model already asked a clarifying question
+        # last turn, it shows up in the history block below, so the
+        # customer's reply lands in branch 2/3 instead of asking again.
         content_instruction = (
-            "Ground your reply ONLY in the knowledge listed below. If it does "
-            "not explicitly contain the answer — including specific facts like "
-            "prices, policies, or guarantees — you MUST say you don't have "
-            "that information and a person will confirm, rather than guessing "
-            "or inferring an answer that merely sounds plausible. Apply this "
-            "the same way in every language; do not be any less careful in "
-            "Turkish than you would be in English.\n\n"
+            "Ground your reply ONLY in the knowledge listed below. Decide "
+            "which of these three situations applies, in this order:\n"
+            "1. The message is missing a detail you'd need before you could "
+            "even look this up -- e.g. asking about the price/availability/"
+            "color of \"it\" or \"the red one\" without saying which product, "
+            "and the earlier conversation doesn't already say which one. "
+            "In this case, ask exactly ONE short, natural clarifying "
+            "question to find out what they mean -- do not guess, do not "
+            "answer partially, and do not say a person will confirm "
+            "anything, since this is just one follow-up question, not an "
+            "escalation.\n"
+            "2. Otherwise, the knowledge below explicitly contains the "
+            "answer -- answer using only that information.\n"
+            "3. Otherwise (the question is specific enough, but the "
+            "answer — including specific facts like prices, policies, or "
+            "guarantees — simply isn't in the knowledge below), you MUST "
+            "say you don't have that information and a person will "
+            "confirm, rather than guessing or inferring an answer that "
+            "merely sounds plausible.\n"
+            "Apply this the same way in every language; do not be any less "
+            "careful in Turkish than you would be in English.\n\n"
             f"Relevant knowledge:\n{context_block}\n\n"
         )
     else:

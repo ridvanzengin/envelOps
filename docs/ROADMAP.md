@@ -119,7 +119,7 @@ flag, not just direction), frontend (new bubble style). Worth its own
 design pass rather than bolting onto the existing escalation path — see
 ARCHITECTURE §5 for how escalation logging currently works.
 
-### 3.2 One clarifying question before escalating
+### 3.2 One clarifying question before escalating — done (2026-07-29)
 Before escalating on an ambiguous message, the model should ask exactly
 one clarifying question rather than escalating immediately. Example:
 `kırmızı var mı?` → `neyin kırmızısı var mı?` instead of an immediate
@@ -128,8 +128,49 @@ escalation.
 **Dependency, now satisfied:** this needs the model to remember it
 already asked the clarifying question, so the customer's next reply can
 be interpreted in context — §2's conversation-history threading
-(done 2026-07-29) is what makes that possible. Not built yet itself —
-history existing is the prerequisite, not the feature.
+(done 2026-07-29) is what makes that possible.
+
+**What "escalating" turned out to mean here, on closer look:** there's no
+code path today where an ambiguous *knowledge_question* reaches a real
+`Escalation` row — the only two ways `decide_next_step` escalates are the
+safety floor and a hot purchase-intent lead (ARCHITECTURE §5). An
+ambiguous question was instead falling straight into `keep_chatting`'s
+existing disclaimer ("I don't have that information, a person will
+confirm") — not a real escalation, just an unhelpful dead end. So the fix
+is scoped to `keep_chatting` itself, not `decide_next_step`: no new node,
+no new `PipelineState` field, no extra LLM call. The existing single
+`keep_chatting` prompt (`app/pipeline/graph.py`) now asks the model to
+tell apart three cases, in order: (1) the message is missing a detail
+needed to even look the answer up and history doesn't already supply it →
+ask exactly one short clarifying question, explicitly not framed as an
+escalation; (2) the knowledge base covers it → answer; (3) it's specific
+enough but genuinely not in the knowledge base → the original disclaimer.
+The "ask exactly one" guarantee comes for free from §2's history
+threading — if a clarifying question was already asked last turn, it's
+sitting right there in the history block, so the customer's follow-up
+lands in branch 2/3 instead of triggering another ask.
+
+**Verified live** (Test Console, Meadow & Jar Honey Co, real Gemini call,
+not mocked): "Bunun fiyatı ne kadar?" (no prior context — "this" has no
+referent) → correctly asked "Hangi ürünün fiyatını sormuştunuz?" instead
+of the disclaimer. Follow-up "Balın 500 gramlık kavanozunu soruyorum" in
+the same conversation → did not ask again, correctly fell to the
+disclaimer ("Bunun fiyatına sahip değilim...") since no per-size price is
+actually in the knowledge base — confirms both the clarifying-question
+branch and the ask-only-once mechanism.
+
+**Unrelated gap noticed while testing, not fixed here:** a separate,
+non-ambiguous question ("6 tane alırsam indirim var mı?") got the
+disclaimer even though the knowledge base does say "discounts for orders
+of 6 or more" — looks like a retrieval/grounding miss (the relevant chunk
+either wasn't retrieved or wasn't matched to "6 tane" by the model), not
+an ambiguity or language-consistency issue. Distinct from both the open
+§2.1 language-consistency bug and this section's scope — flagged here
+rather than silently ignored or bundled into this fix.
+
+4 new unit tests in `test_pipeline_graph.py` covering the new instruction
+branch, that it's absent for small_talk/other, and that a prior clarifying
+question surfaces via the history block for the follow-up turn.
 
 ### 3.3 Intent/lead-score badges on the conversation rail — done (2026-07-28)
 Show intent classification and lead score as badges/colors directly on
@@ -515,14 +556,13 @@ source's text, saved, and confirmed the new text round-tripped correctly.
 ### Updated sequencing given 5.1–5.3
 1. ~~§3.4 (Test Console diagnostics)~~ / ~~§3.3 (rail badges)~~ /
    ~~§5.1 (multi-tenant seed + showcase scenarios)~~ /
-   ~~§2 (conversation-history threading)~~ — all done. §5.1's
-   safety-floor finding explicitly postponed, see §1/§5.1 above.
-2. **§3.2** (clarifying question) — its blocking dependency (§2) is now
-   satisfied; a reasonable next pick.
-3. **§3.5** (SSE) — independent infrastructure, can slot in anytime.
-4. **§3.1** (escalation cover message + internal note bubble).
-5. **§5.2** (template gallery) — natural next step once §5.1 is
+   ~~§2 (conversation-history threading)~~ / ~~§3.2 (clarifying
+   question)~~ — all done. §5.1's safety-floor finding explicitly
+   postponed, see §1/§5.1 above.
+2. **§3.5** (SSE) — independent infrastructure, can slot in anytime.
+3. **§3.1** (escalation cover message + internal note bubble).
+4. **§5.2** (template gallery) — natural next step once §5.1 is
    battle-tested, not before.
-6. **§5.3** (AI copilot) — longest-horizon item here; needs §5.1's
+5. **§5.3** (AI copilot) — longest-horizon item here; needs §5.1's
    scenario diversity and §3.3/§3.4's data maturing first, and its own
    dedicated design pass on the approval-point question above.
