@@ -13,11 +13,14 @@
 
 ## 1. Status as of 2026-07-29
 
-**PR #23 (Test Console, §3.3/§3.4) and PR #24 (multi-tenant showcase
-seed script, §5.1) are both merged into `main`.** **PR #25
-(conversation-history threading, §2) is open, not yet merged** (branch
-`feature/conversation-history`). Check `gh pr view <n> --json state`
-before assuming it's "in main" by the time this is read again.
+**PRs #23–#29 are all merged into `main`** (Test Console, multi-tenant
+showcase seed, conversation-history threading, dev tenant switch,
+knowledge/trigger-phrase CRUD, Docker build bandwidth, clarifying
+question — §§3.3/3.4/5.1/2/5.4/5.5/3.2 respectively). **PR #30 (SSE +
+activity bar, §3.5) is open, not yet merged** (branch
+`feature/sse-live-updates`) — check `gh pr view <n> --json state` before
+assuming a given PR's status by the time this is read again, this line
+goes stale fast.
 
 **The §5.1 safety-floor finding (outcome-guarantee check missing
 safety/risk-absence language) is explicitly postponed to a later
@@ -246,12 +249,156 @@ from `/test` to `/test-console` while investigating, to stop it sharing
 a bare prefix with its own API path — not the actual fix, but removes the
 coincidental-looking overlap for whoever reads this next.
 
-### 3.5 Live updates via SSE + activity-bar escalation notifications
+### 3.5 Live updates via SSE + activity-bar escalation notifications — done (2026-07-29)
 The conversation rail should update immediately when a new message
 arrives, and the activity bar should show a notification when a
-conversation gets escalated. No SSE exists yet in this codebase — the
-sibling project `iotops-workspace` already has a working SSE
-implementation to use as a reference rather than designing from scratch.
+conversation gets escalated. `iotops-workspace`'s own FastAPI +
+`sse-starlette` + Redis-pub/sub implementation (`backend/app/event/api.py`)
+was the reference pattern, adapted to envelOps's simpler shape: iotops
+pattern-subscribes across every project in one connection; here each
+authenticated SSE connection already knows its one tenant, so a plain
+per-tenant channel subscription (`tenant-events:{tenant_id}`) is enough.
+
+**New dependency:** `sse-starlette` (small, no new transitive deps beyond
+`starlette`, which FastAPI already pulls in).
+
+**Backend, new minimal module `app/events/` (no `models.py`/
+`repository.py` — no new DB table, same exception `app/test_console/`
+already uses for the same reason):** `GET /events/stream` — auth via a
+new `get_current_user_from_query` (`app/auth/dependencies.py`), since a
+browser's native `EventSource` can't set an `Authorization` header; the
+JWT travels as `?token=...` instead, reusing the exact same
+`decode_access_token()` the header path already calls. Known, accepted
+tradeoff: a token in a URL can end up in server access logs — the
+standard workaround every `EventSource`-based app faces, not solved
+further here. `app/core/redis_client.py` adds a lazy-singleton async
+Redis client (safe only because it's used exclusively inside the FastAPI
+process's one long-lived event loop) and `app/core/events.py`'s
+`publish_event()` does the actual `PUBLISH`, deliberately swallowing and
+logging (never raising) any failure — a live-update push is a nice-to-have
+on top of rows every call site has already committed, not something a
+Redis blip should be allowed to break message ingestion or the pipeline
+run over.
+
+**Real design correction made while implementing, not what was originally
+sketched:** the plan going in was to publish directly from inside
+`decide_next_step`/`log_lead_and_notify` (`app/pipeline/graph.py`) at each
+of the three places an `Escalation` row gets created. That would have
+raced a listening frontend's refetch against a not-yet-committed
+transaction — those graph nodes run under the *caller's* still-open
+session (`app/pipeline/tasks.py`/`app/test_console/api.py` own the
+`session.commit()`, not the graph itself, per `PipelineContext`'s own
+docstring). Moved instead to a new `publish_pipeline_events(state, result)`
+(`app/pipeline/runner.py`), called by each caller *after* its own commit,
+interpreting `run_pipeline()`'s already-returned result (the `__interrupt__`
+payload for the two interrupt-based escalations, `result["escalation_reason"]`
+for `book_or_checkout`'s own missing-`closing_link` fallback — the one
+case that sets both an escalation *and* `draft_text` in the same run, so
+both events fire together there). Net effect: fewer call sites than
+planned (4, not 7) and no race, at the cost of the callers needing to know
+this function exists — a straightforward, small tradeoff once the commit-
+ordering issue was actually spotted. `_send_follow_up`'s own outbound
+message (a periodic job, not a `run_pipeline` call) publishes directly
+through `publish_event`, since there's no pipeline result to interpret
+there.
+
+**Frontend:** wired directly into the existing `ConversationPanelProvider`
+(not a new context) — it already holds `activeChannelType`/
+`selectedConversationId` and owns `loadConversations`/`loadEscalations`/
+`selectConversation`, which the SSE handler reuses as full re-fetches on
+a signal, the same pattern this file already used everywhere else. A
+`useRef` snapshot (updated on every render, read inside the `EventSource`
+handler) keeps the connection itself keyed only on `token` — it shouldn't
+reconnect every time the panel's own open channel/conversation changes.
+`vite.config.ts` gained one new anchored proxy key, `^/events(/|\?)`,
+following the existing convention.
+
+**Revised after first review, twice, both against a closer read of
+`iotops-workspace`'s actual SSE implementation:**
+
+1. **No separate bell/notification UI.** The first pass added a new
+   standalone `ActivityBar` component (bell icon + unread badge +
+   dropdown). Wrong reference point: `iotops-workspace`'s own
+   `ActivityBar.tsx` isn't a bell — it's a persistent icon rail, one icon
+   *per project*, each carrying that project's own live unresolved-count
+   badge, clicking it opens that project's panel. `ChannelRail` (one icon
+   per channel type, each already carrying `pendingEscalationCountByChannelType`'s
+   badge, clicking opens that channel's `ConversationPanel`) is already
+   envelOps's structural equivalent of that — a second, differently-
+   designed bell was a redundant duplicate mechanism, not a missing
+   feature. Removed entirely (`ActivityBar.tsx`/`.css`, the `BellIcon`,
+   the `activityBar.*` locale keys, and the `liveEscalationNotifications`/
+   `dismissNotification` state that only existed to feed it). The
+   "escalations shown on platform icons" + "filtered escalations badge on
+   each platform's conversation rail" asks were already fully met by
+   `ChannelRail`'s existing per-channel badge and `ConversationPanel`'s
+   existing "escalated only" filter count (`escalatedCountInList`) — both
+   are plain `useMemo`s over the `escalations` array `loadEscalations()`
+   already refreshes on every live "escalation" event, so both update
+   live for free once that refetch fires. No new UI was actually needed,
+   just the live signal feeding data that was already there.
+2. **Ground-truth refetch, never a client-side increment.** Directly
+   relevant prior art: `iotops-workspace` tried incrementing its
+   `ActivityBar` badge counts by +1 per live event first, then abandoned
+   that approach (its `EventsContext.tsx` now has its own comment on
+   this) because an event doesn't reliably map 1:1 to "the badge should
+   go up by exactly one" — resolutions, dedup, and reconnect gaps all
+   break that assumption, and the badge quietly drifted from the truth.
+   envelOps never had that bug to begin with — `loadEscalations()` always
+   does a full `GET /escalations` replacing `escalations` wholesale, and
+   `pendingEscalationCountByChannelType`/`escalationByConversationId` are
+   both derived from that via `useMemo`, so there's no increment code
+   path to have gotten wrong. Called out explicitly in the SSE handler's
+   own comment now, specifically so this isn't accidentally reintroduced
+   later by someone reaching for the "just increment the badge" shortcut.
+3. **Reconnect-refetch was missing — a real gap, not a style choice.**
+   `iotops-workspace`'s `EventsContext.tsx` has a `source.onopen` handler
+   with its own comment: "closes the Redis Pub/Sub no-buffering gap — a
+   message published while nobody was subscribed is simply gone, so this
+   is the only way to catch back up after a reconnect." The first pass
+   here had no `onopen` handler at all — a dropped connection (network
+   blip, backend restart) that `EventSource` silently auto-reconnects
+   would have left the rail/badges stuck stale forever, with nothing to
+   ever refresh them again short of a full page reload. Added
+   `source.onopen` to refetch escalations unconditionally, plus the open
+   channel's conversation list and the open thread if either is set —
+   mirroring `refetchUnresolvedCounts()`/`refetchOpenPanel()` in the
+   reference implementation exactly.
+4. **Debounced the per-event refetches.** Also missing from the first
+   pass: `iotops-workspace` debounces every SSE-triggered refetch (400ms)
+   so a burst of events triggers one request, not one per event. Added
+   the same `frontend/src/utils/debounce.ts` (a direct port of iotops's
+   own tiny generic utility) and wrapped `loadEscalations`/
+   `loadConversations`/`selectConversation` in debounced wrappers for the
+   per-event path specifically — the `onopen` resync above stays
+   undebounced, matching the reference (it fires rarely enough that
+   there's no burst to protect against there).
+
+**Verified live**, not just unit-tested (the actual `/stream` generator
+isn't unit-tested either, matching iotops-workspace's own precedent —
+streaming generators aren't a good unit-test fit), twice — once before
+and once after the corrections above: `curl -N` against `/events/stream`
+alongside real Test Console sends showed both a `message` event (inbound
+and outbound) and an `escalation` event with the real safety-floor reason
+text, in real time. Then the actual frontend, driven in a headless
+browser (Playwright, no project skill for this existed yet) against the
+real backend: opened the Telegram channel's already-open conversation
+panel, sent a message via the API directly (bypassing the UI, simulating
+another source), and the new conversation appeared in the list with **no
+reload or manual action**. A follow-up safety-floor-triggering message
+made `ChannelRail`'s existing Telegram badge count go from 2 to 3, and
+`ConversationPanel`'s "escalated only" filter count updated to match —
+both **with no reload, no click, and no separate notification UI**. Zero
+browser console errors throughout, both passes.
+
+Test coverage: `publish_event` (success + swallowed-failure paths),
+`publish_pipeline_events` (all four result shapes: interrupt-based
+escalation, `book_or_checkout`'s dual escalation+message case, plain
+reply, neither), the `_subscribe` generator (fake pubsub, real filtering/
+decoding logic), auth rejection on `/events/stream` (missing/invalid
+token), and the message-publish call sites in `channels/api.py`,
+`pipeline/tasks.py` (including the follow-up job), and
+`test_console/api.py`.
 
 ### Recommended sequencing
 Superseded by §5's "Updated sequencing given 5.1–5.3" below — kept this
@@ -557,12 +704,11 @@ source's text, saved, and confirmed the new text round-tripped correctly.
 1. ~~§3.4 (Test Console diagnostics)~~ / ~~§3.3 (rail badges)~~ /
    ~~§5.1 (multi-tenant seed + showcase scenarios)~~ /
    ~~§2 (conversation-history threading)~~ / ~~§3.2 (clarifying
-   question)~~ — all done. §5.1's safety-floor finding explicitly
-   postponed, see §1/§5.1 above.
-2. **§3.5** (SSE) — independent infrastructure, can slot in anytime.
-3. **§3.1** (escalation cover message + internal note bubble).
-4. **§5.2** (template gallery) — natural next step once §5.1 is
+   question)~~ / ~~§3.5 (SSE + activity bar)~~ — all done. §5.1's
+   safety-floor finding explicitly postponed, see §1/§5.1 above.
+2. **§3.1** (escalation cover message + internal note bubble).
+3. **§5.2** (template gallery) — natural next step once §5.1 is
    battle-tested, not before.
-5. **§5.3** (AI copilot) — longest-horizon item here; needs §5.1's
+4. **§5.3** (AI copilot) — longest-horizon item here; needs §5.1's
    scenario diversity and §3.3/§3.4's data maturing first, and its own
    dedicated design pass on the approval-point question above.

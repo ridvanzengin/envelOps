@@ -27,9 +27,10 @@ from app.channels.repository import ChannelRepository
 from app.conversations.models import Conversation, Message
 from app.conversations.repository import ConversationRepository, MessageRepository
 from app.core.db import get_session
+from app.core.events import publish_event
 from app.pipeline.models import PipelineTrace
 from app.pipeline.repository import PipelineTraceRepository
-from app.pipeline.runner import get_checkpointer, run_pipeline
+from app.pipeline.runner import get_checkpointer, publish_pipeline_events, run_pipeline
 from app.pipeline.state import PipelineState
 
 router = APIRouter(prefix="/test", tags=["test"])
@@ -195,6 +196,14 @@ async def send_test_message(
     # transaction here has hung a checkpointed run indefinitely before
     # (CLAUDE.md's checkpointer gotcha).
     await session.commit()
+    await publish_event(
+        current_user.tenant_id,
+        {
+            "type": "message",
+            "channel_type": body.channel_type,
+            "conversation_id": str(conversation.id),
+        },
+    )
 
     state = PipelineState(
         tenant_id=current_user.tenant_id,
@@ -230,6 +239,7 @@ async def send_test_message(
         current_user.tenant_id, conversation.id, inbound_message.id, result
     )
     await session.commit()
+    await publish_pipeline_events(state, result)
 
     messages = await _list_messages_with_diagnostics(
         session, current_user.tenant_id, conversation.id

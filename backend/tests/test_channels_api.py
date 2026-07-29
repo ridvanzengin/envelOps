@@ -104,6 +104,7 @@ class TestTelegramWebhookHandling:
             patch("app.channels.api.ConversationRepository") as mock_conv_repo_cls,
             patch("app.channels.api.MessageRepository") as mock_message_repo_cls,
             patch("app.channels.api.process_incoming_message") as mock_task,
+            patch("app.channels.api.publish_event") as mock_publish,
         ):
             mock_channel_repo_cls.return_value.get_by_id_unscoped = AsyncMock(
                 return_value=channel
@@ -113,6 +114,7 @@ class TestTelegramWebhookHandling:
             )
             mock_conv_repo_cls.return_value.add = AsyncMock(return_value=new_conversation)
             mock_message_repo_cls.return_value.add = AsyncMock(return_value=inbound_message)
+            mock_publish.return_value = None
 
             response = await _post_update(channel.id, _TEXT_UPDATE, "test-secret")
 
@@ -132,6 +134,16 @@ class TestTelegramWebhookHandling:
             str(inbound_message.id),
             "Do you ship internationally?",
         )
+        # docs/ROADMAP.md §3.5 -- lets an already-open rail update without a
+        # manual refetch.
+        mock_publish.assert_called_once_with(
+            channel.tenant_id,
+            {
+                "type": "message",
+                "channel_type": channel.type,
+                "conversation_id": str(new_conversation.id),
+            },
+        )
 
     async def test_reuses_existing_conversation_for_known_contact(self) -> None:
         channel = _fake_channel()
@@ -144,6 +156,7 @@ class TestTelegramWebhookHandling:
             patch("app.channels.api.ConversationRepository") as mock_conv_repo_cls,
             patch("app.channels.api.MessageRepository") as mock_message_repo_cls,
             patch("app.channels.api.process_incoming_message") as mock_task,
+            patch("app.channels.api.publish_event") as mock_publish,
         ):
             mock_channel_repo_cls.return_value.get_by_id_unscoped = AsyncMock(
                 return_value=channel
@@ -152,6 +165,7 @@ class TestTelegramWebhookHandling:
                 return_value=existing_conversation
             )
             mock_message_repo_cls.return_value.add = AsyncMock(return_value=inbound_message)
+            mock_publish.return_value = None
 
             await _post_update(channel.id, _TEXT_UPDATE, "test-secret")
 

@@ -8,6 +8,7 @@ from app.channels.telegram_client import TelegramUpdate
 from app.conversations.models import Conversation, Message
 from app.conversations.repository import ConversationRepository, MessageRepository
 from app.core.db import get_session
+from app.core.events import publish_event
 from app.pipeline.tasks import process_incoming_message
 
 router = APIRouter(prefix="/channels", tags=["channels"])
@@ -65,6 +66,19 @@ async def telegram_webhook(
     # task (ARCHITECTURE §8: kept out of the handler so Telegram gets a
     # fast response), not this one.
     await session.commit()
+
+    # docs/ROADMAP.md §3.5 -- lets an already-open rail update without a
+    # manual refetch. Best-effort: a live-update push is a nice-to-have,
+    # not a guarantee the inbound message itself already is (it's
+    # committed above regardless of whether anyone's listening).
+    await publish_event(
+        channel.tenant_id,
+        {
+            "type": "message",
+            "channel_type": channel.type,
+            "conversation_id": str(conversation.id),
+        },
+    )
 
     process_incoming_message.delay(
         str(channel.tenant_id),

@@ -40,6 +40,7 @@ export default defineConfig({
       '^/escalations(/|$|\\?)': 'http://localhost:8000',
       '^/dashboard(/|\\?)': 'http://localhost:8000',
       '^/test(/|\\?)': 'http://localhost:8000',
+      '^/events(/|\\?)': 'http://localhost:8000',
     },
   },
 })

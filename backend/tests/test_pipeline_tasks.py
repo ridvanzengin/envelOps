@@ -1,6 +1,9 @@
 import uuid
 from unittest.mock import AsyncMock, MagicMock, patch
 
+from langgraph.types import Interrupt
+
+from app.pipeline.state import PipelineState
 from app.pipeline.tasks import (
     _follow_up_check,
     _process_incoming_message,
@@ -46,6 +49,9 @@ def test_process_incoming_message_parses_uuids_and_delegates() -> None:
 class TestProcessIncomingMessageAsync:
     async def test_interrupted_run_commits_without_sending_anything(self) -> None:
         session = AsyncMock()
+        interrupt_result = {
+            "__interrupt__": [Interrupt(value={"escalation_reason": "safety floor"})]
+        }
         with (
             patch("app.pipeline.tasks.async_session", return_value=_FakeAsyncCM(session)),
             patch(
@@ -53,15 +59,17 @@ class TestProcessIncomingMessageAsync:
             ),
             patch(
                 "app.pipeline.tasks.run_pipeline",
-                AsyncMock(return_value={"__interrupt__": []}),
+                AsyncMock(return_value=interrupt_result),
             ),
             patch("app.pipeline.tasks.MessageRepository") as mock_message_repo_cls,
             patch("app.pipeline.tasks.ChannelRepository") as mock_channel_repo_cls,
             patch("app.pipeline.tasks.PipelineTraceRepository") as mock_trace_repo_cls,
             patch("app.pipeline.tasks.send_message") as mock_send,
+            patch("app.pipeline.tasks.publish_pipeline_events") as mock_publish,
         ):
             mock_channel_repo_cls.return_value.get = AsyncMock(return_value=None)
             mock_trace_repo_cls.return_value.record_result = AsyncMock()
+            mock_publish.return_value = None
             message_id = uuid.uuid4()
             await _process_incoming_message(
                 uuid.uuid4(),
@@ -78,6 +86,12 @@ class TestProcessIncomingMessageAsync:
         # because the pipeline paused instead of replying.
         mock_trace_repo_cls.return_value.record_result.assert_called_once()
         assert mock_trace_repo_cls.return_value.record_result.call_args.args[2] == message_id
+        # docs/ROADMAP.md §3.5 -- the escalation live-update event still
+        # needs to fire even on the early-return/interrupted path, not just
+        # the normal reply path below.
+        mock_publish.assert_called_once()
+        assert isinstance(mock_publish.call_args.args[0], PipelineState)
+        assert mock_publish.call_args.args[1] is interrupt_result
         session.commit.assert_called_once()
 
     async def test_sends_reply_and_logs_outbound_message(self) -> None:
@@ -101,12 +115,14 @@ class TestProcessIncomingMessageAsync:
             patch("app.pipeline.tasks.ChannelRepository") as mock_channel_repo_cls,
             patch("app.pipeline.tasks.PipelineTraceRepository") as mock_trace_repo_cls,
             patch("app.pipeline.tasks.send_message") as mock_send,
+            patch("app.pipeline.tasks.publish_pipeline_events") as mock_publish,
         ):
             mock_message_repo_cls.return_value.add = AsyncMock()
             mock_conv_repo_cls.return_value.get = AsyncMock(return_value=conversation)
             mock_channel_repo_cls.return_value.get = AsyncMock(return_value=channel)
             mock_trace_repo_cls.return_value.record_result = AsyncMock()
             mock_send.return_value = None
+            mock_publish.return_value = None
 
             await _process_incoming_message(
                 uuid.uuid4(),
@@ -123,6 +139,7 @@ class TestProcessIncomingMessageAsync:
         mock_send.assert_called_once_with("test-bot-token", "999", "Sure!")
         mock_trace_repo_cls.return_value.record_result.assert_called_once()
         session.commit.assert_called_once()
+        mock_publish.assert_called_once()
 
     async def test_delivery_failure_does_not_raise_or_block_commit(self) -> None:
         session = AsyncMock()
@@ -148,11 +165,13 @@ class TestProcessIncomingMessageAsync:
                 "app.pipeline.tasks.send_message",
                 AsyncMock(side_effect=ConnectionError("boom")),
             ),
+            patch("app.pipeline.tasks.publish_pipeline_events") as mock_publish,
         ):
             mock_message_repo_cls.return_value.add = AsyncMock()
             mock_conv_repo_cls.return_value.get = AsyncMock(return_value=conversation)
             mock_channel_repo_cls.return_value.get = AsyncMock(return_value=channel)
             mock_trace_repo_cls.return_value.record_result = AsyncMock()
+            mock_publish.return_value = None
 
             await _process_incoming_message(
                 uuid.uuid4(),
@@ -187,11 +206,13 @@ class TestProcessIncomingMessageAsync:
             patch("app.pipeline.tasks.ChannelRepository") as mock_channel_repo_cls,
             patch("app.pipeline.tasks.PipelineTraceRepository") as mock_trace_repo_cls,
             patch("app.pipeline.tasks.send_message") as mock_send,
+            patch("app.pipeline.tasks.publish_pipeline_events") as mock_publish,
         ):
             mock_message_repo_cls.return_value.add = AsyncMock()
             mock_conv_repo_cls.return_value.get = AsyncMock(return_value=conversation)
             mock_channel_repo_cls.return_value.get = AsyncMock(return_value=channel)
             mock_trace_repo_cls.return_value.record_result = AsyncMock()
+            mock_publish.return_value = None
 
             await _process_incoming_message(
                 uuid.uuid4(),
@@ -213,10 +234,11 @@ class TestSendFollowUp:
         message_repo.get_latest = AsyncMock(return_value=None)
         channel_repo = AsyncMock()
 
-        await _send_follow_up(conversation, message_repo, channel_repo)
+        result = await _send_follow_up(conversation, message_repo, channel_repo)
 
         message_repo.add.assert_not_called()
         channel_repo.get.assert_not_called()
+        assert result is None
 
     async def test_generates_logs_and_sends_a_follow_up(self) -> None:
         conversation = MagicMock()
@@ -240,7 +262,7 @@ class TestSendFollowUp:
             ),
             patch("app.pipeline.tasks.send_message", AsyncMock()) as mock_send,
         ):
-            await _send_follow_up(conversation, message_repo, channel_repo)
+            result = await _send_follow_up(conversation, message_repo, channel_repo)
 
         message_repo.add.assert_called_once()
         logged = message_repo.add.call_args.args[0]
@@ -251,6 +273,10 @@ class TestSendFollowUp:
         mock_send.assert_called_once_with(
             "test-bot-token", "999", "Just checking in -- still interested?"
         )
+        # docs/ROADMAP.md §3.5 -- lets the caller (_follow_up_check) know a
+        # message really was written, and for which channel type, so it
+        # can publish a live-update event.
+        assert result == channel.type
 
     async def test_generation_failure_does_not_raise_or_log_a_message(self) -> None:
         conversation = MagicMock()
@@ -263,10 +289,11 @@ class TestSendFollowUp:
         with patch(
             "app.pipeline.tasks.generate_text", side_effect=ValueError("no text content")
         ):
-            await _send_follow_up(conversation, message_repo, channel_repo)
+            result = await _send_follow_up(conversation, message_repo, channel_repo)
 
         message_repo.add.assert_not_called()
         channel_repo.get.assert_not_called()
+        assert result is None
 
     async def test_delivery_failure_does_not_raise_and_still_marks_followed_up(self) -> None:
         conversation = MagicMock()
@@ -287,10 +314,13 @@ class TestSendFollowUp:
                 AsyncMock(side_effect=ConnectionError("boom")),
             ),
         ):
-            await _send_follow_up(conversation, message_repo, channel_repo)
+            result = await _send_follow_up(conversation, message_repo, channel_repo)
 
         message_repo.add.assert_called_once()
         assert conversation.followed_up_at is not None
+        # Still returns the channel type -- the message really was written
+        # (and is worth a live-update event) even though delivery failed.
+        assert result == channel.type
 
 
 class TestFollowUpCheck:
@@ -300,7 +330,10 @@ class TestFollowUpCheck:
         with (
             patch("app.pipeline.tasks.async_session", return_value=_FakeAsyncCM(session)),
             patch("app.pipeline.tasks.ConversationRepository") as mock_conv_repo_cls,
-            patch("app.pipeline.tasks._send_follow_up", AsyncMock()) as mock_send_follow_up,
+            patch(
+                "app.pipeline.tasks._send_follow_up", AsyncMock(return_value=None)
+            ) as mock_send_follow_up,
+            patch("app.pipeline.tasks.publish_event") as mock_publish,
         ):
             mock_conv_repo_cls.return_value.list_quiet_unscoped = AsyncMock(
                 return_value=conversations
@@ -309,3 +342,37 @@ class TestFollowUpCheck:
 
         assert mock_send_follow_up.call_count == 2
         assert session.commit.call_count == 2
+        # None of these follow-ups actually sent a message (the fake
+        # _send_follow_up returns None throughout), so no live-update event
+        # should fire either -- see the dedicated test below for the case
+        # where one actually is sent.
+        mock_publish.assert_not_called()
+
+    async def test_publishes_a_message_event_only_when_a_follow_up_is_actually_sent(
+        self,
+    ) -> None:
+        session = AsyncMock()
+        sent_conversation = MagicMock()
+        skipped_conversation = MagicMock()
+        with (
+            patch("app.pipeline.tasks.async_session", return_value=_FakeAsyncCM(session)),
+            patch("app.pipeline.tasks.ConversationRepository") as mock_conv_repo_cls,
+            patch(
+                "app.pipeline.tasks._send_follow_up",
+                AsyncMock(side_effect=["telegram", None]),
+            ),
+            patch("app.pipeline.tasks.publish_event") as mock_publish,
+        ):
+            mock_conv_repo_cls.return_value.list_quiet_unscoped = AsyncMock(
+                return_value=[sent_conversation, skipped_conversation]
+            )
+            await _follow_up_check()
+
+        mock_publish.assert_called_once_with(
+            sent_conversation.tenant_id,
+            {
+                "type": "message",
+                "channel_type": "telegram",
+                "conversation_id": str(sent_conversation.id),
+            },
+        )

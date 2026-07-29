@@ -2,8 +2,9 @@ import uuid
 from unittest.mock import AsyncMock, patch
 
 from langgraph.checkpoint.memory import InMemorySaver
+from langgraph.types import Interrupt
 
-from app.pipeline.runner import resume_pipeline, run_pipeline
+from app.pipeline.runner import publish_pipeline_events, resume_pipeline, run_pipeline
 from app.pipeline.state import PipelineState
 
 # LangGraph's in-memory checkpointer runs the identical interrupt/resume
@@ -147,3 +148,72 @@ class TestResumePipeline:
         assert "__interrupt__" in result_a
         assert "__interrupt__" in result_b
         assert result_a["conversation_id"] != result_b["conversation_id"]
+
+
+class TestPublishPipelineEvents:
+    """docs/ROADMAP.md §3.5 -- called by the caller (Celery task / Test
+    Console endpoint) after its own session.commit(), never from inside a
+    graph node (see the function's own docstring for why). These tests
+    exercise result-shape interpretation only, not the real pub/sub --
+    app/core/events.py's publish_event is mocked throughout."""
+
+    async def test_interrupted_result_publishes_only_an_escalation_event(self) -> None:
+        state = _make_state("Can you guarantee this will definitely cure my allergy?")
+        result = {
+            "__interrupt__": [Interrupt(value={"escalation_reason": "safety floor hit"})],
+            "decision": "escalate_to_human",
+        }
+        with patch("app.pipeline.runner.publish_event") as mock_publish:
+            await publish_pipeline_events(state, result)
+
+        mock_publish.assert_called_once_with(
+            state.tenant_id,
+            {
+                "type": "escalation",
+                "channel_type": state.channel_type,
+                "conversation_id": str(state.conversation_id),
+                "reason": "safety floor hit",
+            },
+        )
+
+    async def test_book_or_checkout_fallback_publishes_both_events(self) -> None:
+        # decide_next_step/book_or_checkout's missing-closing_link fallback
+        # (graph.py) is the one case that sets BOTH decision=
+        # escalate_to_human AND draft_text in the same run, unlike the two
+        # interrupt()-based escalations, which only ever set one or the
+        # other -- both events must fire, not just one.
+        state = _make_state("I'd like to book now")
+        result = {
+            "decision": "escalate_to_human",
+            "escalation_reason": "book_or_checkout: tenant has no closing_link configured",
+            "draft_text": "Someone will follow up shortly to complete this.",
+        }
+        with patch("app.pipeline.runner.publish_event") as mock_publish:
+            await publish_pipeline_events(state, result)
+
+        assert mock_publish.call_count == 2
+        published_types = {call.args[1]["type"] for call in mock_publish.call_args_list}
+        assert published_types == {"escalation", "message"}
+
+    async def test_normal_reply_publishes_only_a_message_event(self) -> None:
+        state = _make_state("Do you ship internationally?")
+        result = {"decision": "keep_chatting", "draft_text": "Yes, we ship worldwide!"}
+        with patch("app.pipeline.runner.publish_event") as mock_publish:
+            await publish_pipeline_events(state, result)
+
+        mock_publish.assert_called_once_with(
+            state.tenant_id,
+            {
+                "type": "message",
+                "channel_type": state.channel_type,
+                "conversation_id": str(state.conversation_id),
+            },
+        )
+
+    async def test_no_draft_and_no_escalation_publishes_nothing(self) -> None:
+        state = _make_state("hi")
+        result = {"decision": "keep_chatting", "draft_text": None}
+        with patch("app.pipeline.runner.publish_event") as mock_publish:
+            await publish_pipeline_events(state, result)
+
+        mock_publish.assert_not_called()

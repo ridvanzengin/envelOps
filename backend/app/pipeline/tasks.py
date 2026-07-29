@@ -20,9 +20,10 @@ from app.conversations.repository import ConversationRepository, MessageReposito
 from app.core.celery_app import celery_app
 from app.core.config import settings
 from app.core.db import async_session
+from app.core.events import publish_event
 from app.core.llm import generate_text
 from app.pipeline.repository import PipelineTraceRepository
-from app.pipeline.runner import get_checkpointer, run_pipeline
+from app.pipeline.runner import get_checkpointer, publish_pipeline_events, run_pipeline
 from app.pipeline.state import PipelineState
 
 logger = logging.getLogger(__name__)
@@ -84,6 +85,7 @@ async def _process_incoming_message(
             # do: no auto-reply on an escalated conversation, that's the
             # entire point of the safety floor.
             await session.commit()
+            await publish_pipeline_events(state, result)
             return
 
         draft_text = result.get("draft_text")
@@ -121,6 +123,7 @@ async def _process_incoming_message(
                     )
 
         await session.commit()
+        await publish_pipeline_events(state, result)
 
 
 @celery_app.task(name="follow_up_check")
@@ -146,7 +149,7 @@ async def _follow_up_check() -> None:
         message_repo = MessageRepository(session)
         channel_repo = ChannelRepository(session)
         for conversation in quiet_conversations:
-            await _send_follow_up(conversation, message_repo, channel_repo)
+            sent_channel_type = await _send_follow_up(conversation, message_repo, channel_repo)
             # Committed per-conversation, not once at the end of the batch
             # -- a failure partway through this loop (a bad LLM/network
             # call for one tenant) shouldn't roll back follow-ups already
@@ -154,16 +157,29 @@ async def _follow_up_check() -> None:
             # before the next scan runs regardless of what happens later
             # in this loop.
             await session.commit()
+            if sent_channel_type is not None:
+                await publish_event(
+                    conversation.tenant_id,
+                    {
+                        "type": "message",
+                        "channel_type": sent_channel_type,
+                        "conversation_id": str(conversation.id),
+                    },
+                )
 
 
 async def _send_follow_up(
     conversation: Conversation,
     message_repo: MessageRepository,
     channel_repo: ChannelRepository,
-) -> None:
+) -> str | None:
+    """Returns the channel_type a follow-up was actually written for
+    (docs/ROADMAP.md §3.5 -- lets the caller publish a live-update event
+    only when a message really was added), or None on any of the early-
+    return paths where nothing was written."""
     last_message = await message_repo.get_latest(conversation.tenant_id, conversation.id)
     if last_message is None:
-        return
+        return None
 
     try:
         follow_up_text = generate_text(
@@ -179,7 +195,7 @@ async def _send_follow_up(
         logger.exception(
             "Failed to generate a follow-up for conversation %s", conversation.id
         )
-        return
+        return None
 
     await message_repo.add(
         Message(
@@ -205,3 +221,5 @@ async def _send_follow_up(
             logger.exception(
                 "Failed to deliver follow-up for conversation %s", conversation.id
             )
+
+    return channel.type if channel is not None else "telegram"

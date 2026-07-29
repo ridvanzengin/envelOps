@@ -20,6 +20,7 @@ from langgraph.types import Command
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
+from app.core.events import publish_event
 from app.pipeline.context import PipelineContext
 from app.pipeline.graph import build_pipeline_graph
 from app.pipeline.state import PipelineState
@@ -81,3 +82,49 @@ async def resume_pipeline(
     config: RunnableConfig = {"configurable": {"thread_id": str(conversation_id)}}
     context = PipelineContext(session=session)
     return await graph.ainvoke(Command(resume=resume_value), config=config, context=context)
+
+
+async def publish_pipeline_events(state: PipelineState, result: dict[str, Any]) -> None:
+    """Fires the docs/ROADMAP.md §3.5 live-update events for one
+    run_pipeline() call's outcome -- callers (pipeline/tasks.py,
+    test_console/api.py) call this AFTER their own session.commit(), never
+    from inside a graph node. decide_next_step/log_lead_and_notify
+    (graph.py) run under the caller's still-open transaction -- publishing
+    from there would race a listening frontend's refetch against a
+    not-yet-durable commit, so this interprets run_pipeline()'s already-
+    returned result instead of the graph publishing anything itself.
+
+    Two independent things to check, not mutually exclusive: book_or_checkout's
+    own missing-closing_link fallback (graph.py) sets both decision=
+    escalate_to_human AND draft_text (an honest holding reply) in the same
+    run, unlike the two interrupt()-based escalations, which only ever set
+    one or the other.
+    """
+    escalated = "__interrupt__" in result
+    if escalated:
+        escalation_reason = result["__interrupt__"][0].value.get("escalation_reason")
+    elif result.get("decision") == "escalate_to_human":
+        escalation_reason = result.get("escalation_reason")
+    else:
+        escalation_reason = None
+
+    if escalation_reason is not None:
+        await publish_event(
+            state.tenant_id,
+            {
+                "type": "escalation",
+                "channel_type": state.channel_type,
+                "conversation_id": str(state.conversation_id),
+                "reason": escalation_reason,
+            },
+        )
+
+    if result.get("draft_text"):
+        await publish_event(
+            state.tenant_id,
+            {
+                "type": "message",
+                "channel_type": state.channel_type,
+                "conversation_id": str(state.conversation_id),
+            },
+        )
