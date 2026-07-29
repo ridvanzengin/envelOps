@@ -17,11 +17,11 @@
 showcase seed, conversation-history threading, dev tenant switch,
 knowledge/trigger-phrase CRUD, Docker build bandwidth, clarifying
 question, SSE + activity bar — §§3.3/3.4/5.1/2/5.4/5.5/3.2/3.5
-respectively). **Escalation cover message + internal note bubble (§3.1)
-is built on branch `feature/escalation-cover-message-internal-note`, PR
-not yet opened as of this write-up** — check `gh pr view <n> --json state`
-before assuming a given PR's status by the time this is read again, this
-line goes stale fast.
+respectively). **PR #31 (escalation cover message + internal note bubble,
+§3.1) is open, not yet merged** (branch
+`feature/escalation-cover-message-internal-note`) — check `gh pr view <n>
+--json state` before assuming a given PR's status by the time this is
+read again, this line goes stale fast.
 
 **The §5.1 safety-floor finding (outcome-guarantee check missing
 safety/risk-absence language) is explicitly postponed to a later
