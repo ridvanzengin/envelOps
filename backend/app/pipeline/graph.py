@@ -497,26 +497,44 @@ async def keep_chatting(
         # ask at most one: if the model already asked a clarifying question
         # last turn, it shows up in the history block below, so the
         # customer's reply lands in branch 2/3 instead of asking again.
+        #
+        # Branch 1 explicitly requires the knowledge below to already be
+        # about the same general topic -- found live (2026-07-29):
+        # search_knowledge (KnowledgeChunkRepository.search_similar) has no
+        # relevance floor, it always returns the top-K nearest chunks by
+        # cosine distance regardless of whether any of them are actually
+        # about what's being asked. Without this qualifier the model saw
+        # *some* knowledge block (honey facts) next to an entirely
+        # unrelated question ("do you sell watches?") and kept asking
+        # which specific watch/model/brand across three turns instead of
+        # recognizing the whole category isn't something it has any
+        # information about at all -- no amount of narrowing down "which
+        # watch" would ever produce an answer that isn't there.
         content_instruction = (
             "Ground your reply ONLY in the knowledge listed below. Decide "
             "which of these three situations applies, in this order:\n"
-            "1. The message is missing a detail you'd need before you could "
-            "even look this up -- e.g. asking about the price/availability/"
-            "color of \"it\" or \"the red one\" without saying which product, "
-            "and the earlier conversation doesn't already say which one. "
-            "In this case, ask exactly ONE short, natural clarifying "
-            "question to find out what they mean -- do not guess, do not "
-            "answer partially, and do not say a person will confirm "
-            "anything, since this is just one follow-up question, not an "
-            "escalation.\n"
+            "1. The knowledge below IS about the same general product or "
+            "topic being asked about, but the message is missing a detail "
+            "you'd need before you could pick the right answer -- e.g. "
+            "asking about the price/availability/color of \"it\" or \"the "
+            "red one\" without saying which product, when the knowledge "
+            "below does cover that kind of product, and the earlier "
+            "conversation doesn't already say which one. In this case, ask "
+            "exactly ONE short, natural clarifying question to find out "
+            "what they mean -- do not guess, do not answer partially, and "
+            "do not say a person will confirm anything, since this is just "
+            "one follow-up question, not an escalation.\n"
             "2. Otherwise, the knowledge below explicitly contains the "
             "answer -- answer using only that information.\n"
-            "3. Otherwise (the question is specific enough, but the "
-            "answer — including specific facts like prices, policies, or "
-            "guarantees — simply isn't in the knowledge below), you MUST "
-            "say you don't have that information and a person will "
-            "confirm, rather than guessing or inferring an answer that "
-            "merely sounds plausible.\n"
+            "3. Otherwise -- either the knowledge below has nothing to do "
+            "with what's being asked at all (a different product/topic "
+            "entirely, not just an unspecified variant of one the "
+            "knowledge below does cover), or it's a specific-enough "
+            "question but the answer, including specific facts like "
+            "prices, policies, or guarantees, simply isn't in the "
+            "knowledge below -- you MUST say you don't have that "
+            "information and a person will confirm, rather than guessing "
+            "or inferring an answer that merely sounds plausible.\n"
             "Apply this the same way in every language; do not be any less "
             "careful in Turkish than you would be in English.\n\n"
             "Your entire response must be exactly this shape: a first line "

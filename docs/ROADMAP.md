@@ -649,6 +649,54 @@ first time. Documented so it isn't rediscovered from scratch next
 session, per direct instruction after the first pass wasted time on
 exactly that.
 
+**Second real behavior bug, same live conversation, flagged directly by
+the user: the clarifying-question branch (§3.2) looped three times
+asking "which watch / which model / which Rolex model" on a business
+that sells honey, instead of recognizing on the very first message that
+watches aren't something it has any information about at all.** Root
+cause, found by reading `search_knowledge` directly rather than
+assuming: `KnowledgeChunkRepository.search_similar` has no relevance
+floor — it's a plain `ORDER BY cosine_distance LIMIT k`, so it always
+returns the top-K *nearest* chunks regardless of whether any of them
+are actually about what's being asked. The model always saw *some*
+knowledge block (honey facts) sitting next to a completely unrelated
+question and kept treating it as "just needs narrowing down" rather
+than "wrong category entirely." Branch 1's instruction now explicitly
+requires the knowledge below to already be about the same general
+product/topic being asked about before a clarifying question is
+appropriate; branch 3 explicitly covers "the knowledge below has
+nothing to do with what's being asked at all" as its own trigger,
+separate from "specific enough but the fact isn't there." Prompt-only
+change — deliberately not the deeper fix (a real similarity/distance
+threshold on `search_similar` itself, filtering irrelevant chunks out
+of `retrieved_chunks` before they ever reach the prompt), which would
+need real calibration against actual retrieval data before trusting a
+cutoff value, not a same-session guess.
+
+**Verified live**, reproducing the exact first message from the real
+conversation ("hello do you sell watches", email channel, Meadow & Jar
+Honey Co): now correctly escalates on the **first message** — `decision:
+escalate_to_human`, a real `Escalation` row, natural cover reply — where
+before it took three rounds of pointless clarifying questions to get
+there. Existing `TestKeepChatting` clarifying-question tests (which use
+retrieved_chunks that genuinely are about the same topic being asked,
+e.g. "kırmızı var mı?" against `["Available colors: blue, green,
+black."]`) still pass unchanged, confirming the legitimate
+same-topic-ambiguity case wasn't broken by the tightened wording.
+
+**Third thing checked live, this one *not* a bug:** the user also asked
+whether the escalation "successfully" reached the activity/rail badge,
+since an earlier test (before the hardening fix above) showed the
+disclaimer text but nothing on the badge. Re-verified directly with
+Playwright against the rebuilt backend, targeting the **Email** icon
+specifically (the real conversation's actual channel, not Telegram):
+badge went **1 → 2** live, zero clicks, zero reloads — the earlier
+"nothing appeared" report matches exactly what pre-hardening code would
+do, since that message never created a real `Escalation` row to begin
+with (confirmed via direct DB query at the time). Nothing left to fix
+here specifically; recorded so a future report of "badge didn't update"
+isn't re-investigated as if it were still open.
+
 ### Recommended sequencing
 Superseded by §5's "Updated sequencing given 5.1–5.3" below — kept this
 pointer rather than two separately-maintained orderings that could drift
