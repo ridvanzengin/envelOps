@@ -94,6 +94,11 @@
     "resolve": "Resolve",
     "resolving": "Resolving…"
   },
+  "activityBar": {
+    "label": "Escalation notifications",
+    "empty": "No new escalations.",
+    "justNow": "just now"
+  },
   "knowledgeSources": {
     "type": "Source type",
     "typeManual": "Manual entry",

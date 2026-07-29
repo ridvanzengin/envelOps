@@ -1,11 +1,24 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
 import { apiGet, apiPost, ApiError } from "../../api/client";
 import { useAuth } from "../../auth/useAuth";
 import { ConversationPanelContext } from "./context";
-import type { Conversation, Escalation, Message } from "./context";
+import type { Conversation, Escalation, LiveEscalationNotification, Message } from "./context";
+
+// Capped so a quiet moment away from the tab doesn't turn ActivityBar into
+// an ever-growing list -- ChannelRail's own badges (pendingEscalationCountByChannelType)
+// are still the source of truth for "how many are actually pending," this
+// is just a recent-activity feed.
+const _MAX_LIVE_NOTIFICATIONS = 5;
+
+interface _LiveUpdateEvent {
+  type?: string;
+  channel_type?: string;
+  conversation_id?: string;
+  reason?: string;
+}
 
 export function ConversationPanelProvider({ children }: { children: ReactNode }) {
   const { t } = useTranslation();
@@ -32,6 +45,10 @@ export function ConversationPanelProvider({ children }: { children: ReactNode })
 
   const [resolvingEscalationId, setResolvingEscalationId] = useState<string | null>(null);
   const [resolveError, setResolveError] = useState<string | null>(null);
+
+  const [liveEscalationNotifications, setLiveEscalationNotifications] = useState<
+    LiveEscalationNotification[]
+  >([]);
 
   const loadEscalations = useCallback(async () => {
     try {
@@ -134,6 +151,86 @@ export function ConversationPanelProvider({ children }: { children: ReactNode })
     setThreadError(null);
   }, []);
 
+  const dismissNotification = useCallback((conversationId: string) => {
+    setLiveEscalationNotifications((current) =>
+      current.filter((notification) => notification.conversationId !== conversationId),
+    );
+  }, []);
+
+  // Read inside the SSE handler below instead of listed as effect deps --
+  // the connection itself should only open/close when `token` changes
+  // (logging out/in), not reconnect every time the panel's own open
+  // channel/conversation changes. Updated on every render (not inside an
+  // effect) is the standard way to keep a ref "live" without that forcing
+  // extra re-renders or effect re-runs of its own.
+  const latestRef = useRef({
+    activeChannelType,
+    selectedConversationId,
+    loadConversations,
+    loadEscalations,
+    selectConversation,
+  });
+  latestRef.current = {
+    activeChannelType,
+    selectedConversationId,
+    loadConversations,
+    loadEscalations,
+    selectConversation,
+  };
+
+  useEffect(() => {
+    if (token === null) {
+      return;
+    }
+    // EventSource can't set an Authorization header, so the token travels
+    // as a query param instead (docs/ROADMAP.md §3.5, app/auth/dependencies.py's
+    // get_current_user_from_query) -- the one deliberate exception to this
+    // codebase's usual Bearer-header-only auth.
+    const source = new EventSource(`/events/stream?token=${encodeURIComponent(token)}`);
+
+    source.addEventListener("update", (event) => {
+      let data: _LiveUpdateEvent;
+      try {
+        data = JSON.parse((event as MessageEvent<string>).data) as _LiveUpdateEvent;
+      } catch {
+        return;
+      }
+      const current = latestRef.current;
+
+      if (data.type === "message") {
+        if (current.activeChannelType !== null && data.channel_type === current.activeChannelType) {
+          void current.loadConversations(current.activeChannelType);
+        }
+        if (
+          current.selectedConversationId !== null &&
+          data.conversation_id === current.selectedConversationId
+        ) {
+          current.selectConversation(current.selectedConversationId);
+        }
+      } else if (data.type === "escalation") {
+        void current.loadEscalations();
+        setLiveEscalationNotifications((existing) =>
+          [
+            {
+              conversationId: data.conversation_id ?? "",
+              channelType: data.channel_type ?? "",
+              reason: data.reason ?? "",
+              receivedAt: Date.now(),
+            },
+            ...existing,
+          ].slice(0, _MAX_LIVE_NOTIFICATIONS),
+        );
+      }
+    });
+
+    // Known, accepted limitation (docs/ROADMAP.md §3.5): EventSource
+    // auto-reconnects on a dropped connection, but if the JWT expires
+    // mid-session the stream will 401 and keep silently retrying until the
+    // user logs in again -- not a real concern at Phase 1's session
+    // lengths (jwt_expires_minutes defaults to 24h).
+    return () => source.close();
+  }, [token]);
+
   const resolveEscalation = useCallback(
     async (escalationId: string) => {
       setResolveError(null);
@@ -180,6 +277,8 @@ export function ConversationPanelProvider({ children }: { children: ReactNode })
       resolveEscalation,
       resolvingEscalationId,
       resolveError,
+      liveEscalationNotifications,
+      dismissNotification,
     }),
     [
       isOpen,
@@ -199,6 +298,8 @@ export function ConversationPanelProvider({ children }: { children: ReactNode })
       resolveEscalation,
       resolvingEscalationId,
       resolveError,
+      liveEscalationNotifications,
+      dismissNotification,
     ],
   );
 

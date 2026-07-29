@@ -13,11 +13,14 @@
 
 ## 1. Status as of 2026-07-29
 
-**PR #23 (Test Console, §3.3/§3.4) and PR #24 (multi-tenant showcase
-seed script, §5.1) are both merged into `main`.** **PR #25
-(conversation-history threading, §2) is open, not yet merged** (branch
-`feature/conversation-history`). Check `gh pr view <n> --json state`
-before assuming it's "in main" by the time this is read again.
+**PRs #23–#29 are all merged into `main`** (Test Console, multi-tenant
+showcase seed, conversation-history threading, dev tenant switch,
+knowledge/trigger-phrase CRUD, Docker build bandwidth, clarifying
+question — §§3.3/3.4/5.1/2/5.4/5.5/3.2 respectively). **§3.5 (SSE +
+activity bar) is built on branch `feature/sse-live-updates`, PR not yet
+opened as of this write-up** — check `gh pr view <n> --json state` before
+assuming a given PR's status by the time this is read again, this line
+goes stale fast.
 
 **The §5.1 safety-floor finding (outcome-guarantee check missing
 safety/risk-absence language) is explicitly postponed to a later
@@ -246,12 +249,101 @@ from `/test` to `/test-console` while investigating, to stop it sharing
 a bare prefix with its own API path — not the actual fix, but removes the
 coincidental-looking overlap for whoever reads this next.
 
-### 3.5 Live updates via SSE + activity-bar escalation notifications
+### 3.5 Live updates via SSE + activity-bar escalation notifications — done (2026-07-29)
 The conversation rail should update immediately when a new message
 arrives, and the activity bar should show a notification when a
-conversation gets escalated. No SSE exists yet in this codebase — the
-sibling project `iotops-workspace` already has a working SSE
-implementation to use as a reference rather than designing from scratch.
+conversation gets escalated. `iotops-workspace`'s own FastAPI +
+`sse-starlette` + Redis-pub/sub implementation (`backend/app/event/api.py`)
+was the reference pattern, adapted to envelOps's simpler shape: iotops
+pattern-subscribes across every project in one connection; here each
+authenticated SSE connection already knows its one tenant, so a plain
+per-tenant channel subscription (`tenant-events:{tenant_id}`) is enough.
+
+**New dependency:** `sse-starlette` (small, no new transitive deps beyond
+`starlette`, which FastAPI already pulls in).
+
+**Backend, new minimal module `app/events/` (no `models.py`/
+`repository.py` — no new DB table, same exception `app/test_console/`
+already uses for the same reason):** `GET /events/stream` — auth via a
+new `get_current_user_from_query` (`app/auth/dependencies.py`), since a
+browser's native `EventSource` can't set an `Authorization` header; the
+JWT travels as `?token=...` instead, reusing the exact same
+`decode_access_token()` the header path already calls. Known, accepted
+tradeoff: a token in a URL can end up in server access logs — the
+standard workaround every `EventSource`-based app faces, not solved
+further here. `app/core/redis_client.py` adds a lazy-singleton async
+Redis client (safe only because it's used exclusively inside the FastAPI
+process's one long-lived event loop) and `app/core/events.py`'s
+`publish_event()` does the actual `PUBLISH`, deliberately swallowing and
+logging (never raising) any failure — a live-update push is a nice-to-have
+on top of rows every call site has already committed, not something a
+Redis blip should be allowed to break message ingestion or the pipeline
+run over.
+
+**Real design correction made while implementing, not what was originally
+sketched:** the plan going in was to publish directly from inside
+`decide_next_step`/`log_lead_and_notify` (`app/pipeline/graph.py`) at each
+of the three places an `Escalation` row gets created. That would have
+raced a listening frontend's refetch against a not-yet-committed
+transaction — those graph nodes run under the *caller's* still-open
+session (`app/pipeline/tasks.py`/`app/test_console/api.py` own the
+`session.commit()`, not the graph itself, per `PipelineContext`'s own
+docstring). Moved instead to a new `publish_pipeline_events(state, result)`
+(`app/pipeline/runner.py`), called by each caller *after* its own commit,
+interpreting `run_pipeline()`'s already-returned result (the `__interrupt__`
+payload for the two interrupt-based escalations, `result["escalation_reason"]`
+for `book_or_checkout`'s own missing-`closing_link` fallback — the one
+case that sets both an escalation *and* `draft_text` in the same run, so
+both events fire together there). Net effect: fewer call sites than
+planned (4, not 7) and no race, at the cost of the callers needing to know
+this function exists — a straightforward, small tradeoff once the commit-
+ordering issue was actually spotted. `_send_follow_up`'s own outbound
+message (a periodic job, not a `run_pipeline` call) publishes directly
+through `publish_event`, since there's no pipeline result to interpret
+there.
+
+**Frontend:** wired directly into the existing `ConversationPanelProvider`
+(not a new context) — it already holds `activeChannelType`/
+`selectedConversationId` and owns `loadConversations`/`loadEscalations`/
+`selectConversation`, which the SSE handler reuses as full re-fetches on
+a signal, the same pattern this file already used everywhere else. A
+`useRef` snapshot (updated on every render, read inside the `EventSource`
+handler) keeps the connection itself keyed only on `token` — it shouldn't
+reconnect every time the panel's own open channel/conversation changes.
+New `ActivityBar` (`frontend/src/components/ActivityBar.tsx`) — a bell
+icon + unread badge, own click-outside handling (distinct class name from
+`ChannelRail`'s own account-menu dropdown, so neither interferes with the
+other's open/close state), listing the most recent live escalations
+(capped at 5); clicking one calls the already-existing `openPanel`/
+`selectConversation` to jump straight to that conversation. `vite.config.ts`
+gained one new anchored proxy key, `^/events(/|\?)`, following the
+existing convention.
+
+**Verified live**, not just unit-tested (the actual `/stream` generator
+isn't unit-tested either, matching iotops-workspace's own precedent —
+streaming generators aren't a good unit-test fit): `curl -N` against
+`/events/stream` alongside real Test Console sends showed both a
+`message` event (inbound and outbound) and an `escalation` event with the
+real safety-floor reason text, in real time. Then the actual frontend,
+driven in a headless browser (Playwright, no project skill for this
+existed yet) against the real backend: opened the Telegram channel's
+already-open conversation panel, sent a message via the API directly
+(bypassing the UI, simulating another source), and the new conversation
+appeared in the list with **no reload or manual action** — confirmed by
+reading the panel's DOM text before/after. A follow-up safety-floor-
+triggering message made the new bell icon appear with a badge (count 1);
+clicking it showed a dropdown with the correct channel and reason text;
+clicking that notification jumped straight to and opened that exact
+conversation. Zero browser console errors throughout.
+
+Test coverage: `publish_event` (success + swallowed-failure paths),
+`publish_pipeline_events` (all four result shapes: interrupt-based
+escalation, `book_or_checkout`'s dual escalation+message case, plain
+reply, neither), the `_subscribe` generator (fake pubsub, real filtering/
+decoding logic), auth rejection on `/events/stream` (missing/invalid
+token), and the message-publish call sites in `channels/api.py`,
+`pipeline/tasks.py` (including the follow-up job), and
+`test_console/api.py`.
 
 ### Recommended sequencing
 Superseded by §5's "Updated sequencing given 5.1–5.3" below — kept this
@@ -557,12 +649,11 @@ source's text, saved, and confirmed the new text round-tripped correctly.
 1. ~~§3.4 (Test Console diagnostics)~~ / ~~§3.3 (rail badges)~~ /
    ~~§5.1 (multi-tenant seed + showcase scenarios)~~ /
    ~~§2 (conversation-history threading)~~ / ~~§3.2 (clarifying
-   question)~~ — all done. §5.1's safety-floor finding explicitly
-   postponed, see §1/§5.1 above.
-2. **§3.5** (SSE) — independent infrastructure, can slot in anytime.
-3. **§3.1** (escalation cover message + internal note bubble).
-4. **§5.2** (template gallery) — natural next step once §5.1 is
+   question)~~ / ~~§3.5 (SSE + activity bar)~~ — all done. §5.1's
+   safety-floor finding explicitly postponed, see §1/§5.1 above.
+2. **§3.1** (escalation cover message + internal note bubble).
+3. **§5.2** (template gallery) — natural next step once §5.1 is
    battle-tested, not before.
-5. **§5.3** (AI copilot) — longest-horizon item here; needs §5.1's
+4. **§5.3** (AI copilot) — longest-horizon item here; needs §5.1's
    scenario diversity and §3.3/§3.4's data maturing first, and its own
    dedicated design pass on the approval-point question above.

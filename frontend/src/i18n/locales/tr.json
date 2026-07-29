@@ -94,6 +94,11 @@
     "resolve": "Çöz",
     "resolving": "Çözülüyor…"
   },
+  "activityBar": {
+    "label": "Yükseltme bildirimleri",
+    "empty": "Yeni yükseltme yok.",
+    "justNow": "az önce"
+  },
   "knowledgeSources": {
     "type": "Kaynak türü",
     "typeManual": "Manuel giriş",
