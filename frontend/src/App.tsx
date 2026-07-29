@@ -3,7 +3,6 @@ import { Route, BrowserRouter as Router, Routes } from "react-router-dom";
 import "./App.css";
 import { AuthProvider } from "./auth/AuthContext";
 import { useAuth } from "./auth/useAuth";
-import { ActivityBar } from "./components/ActivityBar";
 import { ChannelRail } from "./components/ChannelRail";
 import { ConversationPanel } from "./components/ConversationPanel";
 import { Sidebar } from "./components/Sidebar";
@@ -42,7 +41,6 @@ function AppShell() {
           </div>
           <ConversationPanel />
           <ChannelRail />
-          <ActivityBar />
         </div>
       </Router>
     </ConversationPanelProvider>

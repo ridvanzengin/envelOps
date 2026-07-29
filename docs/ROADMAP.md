@@ -310,31 +310,86 @@ a signal, the same pattern this file already used everywhere else. A
 `useRef` snapshot (updated on every render, read inside the `EventSource`
 handler) keeps the connection itself keyed only on `token` — it shouldn't
 reconnect every time the panel's own open channel/conversation changes.
-New `ActivityBar` (`frontend/src/components/ActivityBar.tsx`) — a bell
-icon + unread badge, own click-outside handling (distinct class name from
-`ChannelRail`'s own account-menu dropdown, so neither interferes with the
-other's open/close state), listing the most recent live escalations
-(capped at 5); clicking one calls the already-existing `openPanel`/
-`selectConversation` to jump straight to that conversation. `vite.config.ts`
-gained one new anchored proxy key, `^/events(/|\?)`, following the
-existing convention.
+`vite.config.ts` gained one new anchored proxy key, `^/events(/|\?)`,
+following the existing convention.
+
+**Revised after first review, twice, both against a closer read of
+`iotops-workspace`'s actual SSE implementation:**
+
+1. **No separate bell/notification UI.** The first pass added a new
+   standalone `ActivityBar` component (bell icon + unread badge +
+   dropdown). Wrong reference point: `iotops-workspace`'s own
+   `ActivityBar.tsx` isn't a bell — it's a persistent icon rail, one icon
+   *per project*, each carrying that project's own live unresolved-count
+   badge, clicking it opens that project's panel. `ChannelRail` (one icon
+   per channel type, each already carrying `pendingEscalationCountByChannelType`'s
+   badge, clicking opens that channel's `ConversationPanel`) is already
+   envelOps's structural equivalent of that — a second, differently-
+   designed bell was a redundant duplicate mechanism, not a missing
+   feature. Removed entirely (`ActivityBar.tsx`/`.css`, the `BellIcon`,
+   the `activityBar.*` locale keys, and the `liveEscalationNotifications`/
+   `dismissNotification` state that only existed to feed it). The
+   "escalations shown on platform icons" + "filtered escalations badge on
+   each platform's conversation rail" asks were already fully met by
+   `ChannelRail`'s existing per-channel badge and `ConversationPanel`'s
+   existing "escalated only" filter count (`escalatedCountInList`) — both
+   are plain `useMemo`s over the `escalations` array `loadEscalations()`
+   already refreshes on every live "escalation" event, so both update
+   live for free once that refetch fires. No new UI was actually needed,
+   just the live signal feeding data that was already there.
+2. **Ground-truth refetch, never a client-side increment.** Directly
+   relevant prior art: `iotops-workspace` tried incrementing its
+   `ActivityBar` badge counts by +1 per live event first, then abandoned
+   that approach (its `EventsContext.tsx` now has its own comment on
+   this) because an event doesn't reliably map 1:1 to "the badge should
+   go up by exactly one" — resolutions, dedup, and reconnect gaps all
+   break that assumption, and the badge quietly drifted from the truth.
+   envelOps never had that bug to begin with — `loadEscalations()` always
+   does a full `GET /escalations` replacing `escalations` wholesale, and
+   `pendingEscalationCountByChannelType`/`escalationByConversationId` are
+   both derived from that via `useMemo`, so there's no increment code
+   path to have gotten wrong. Called out explicitly in the SSE handler's
+   own comment now, specifically so this isn't accidentally reintroduced
+   later by someone reaching for the "just increment the badge" shortcut.
+3. **Reconnect-refetch was missing — a real gap, not a style choice.**
+   `iotops-workspace`'s `EventsContext.tsx` has a `source.onopen` handler
+   with its own comment: "closes the Redis Pub/Sub no-buffering gap — a
+   message published while nobody was subscribed is simply gone, so this
+   is the only way to catch back up after a reconnect." The first pass
+   here had no `onopen` handler at all — a dropped connection (network
+   blip, backend restart) that `EventSource` silently auto-reconnects
+   would have left the rail/badges stuck stale forever, with nothing to
+   ever refresh them again short of a full page reload. Added
+   `source.onopen` to refetch escalations unconditionally, plus the open
+   channel's conversation list and the open thread if either is set —
+   mirroring `refetchUnresolvedCounts()`/`refetchOpenPanel()` in the
+   reference implementation exactly.
+4. **Debounced the per-event refetches.** Also missing from the first
+   pass: `iotops-workspace` debounces every SSE-triggered refetch (400ms)
+   so a burst of events triggers one request, not one per event. Added
+   the same `frontend/src/utils/debounce.ts` (a direct port of iotops's
+   own tiny generic utility) and wrapped `loadEscalations`/
+   `loadConversations`/`selectConversation` in debounced wrappers for the
+   per-event path specifically — the `onopen` resync above stays
+   undebounced, matching the reference (it fires rarely enough that
+   there's no burst to protect against there).
 
 **Verified live**, not just unit-tested (the actual `/stream` generator
 isn't unit-tested either, matching iotops-workspace's own precedent —
-streaming generators aren't a good unit-test fit): `curl -N` against
-`/events/stream` alongside real Test Console sends showed both a
-`message` event (inbound and outbound) and an `escalation` event with the
-real safety-floor reason text, in real time. Then the actual frontend,
-driven in a headless browser (Playwright, no project skill for this
-existed yet) against the real backend: opened the Telegram channel's
-already-open conversation panel, sent a message via the API directly
-(bypassing the UI, simulating another source), and the new conversation
-appeared in the list with **no reload or manual action** — confirmed by
-reading the panel's DOM text before/after. A follow-up safety-floor-
-triggering message made the new bell icon appear with a badge (count 1);
-clicking it showed a dropdown with the correct channel and reason text;
-clicking that notification jumped straight to and opened that exact
-conversation. Zero browser console errors throughout.
+streaming generators aren't a good unit-test fit), twice — once before
+and once after the corrections above: `curl -N` against `/events/stream`
+alongside real Test Console sends showed both a `message` event (inbound
+and outbound) and an `escalation` event with the real safety-floor reason
+text, in real time. Then the actual frontend, driven in a headless
+browser (Playwright, no project skill for this existed yet) against the
+real backend: opened the Telegram channel's already-open conversation
+panel, sent a message via the API directly (bypassing the UI, simulating
+another source), and the new conversation appeared in the list with **no
+reload or manual action**. A follow-up safety-floor-triggering message
+made `ChannelRail`'s existing Telegram badge count go from 2 to 3, and
+`ConversationPanel`'s "escalated only" filter count updated to match —
+both **with no reload, no click, and no separate notification UI**. Zero
+browser console errors throughout, both passes.
 
 Test coverage: `publish_event` (success + swallowed-failure paths),
 `publish_pipeline_events` (all four result shapes: interrupt-based

@@ -4,14 +4,9 @@ import { useTranslation } from "react-i18next";
 
 import { apiGet, apiPost, ApiError } from "../../api/client";
 import { useAuth } from "../../auth/useAuth";
+import { debounce } from "../../utils/debounce";
 import { ConversationPanelContext } from "./context";
-import type { Conversation, Escalation, LiveEscalationNotification, Message } from "./context";
-
-// Capped so a quiet moment away from the tab doesn't turn ActivityBar into
-// an ever-growing list -- ChannelRail's own badges (pendingEscalationCountByChannelType)
-// are still the source of truth for "how many are actually pending," this
-// is just a recent-activity feed.
-const _MAX_LIVE_NOTIFICATIONS = 5;
+import type { Conversation, Escalation, Message } from "./context";
 
 interface _LiveUpdateEvent {
   type?: string;
@@ -19,6 +14,12 @@ interface _LiveUpdateEvent {
   conversation_id?: string;
   reason?: string;
 }
+
+// A burst of SSE events (several messages in quick succession) should
+// trigger one refetch, not one per event -- same reasoning and delay as
+// iotops-workspace's own EventsContext.tsx debounces its SSE-triggered
+// refetches.
+const _REFETCH_DEBOUNCE_MS = 400;
 
 export function ConversationPanelProvider({ children }: { children: ReactNode }) {
   const { t } = useTranslation();
@@ -45,10 +46,6 @@ export function ConversationPanelProvider({ children }: { children: ReactNode })
 
   const [resolvingEscalationId, setResolvingEscalationId] = useState<string | null>(null);
   const [resolveError, setResolveError] = useState<string | null>(null);
-
-  const [liveEscalationNotifications, setLiveEscalationNotifications] = useState<
-    LiveEscalationNotification[]
-  >([]);
 
   const loadEscalations = useCallback(async () => {
     try {
@@ -151,12 +148,6 @@ export function ConversationPanelProvider({ children }: { children: ReactNode })
     setThreadError(null);
   }, []);
 
-  const dismissNotification = useCallback((conversationId: string) => {
-    setLiveEscalationNotifications((current) =>
-      current.filter((notification) => notification.conversationId !== conversationId),
-    );
-  }, []);
-
   // Read inside the SSE handler below instead of listed as effect deps --
   // the connection itself should only open/close when `token` changes
   // (logging out/in), not reconnect every time the panel's own open
@@ -177,6 +168,30 @@ export function ConversationPanelProvider({ children }: { children: ReactNode })
     loadEscalations,
     selectConversation,
   };
+
+  // Debounced so a burst of SSE events (several messages in quick
+  // succession) triggers one refetch, not one per event -- same reasoning
+  // as iotops-workspace's own EventsContext.tsx. Each reads latestRef
+  // fresh at call time rather than closing over the function passed to
+  // debounce() at creation time, since useRef's initializer only runs
+  // once and these need whatever loadConversations/etc. currently is.
+  const debouncedLoadEscalations = useRef(
+    debounce(() => {
+      void latestRef.current.loadEscalations();
+    }, _REFETCH_DEBOUNCE_MS),
+  ).current;
+
+  const debouncedLoadConversations = useRef(
+    debounce((channelType: string) => {
+      void latestRef.current.loadConversations(channelType);
+    }, _REFETCH_DEBOUNCE_MS),
+  ).current;
+
+  const debouncedSelectConversation = useRef(
+    debounce((conversationId: string) => {
+      latestRef.current.selectConversation(conversationId);
+    }, _REFETCH_DEBOUNCE_MS),
+  ).current;
 
   useEffect(() => {
     if (token === null) {
@@ -199,29 +214,51 @@ export function ConversationPanelProvider({ children }: { children: ReactNode })
 
       if (data.type === "message") {
         if (current.activeChannelType !== null && data.channel_type === current.activeChannelType) {
-          void current.loadConversations(current.activeChannelType);
+          debouncedLoadConversations(current.activeChannelType);
         }
         if (
           current.selectedConversationId !== null &&
           data.conversation_id === current.selectedConversationId
         ) {
-          current.selectConversation(current.selectedConversationId);
+          debouncedSelectConversation(current.selectedConversationId);
         }
       } else if (data.type === "escalation") {
-        void current.loadEscalations();
-        setLiveEscalationNotifications((existing) =>
-          [
-            {
-              conversationId: data.conversation_id ?? "",
-              channelType: data.channel_type ?? "",
-              reason: data.reason ?? "",
-              receivedAt: Date.now(),
-            },
-            ...existing,
-          ].slice(0, _MAX_LIVE_NOTIFICATIONS),
-        );
+        // Ground-truth refetch (full GET /escalations, replacing
+        // `escalations` wholesale), not a client-side +1 patch on the
+        // badge counts -- iotops-workspace tried the increment-on-event
+        // approach for its own ActivityBar badges first and abandoned it:
+        // a live count nudged by every individual event doesn't stay
+        // truthful (an event doesn't map 1:1 to "the badge should go up
+        // by exactly one" -- resolutions, dedup, and reconnect gaps all
+        // break that assumption). `pendingEscalationCountByChannelType`/
+        // `escalationByConversationId` below are both plain useMemos over
+        // whatever `escalations` currently holds, so a full refetch here
+        // is the only place this count is ever produced -- there is no
+        // increment path to accidentally reintroduce.
+        debouncedLoadEscalations();
       }
     });
+
+    // Reconnect-refetch: closes the Redis pub/sub no-buffering gap -- a
+    // message published while nobody was subscribed is simply gone, so
+    // this is the only way to catch back up after a reconnect (onopen
+    // fires on every reconnect, including the browser's own automatic
+    // retry, plus the initial connect). Matches iotops-workspace's own
+    // EventsContext.tsx, which hit this exact gap first -- its own
+    // comment on this same fix is the reason it's here from the start
+    // rather than needing to be rediscovered. Not debounced (unlike the
+    // per-event refetches above) -- onopen fires rarely, there's no burst
+    // to protect against here.
+    source.onopen = () => {
+      const current = latestRef.current;
+      void current.loadEscalations();
+      if (current.activeChannelType !== null) {
+        void current.loadConversations(current.activeChannelType);
+      }
+      if (current.selectedConversationId !== null) {
+        current.selectConversation(current.selectedConversationId);
+      }
+    };
 
     // Known, accepted limitation (docs/ROADMAP.md §3.5): EventSource
     // auto-reconnects on a dropped connection, but if the JWT expires
@@ -229,7 +266,14 @@ export function ConversationPanelProvider({ children }: { children: ReactNode })
     // user logs in again -- not a real concern at Phase 1's session
     // lengths (jwt_expires_minutes defaults to 24h).
     return () => source.close();
-  }, [token]);
+    // debouncedLoad*/debouncedSelectConversation are referentially stable
+    // across renders (each created once via useRef(...).current), so
+    // listing them here doesn't cause any extra reconnects -- it's just
+    // what satisfies the hook's own dependency check honestly, same
+    // effect as iotops-workspace's EventsContext.tsx suppressing this
+    // exact warning for the same reason (there, via an inline disable
+    // comment instead).
+  }, [token, debouncedLoadConversations, debouncedLoadEscalations, debouncedSelectConversation]);
 
   const resolveEscalation = useCallback(
     async (escalationId: string) => {
@@ -277,8 +321,6 @@ export function ConversationPanelProvider({ children }: { children: ReactNode })
       resolveEscalation,
       resolvingEscalationId,
       resolveError,
-      liveEscalationNotifications,
-      dismissNotification,
     }),
     [
       isOpen,
@@ -298,8 +340,6 @@ export function ConversationPanelProvider({ children }: { children: ReactNode })
       resolveEscalation,
       resolvingEscalationId,
       resolveError,
-      liveEscalationNotifications,
-      dismissNotification,
     ],
   );
 

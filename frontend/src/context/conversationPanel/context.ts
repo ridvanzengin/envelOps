@@ -41,18 +41,6 @@ export interface Escalation {
   is_test: boolean;
 }
 
-// One entry per live "escalation" SSE event (docs/ROADMAP.md §3.5) --
-// deliberately a client-only, ephemeral notification, not a projection of
-// the Escalation row itself (which ChannelRail's badges already read from
-// `escalations` above via a full GET /escalations refetch on the same
-// event). `receivedAt` drives ActivityBar's relative-time display.
-export interface LiveEscalationNotification {
-  conversationId: string;
-  channelType: string;
-  reason: string;
-  receivedAt: number;
-}
-
 export interface ConversationPanelContextValue {
   isOpen: boolean;
   activeChannelType: string | null;
@@ -84,11 +72,6 @@ export interface ConversationPanelContextValue {
   resolveEscalation: (escalationId: string) => Promise<void>;
   resolvingEscalationId: string | null;
   resolveError: string | null;
-
-  // docs/ROADMAP.md §3.5 -- ActivityBar's own notification list, capped to
-  // the most recent few, newest first.
-  liveEscalationNotifications: LiveEscalationNotification[];
-  dismissNotification: (conversationId: string) => void;
 }
 
 export const ConversationPanelContext = createContext<ConversationPanelContextValue | null>(
