@@ -697,6 +697,39 @@ with (confirmed via direct DB query at the time). Nothing left to fix
 here specifically; recorded so a future report of "badge didn't update"
 isn't re-investigated as if it were still open.
 
+**Fourth thing found live, same day, real conversation-quality bug —
+"other" intent could echo the customer's own message back verbatim.**
+A follow-up multi-turn test ("what time is it?", "where is mahmood?",
+"yes the boss" — all genuinely off-topic for a honey seller) surfaced
+that `understand_intent`'s `other` label (its own genuine catch-all,
+"doesn't fit any of the above") was sharing `small_talk`'s instruction
+in `keep_chatting`, which opens with "nothing was actually asked" — a
+false premise for a real, if odd, message. That false premise produced
+confused output, including two turns where the reply was literally the
+customer's own message echoed back unchanged. Gave `other` its own
+instruction: acknowledge something was actually said, redirect to how
+the business can help, explicit "never repeat or echo the customer's
+own message back" guardrail. **Verified live**, reproducing the same
+three messages: all three now get a sensible acknowledge-and-redirect
+reply ("I am unable to provide information regarding individuals'
+locations, but I am happy to assist you with any questions related to
+our business offerings...") instead of either a non-responsive
+"Hi, how can I help?" or an echo. 1 new/updated unit test in
+`test_pipeline_graph.py` (`other` and `small_talk` now assert different
+instruction content; a dedicated `other`-intent test checks both the
+non-echo guardrail and the absence of the false "nothing was asked"
+premise) — full suite (181 tests), ruff, mypy all clean.
+
+**Also worth naming plainly, not just fixing the individual symptoms:**
+four real behavior/quality bugs surfaced from live use in this single
+session (the knowledge-gap dead end, the dropped-STATUS-tag regression,
+the out-of-domain clarify loop, and this echo bug) — all in
+`keep_chatting`, the single highest-surface-area node in the pipeline.
+Matches the user's own read after seeing this dialogue: the assistant
+is meaningfully short of "smooth store assistant" quality yet, not a
+one-bug problem. No single further fix closes that gap — it's a
+direction for ongoing work, not a checklist item.
+
 ### Recommended sequencing
 Superseded by §5's "Updated sequencing given 5.1–5.3" below — kept this
 pointer rather than two separately-maintained orderings that could drift

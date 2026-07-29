@@ -461,7 +461,6 @@ class TestKeepChatting:
                 await keep_chatting(state, _make_runtime())
             prompt = mock_gen.call_args.args[0]
             assert "Ground your reply ONLY in the knowledge" not in prompt
-            assert "isn't asking a specific question" in prompt
             # The knowledge block itself shouldn't leak into a greeting reply.
             assert "We ship worldwide via DHL." not in prompt
 
@@ -476,8 +475,28 @@ class TestKeepChatting:
         with patch("app.pipeline.graph.generate_text", return_value="x") as mock_gen:
             await keep_chatting(state, _make_runtime())
         prompt = mock_gen.call_args.args[0]
+        assert "isn't asking a specific question" in prompt
         assert "not a personal friend" in prompt
         assert "how their day is going" in prompt
+
+    async def test_other_intent_gets_its_own_non_echo_instruction(self) -> None:
+        # Found live (2026-07-29): "other" (understand_intent's genuine
+        # catch-all, "doesn't fit any of the above") used to share
+        # small_talk's instruction, which falsely claims "nothing was
+        # actually asked" -- false for something like "where is mahmood?"
+        # (a real message, just not a business question/complaint/
+        # purchase interest). That false premise produced a confused
+        # reply, up to literally echoing the customer's own message back.
+        # "other" now gets its own instruction that acknowledges something
+        # was said and explicitly rules out parroting it back.
+        state = _make_state("where is mahmood?")
+        state.detected_intent = "other"
+        with patch("app.pipeline.graph.generate_text", return_value="x") as mock_gen:
+            await keep_chatting(state, _make_runtime())
+        prompt = mock_gen.call_args.args[0]
+        assert "isn't asking a specific question" not in prompt
+        assert "something WAS actually said" in prompt
+        assert "Never repeat or echo the customer's own message" in prompt
 
     async def test_includes_history_and_continuation_instruction_when_present(self) -> None:
         state = _make_state("What about shipping?")

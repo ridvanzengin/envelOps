@@ -545,7 +545,7 @@ async def keep_chatting(
             "mention which case this is anywhere in the reply itself.\n\n"
             f"Relevant knowledge:\n{context_block}\n\n"
         )
-    else:
+    elif state.detected_intent == "small_talk":
         content_instruction = (
             "This message isn't asking a specific question (it's a greeting, "
             "small talk, or similar) -- there's nothing to ground in a "
@@ -556,6 +556,30 @@ async def keep_chatting(
             "small talk like asking how their day is going. Do not say "
             "you don't have information or that someone will follow up; "
             "nothing was actually asked.\n\n"
+        )
+    else:
+        # "other" is understand_intent's genuine catch-all ("doesn't fit
+        # any of the above") -- found live (2026-07-29): this used to
+        # share small_talk's instruction, which falsely claims "nothing
+        # was actually asked." For something like "where is mahmood?" or
+        # "yes the boss" -- a real message, just not a business question,
+        # complaint, or purchase interest -- that false premise produced
+        # a confused reply, up to and including literally echoing the
+        # customer's own message back verbatim. This gets its own
+        # instruction: acknowledge something was actually said, don't
+        # pretend otherwise, and explicitly rule out parroting it back.
+        content_instruction = (
+            "This message doesn't fit a specific business question, "
+            "complaint, or purchase interest -- it may be off-topic, "
+            "unclear, or unrelated to what this business offers, but "
+            "something WAS actually said. Acknowledge that briefly and "
+            "naturally, without pretending nothing was asked, then "
+            "redirect to how you can help with this business specifically "
+            "(e.g. \"I'm not sure I can help with that, but happy to "
+            "answer anything about [what this business does]!\"). Never "
+            "repeat or echo the customer's own message back to them as "
+            "your reply, and never guess or invent an answer to something "
+            "you don't actually know.\n\n"
         )
 
     history_block = _history_block(state)
