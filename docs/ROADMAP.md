@@ -608,6 +608,47 @@ real instead of silently dropping.
 don't escalate, unparseable-status falls back safely, the small-talk
 tone rewording) — full suite (178 tests), ruff, and mypy all clean.
 
+**Hardened same day, real regression caught live within hours of
+shipping:** the STATUS-tag approach above relies on the model reliably
+prefixing its own reply — not reliable enough on its own. Found via a
+real multi-turn Test Console conversation on the **email** channel: its
+own tone guidance ("brief greeting... short sign-off") competes with
+"your entire response must be exactly this shape: STATUS then your
+reply," and the model resolved that conflict by dropping the tag while
+still writing the exact disclaimer content verbatim ("Dear Customer,
+... we do not have that information, and a person will confirm ...
+Best regards, Customer Support") — silently reverting to the pre-fix
+dead end this fix was supposed to close, confirmed via direct DB query
+(no internal note, no escalation row for that message). Fixed with a
+content-based fallback, `_looks_like_not_found_disclaimer` — only
+consulted when the STATUS tag is missing, never overrides an explicit
+tag, matches the exact English wording the instruction asks for plus a
+couple of Turkish equivalents seen in testing. Same layered-detection
+principle `escalation/safety_gate.py` already uses, applied here
+because a single free-text formatting instruction isn't a strong enough
+guarantee for something that decides whether a customer actually gets
+escalated.
+
+**Verified live** by reproducing the real failing conversation
+end-to-end against the rebuilt backend (multi-turn, email channel,
+watches → Rolex → "which models do you have") — the knowledge-gap
+turn now correctly produces `decision: escalate_to_human`, a real
+`Escalation` row (`layer: knowledge_gap`), and an internal note, where
+before it silently fell back to `keep_chatting` with no escalation at
+all. 2 more unit tests (`test_untagged_disclaimer_content_still_escalates`,
+`test_untagged_answered_text_does_not_falsely_escalate` — the latter
+confirming the fallback doesn't false-positive on ordinary replies) —
+full suite (180 tests), ruff, mypy all clean.
+
+Also added `.claude/skills/run/SKILL.md` while chasing this down live in
+a browser — no `chromium-cli` in this environment, and getting
+Playwright actually launching (right `NODE_PATH` into an npx cache dir,
+`executablePath` pointing at the one cached Chrome binary whose
+revision doesn't need a missing `headless_shell`) cost real time the
+first time. Documented so it isn't rediscovered from scratch next
+session, per direct instruction after the first pass wasted time on
+exactly that.
+
 ### Recommended sequencing
 Superseded by §5's "Updated sequencing given 5.1–5.3" below — kept this
 pointer rather than two separately-maintained orderings that could drift
