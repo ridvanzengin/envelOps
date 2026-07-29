@@ -16,9 +16,9 @@
 **PRs #23–#29 are all merged into `main`** (Test Console, multi-tenant
 showcase seed, conversation-history threading, dev tenant switch,
 knowledge/trigger-phrase CRUD, Docker build bandwidth, clarifying
-question — §§3.3/3.4/5.1/2/5.4/5.5/3.2 respectively). **§3.5 (SSE +
-activity bar) is built on branch `feature/sse-live-updates`, PR not yet
-opened as of this write-up** — check `gh pr view <n> --json state` before
+question — §§3.3/3.4/5.1/2/5.4/5.5/3.2 respectively). **PR #30 (SSE +
+activity bar, §3.5) is open, not yet merged** (branch
+`feature/sse-live-updates`) — check `gh pr view <n> --json state` before
 assuming a given PR's status by the time this is read again, this line
 goes stale fast.
 
