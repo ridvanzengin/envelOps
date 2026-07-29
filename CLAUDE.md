@@ -92,6 +92,20 @@ Celery, pytest, ruff, mypy, ...). Activate it: `cd backend && source
 .venv/bin/activate`. Adding a *new* package still needs the wifi-install
 discipline above; the existing set doesn't need reinstalling.
 
+**`backend/Dockerfile`'s pip install uses a BuildKit cache mount, not
+`--no-cache-dir`** (found and fixed 2026-07-29, checked while on wifi
+specifically to verify before relying on it off wifi): without this,
+adding one package to `requirements.txt` invalidated the whole layer and
+pip had no local cache to fall back on, re-downloading every package
+from PyPI again, not just the new one — a real cost on a metered
+connection. Verified directly: an unrelated one-line `requirements.txt`
+touch that forces a layer-cache miss now shows `Using cached ...whl` for
+every package, zero `Downloading` lines, and finishes in ~20s instead of
+~60s. `backend/.dockerignore` also now excludes `.venv`/cache dirs from
+the build context (not a network cost, just wasted local transfer, but
+free to fix alongside). Applies to `backend`/`worker`/`beat` alike since
+all three share this one Dockerfile.
+
 - Full stack (Postgres+pgvector, Redis, API, Celery worker): `docker
   compose up` from repo root — images are already pulled/built locally, so
   this doesn't re-fetch anything on a hotspot

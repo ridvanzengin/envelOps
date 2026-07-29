@@ -1,0 +1,11 @@
+# None of this is ever used inside the image (the container builds its
+# own venv via requirements.txt) -- without this file, the entire
+# directory was sent as build context on every build, .venv included
+# (~250MB, see CLAUDE.md on this project's bandwidth constraints).
+.venv
+__pycache__
+**/__pycache__
+*.pyc
+.pytest_cache
+.mypy_cache
+.ruff_cache
