@@ -18,10 +18,9 @@ showcase seed, conversation-history threading, dev tenant switch,
 knowledge/trigger-phrase CRUD, Docker build bandwidth, clarifying
 question, SSE + activity bar — §§3.3/3.4/5.1/2/5.4/5.5/3.2/3.5
 respectively). **PR #31 (escalation cover message + internal note bubble,
-§3.1) is open, not yet merged** (branch
-`feature/escalation-cover-message-internal-note`) — check `gh pr view <n>
---json state` before assuming a given PR's status by the time this is
-read again, this line goes stale fast.
+§3.1) is now merged too** — check `gh pr view <n> --json state` before
+assuming a given PR's status by the time this is read again, this line
+goes stale fast.
 
 **The §5.1 safety-floor finding (outcome-guarantee check missing
 safety/risk-absence language) is explicitly postponed to a later
@@ -42,15 +41,18 @@ Two real pipeline bugs were found and fixed via live Test Console use
 ## 2. Immediate priorities (ranked)
 
 1. **Language-consistency bug in the disclaimer path (deferred from last
-   session, not yet fixed).** The "I don't have that information"
-   disclaimer sometimes breaks language consistency — e.g. a Turkish
-   question ("kırmızı var mı?") got an English disclaimer while other
-   Turkish questions correctly got a Turkish one. Suspected cause: the
-   model echoes `keep_chatting`'s own English instruction phrasing ("you
-   MUST say you don't have that information...") rather than translating
-   the underlying meaning. Likely direction: rephrase the instruction to
-   describe the *situation*, not give quotable English text — needs its
-   own investigation, not a one-line patch.
+   session, not fully confirmed fixed).** The "I don't have that
+   information" disclaimer sometimes broke language consistency — e.g. a
+   Turkish question ("kırmızı var mı?") got an English disclaimer while
+   other Turkish questions correctly got a Turkish one. Suspected cause:
+   the model echoed `keep_chatting`'s own English instruction phrasing
+   ("you MUST say you don't have that information...") rather than
+   translating the underlying meaning. **§3.6's fix (2026-07-29) may have
+   resolved this as a side effect** — the raw disclaimer text no longer
+   reaches the customer at all now, replaced by `_generate_cover_reply`'s
+   already-language-tested prompt — spot-checked once in Turkish with a
+   correct result, but not broadly re-verified. Re-test before assuming
+   this is closed.
 2. ~~Conversation history is a real, known gap.~~ **Done (2026-07-29)** —
    see its own write-up below, right after this list, for what shipped
    and how it was verified. Unblocks §3.2 (clarifying question).
@@ -514,6 +516,97 @@ decoding logic), auth rejection on `/events/stream` (missing/invalid
 token), and the message-publish call sites in `channels/api.py`,
 `pipeline/tasks.py` (including the follow-up job), and
 `test_console/api.py`.
+
+### 3.6 `keep_chatting`'s knowledge-gap disclaimer is now a real escalation, not a dead end — done (2026-07-29)
+Found live via Test Console (not scoped in advance, unlike §3.1-3.5): a
+`knowledge_question` that's specific enough but genuinely isn't covered
+by the knowledge base got told *"I don't have that information and a
+person will confirm"* — but nothing was actually notified. No
+`Escalation` row, no internal note, no live rail/badge update, no real
+human ever pinged. The user's own read on seeing this: *"Knowledge base
+do not have that info so escalate the human nothing complicated here"* —
+correct, and the fix is exactly that.
+
+**Root cause of why this fell through the cracks:** §3.2's clarifying-
+question work explicitly scoped this branch *out* of being a real
+escalation ("there's no code path today where an ambiguous
+knowledge_question reaches a real Escalation row") — a deliberate choice
+at the time, but it left the third branch (question specific enough, but
+truly not in the KB) with wording that promises a human follow-up
+without any mechanism behind it.
+
+**Fix:** `keep_chatting` (`app/pipeline/graph.py`) now asks the model to
+prefix its reply with one status word — `CLARIFY`, `ANSWERED`, or
+`NOT_FOUND` — matching which of the three existing branches applies
+(parsed via `_KEEP_CHATTING_STATUS_RE`, stripped before the reply ever
+reaches the customer; falls back to using the raw text untouched if the
+model doesn't follow the format, rather than erroring). On `NOT_FOUND`,
+`keep_chatting` (now `async`, takes `runtime: Runtime[PipelineContext]`
+like `decide_next_step`) creates a real `Escalation` row
+(`layer="knowledge_gap"`, a new value — this is neither the safety floor
+nor a business-rule hot-lead call), generates a natural cover reply via
+the same `_generate_cover_reply` §3.1 already built (replacing the raw
+disclaimer text entirely), and writes the internal note — the same three
+pieces every other real escalation site produces. `blocks_pipeline=False`
+deliberately, same reasoning as `log_lead_and_notify`'s existing
+`book_or_checkout` fallback: the graph already ran to completion, there's
+no `interrupt()` pause, so a customer asking something else afterward
+shouldn't be frozen over one unanswered question. Reuses
+`state.decision`/`escalation_reason`/`escalation_logged` the exact same
+way the other escalation sites do, which means `publish_pipeline_events`
+(`runner.py`) picks this up as a real "escalation" SSE event for free —
+no changes needed anywhere outside `graph.py` for the rail badge to
+update live.
+
+**Folded into the same pass, same live-testing session:** `keep_chatting`'s
+small-talk/greeting instruction was loose enough ("reply naturally and
+conversationally") that a bare "hi" sometimes got personal small talk
+back ("hi, how's your day going?") instead of a business assistant
+offering help. Reworded to explicitly rule out personal-friend-style
+chat and steer toward an offer to help instead.
+
+**Possible side-effect on the open §2 item 1 language-consistency bug,
+not confirmed as a full fix:** that bug was specifically about the raw
+disclaimer text generated inline in `keep_chatting`'s own big
+instruction block. That text no longer reaches the customer at all now
+— `_generate_cover_reply`'s already-proven, separately-tested prompt
+(§3.1) does, with its own explicit "reply MUST be in this exact same
+language" instruction. Spot-checked live with a Turkish knowledge-gap
+question ("Çalışma saatleriniz nedir?") and got a correctly Turkish
+cover reply ("Bunu hemen ekibe sorup sana birazdan döneceğim!"). Worth
+closing §2 item 1 out entirely after broader use, but not claiming that
+here from one spot-check.
+
+**Verified live** against the real backend (Test Console API, real
+Gemini calls, Meadow & Jar Honey Co): "what are the business hours?" →
+`decision` correctly shows `escalate_to_human` (was misleadingly
+`keep_chatting`), customer gets a natural cover reply instead of the old
+disclaimer, a real `Escalation` row exists (`layer=knowledge_gap`,
+`status=pending`) with an internal note bubble carrying the technical
+reason; a follow-up message on the same conversation ("do you ship to
+Canada?") answered normally, confirming `blocks_pipeline=False` actually
+doesn't freeze the conversation; the Turkish equivalent produced a
+correctly Turkish cover reply. Greeting fix verified live too: "hello" →
+"Hello! How can I help you today?"
+
+Also produced, same session, as the run that surfaced this bug in the
+first place: `backend/scripts/run_bitext_stress_test.py`, a new harness
+sampling real customer-support phrasing from the public Bitext dataset
+(26,872 rows, `backend/data/`, gitignored) across the 14 intents that
+map onto a small e-commerce seller's actual knowledge base
+(ORDER/CANCEL/SHIPPING/DELIVERY/REFUND/PAYMENT), run through the real
+pipeline against a newly-built 26-entry FAQ knowledge base for Meadow &
+Jar Honey Co (previously 1-3 placeholder sentences — nowhere near
+enough to meaningfully stress-test retrieval). First run (pre-fix): 28
+sampled messages, 24 correctly grounded, 4 hit the knowledge-gap
+disclaimer — those 4 are exactly the cases this fix now escalates for
+real instead of silently dropping.
+
+7 new/updated unit tests in `test_pipeline_graph.py`'s `TestKeepChatting`
+(the `NOT_FOUND`-creates-a-real-escalation case including
+`layer`/`blocks_pipeline`/internal-note assertions, `ANSWERED`/`CLARIFY`
+don't escalate, unparseable-status falls back safely, the small-talk
+tone rewording) — full suite (178 tests), ruff, and mypy all clean.
 
 ### Recommended sequencing
 Superseded by §5's "Updated sequencing given 5.1–5.3" below — kept this

@@ -22,6 +22,9 @@ build/
 # Docker
 *.pid
 
+# Downloaded third-party datasets (research data, not source)
+backend/data/
+
 # OS / editor
 .DS_Store
 .vscode/
