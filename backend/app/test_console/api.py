@@ -53,6 +53,8 @@ class TestMessageResponse(BaseModel):
     direction: str
     text: str
     created_at: datetime
+    audience: str
+    escalation_id: uuid.UUID | None
     diagnostics: MessageDiagnostics | None = None
 
 
@@ -74,6 +76,8 @@ def _to_response(
         direction=message.direction,
         text=message.text,
         created_at=message.created_at,
+        audience=message.audience,
+        escalation_id=message.escalation_id,
         diagnostics=diagnostics,
     )
 
@@ -214,30 +218,51 @@ async def send_test_message(
     async with get_checkpointer() as checkpointer:
         result = await run_pipeline(state, session, checkpointer)
 
+    # escalated/escalation_reason kept for the response's own top-level
+    # fields (testConsole.escalatedNotice) -- unrelated to whether
+    # draft_text gets written below, which now happens uniformly for both
+    # branches (docs/ROADMAP.md §3.1: an escalation sets draft_text to a
+    # cover reply too, no special-casing needed here anymore).
     escalated = "__interrupt__" in result
     escalation_reason = None
     if escalated:
         interrupt = result["__interrupt__"][0]
         escalation_reason = interrupt.value.get("escalation_reason")
-    else:
-        draft_text = result.get("draft_text")
-        if draft_text:
-            await message_repo.add(
-                Message(
-                    tenant_id=current_user.tenant_id,
-                    conversation_id=conversation.id,
-                    direction="outbound",
-                    text=draft_text,
-                )
+
+    # already_escalated MUST gate draft_text explicitly -- found live, not
+    # anticipated: check_pending_escalation short-circuits to END without
+    # decide_next_step/keep_chatting ever running again, but LangGraph's
+    # checkpointer merges this run's input with the *previously persisted*
+    # channel values for this thread_id rather than replacing them, so
+    # `result` still carries the FIRST run's stale draft_text/decision
+    # even though nothing was actually decided this time. Without this
+    # guard, a second message on an already-escalated conversation would
+    # silently re-send the first run's cover reply verbatim.
+    already_escalated = bool(result.get("already_escalated"))
+    draft_text = result.get("draft_text")
+    if draft_text and not already_escalated:
+        await message_repo.add(
+            Message(
+                tenant_id=current_user.tenant_id,
+                conversation_id=conversation.id,
+                direction="outbound",
+                audience="customer",
+                text=draft_text,
             )
-    # One trace row per inbound message, keyed by message_id -- surfaced
-    # back in both this response and GET /test/conversations
-    # (_list_messages_with_diagnostics) so the per-message reasoning
-    # (docs/ROADMAP.md §3.4) survives a platform switch/page reload, not
-    # just the message just sent.
-    await PipelineTraceRepository(session).record_result(
-        current_user.tenant_id, conversation.id, inbound_message.id, result
-    )
+        )
+
+    # Skipped when check_pending_escalation suppressed this run -- nothing
+    # was decided, so a trace here would blank out a previously-good
+    # diagnostics badge.
+    if not already_escalated:
+        # One trace row per inbound message, keyed by message_id --
+        # surfaced back in both this response and GET /test/conversations
+        # (_list_messages_with_diagnostics) so the per-message reasoning
+        # (docs/ROADMAP.md §3.4) survives a platform switch/page reload,
+        # not just the message just sent.
+        await PipelineTraceRepository(session).record_result(
+            current_user.tenant_id, conversation.id, inbound_message.id, result
+        )
     await session.commit()
     await publish_pipeline_events(state, result)
 

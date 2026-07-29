@@ -5,12 +5,15 @@ from langgraph.runtime import Runtime
 
 from app.pipeline.context import PipelineContext
 from app.pipeline.graph import (
+    _clean_reason_for_display,
     book_or_checkout,
+    check_pending_escalation,
     decide_next_step,
     keep_chatting,
     load_history,
     log_lead_and_notify,
     route_after_decision,
+    route_after_escalation_check,
     score_lead,
     search_knowledge,
     understand_intent,
@@ -73,6 +76,60 @@ class TestLoadHistory:
         assert len(result.conversation_history) == 10
         assert result.conversation_history[-1] == "Customer: msg 19"
         assert result.conversation_history[0] == "Customer: msg 10"
+
+
+class TestCheckPendingEscalation:
+    """docs/ROADMAP.md §3.1 -- closes a real gap: run_pipeline() called
+    again on an already-escalated conversation doesn't resume/no-op, it
+    silently starts a fresh run (empirically verified separately). This
+    node/edge is what stops that fresh run from doing anything."""
+
+    async def test_routes_to_continue_when_nothing_pending(self) -> None:
+        state = _make_state("Do you ship to Canada?")
+        with patch("app.pipeline.graph.EscalationRepository") as mock_escalation_repo_cls:
+            mock_escalation_repo_cls.return_value.get_pending_by_conversation = AsyncMock(
+                return_value=None
+            )
+            result = await check_pending_escalation(state, _make_runtime())
+        assert result.already_escalated is False
+        assert route_after_escalation_check(result) == "continue"
+
+    async def test_routes_to_skip_when_a_blocking_escalation_is_pending(self) -> None:
+        state = _make_state("Any update?")
+        fake_escalation = type("Escalation", (), {"id": uuid.uuid4()})()
+        with patch("app.pipeline.graph.EscalationRepository") as mock_escalation_repo_cls:
+            mock_escalation_repo_cls.return_value.get_pending_by_conversation = AsyncMock(
+                return_value=fake_escalation
+            )
+            result = await check_pending_escalation(state, _make_runtime())
+        assert result.already_escalated is True
+        assert route_after_escalation_check(result) == "skip"
+
+
+class TestCleanReasonForDisplay:
+    def test_strips_matched_pattern_suffix(self) -> None:
+        assert (
+            _clean_reason_for_display("contraindication language (matched '\\ballerg\\b')")
+            == "contraindication language"
+        )
+
+    def test_strips_certainty_efficacy_suffix(self) -> None:
+        assert (
+            _clean_reason_for_display(
+                "outcome-guarantee request (certainty 'guarantee' + efficacy 'cure')"
+            )
+            == "outcome-guarantee request"
+        )
+
+    def test_strips_tenant_phrase_suffix(self) -> None:
+        assert (
+            _clean_reason_for_display("tenant-defined trigger phrase (matched 'mad honey')")
+            == "tenant-defined trigger phrase"
+        )
+
+    def test_leaves_a_reason_with_no_parenthetical_unchanged(self) -> None:
+        reason = "book_or_checkout: tenant has no closing_link configured"
+        assert _clean_reason_for_display(reason) == reason
 
 
 class TestUnderstandIntent:
@@ -190,12 +247,19 @@ class TestScoreLead:
 class TestDecideNextStepSafetyFloor:
     async def test_escalates_on_system_default_trigger_without_tenant_phrases(self) -> None:
         state = _make_state("Can you guarantee this will definitely cure my condition?")
+        fake_escalation = type("Escalation", (), {"id": uuid.uuid4()})()
         with (
             patch("app.pipeline.graph.TenantTriggerPhraseRepository") as mock_phrase_repo_cls,
             patch("app.pipeline.graph.EscalationRepository") as mock_escalation_repo_cls,
+            patch("app.pipeline.graph.MessageRepository") as mock_message_repo_cls,
+            patch(
+                "app.pipeline.graph.generate_text",
+                return_value="Let me check with a colleague and get back to you!",
+            ),
         ):
             mock_phrase_repo_cls.return_value.list = AsyncMock(return_value=[])
-            mock_escalation_repo_cls.return_value.add = AsyncMock()
+            mock_escalation_repo_cls.return_value.add = AsyncMock(return_value=fake_escalation)
+            mock_message_repo_cls.return_value.add = AsyncMock()
             result = await decide_next_step(state, _make_runtime())
         assert result.decision == "escalate_to_human"
         assert result.escalation_reason is not None
@@ -205,22 +269,44 @@ class TestDecideNextStepSafetyFloor:
         logged = mock_escalation_repo_cls.return_value.add.call_args.args[0]
         assert logged.status == "pending"
         assert logged.layer == "platform_floor"
+        # docs/ROADMAP.md §3.1 -- a natural cover reply instead of silence,
+        # sent the same way any other reply is (state.draft_text).
+        assert result.draft_text == "Let me check with a colleague and get back to you!"
+        # ...plus an internal-only note explaining why, written directly
+        # here (same pattern as the Escalation row above), tied to the
+        # escalation it explains and with the raw regex pattern cleaned
+        # out of the display text.
+        mock_message_repo_cls.return_value.add.assert_called_once()
+        note = mock_message_repo_cls.return_value.add.call_args.args[0]
+        assert note.audience == "internal"
+        assert note.escalation_id == fake_escalation.id
+        assert note.direction == "outbound"
+        assert "(matched" not in note.text
+        assert "(certainty" not in note.text
+        assert "outcome-guarantee request" in note.text
 
     async def test_escalates_on_tenant_added_phrase(self) -> None:
         state = _make_state("Do you sell mad honey?")
         fake_row = type("Row", (), {"phrase": "mad honey"})()
+        fake_escalation = type("Escalation", (), {"id": uuid.uuid4()})()
         with (
             patch("app.pipeline.graph.TenantTriggerPhraseRepository") as mock_phrase_repo_cls,
             patch("app.pipeline.graph.EscalationRepository") as mock_escalation_repo_cls,
+            patch("app.pipeline.graph.MessageRepository") as mock_message_repo_cls,
+            patch("app.pipeline.graph.generate_text", return_value="x"),
         ):
             mock_phrase_repo_cls.return_value.list = AsyncMock(return_value=[fake_row])
-            mock_escalation_repo_cls.return_value.add = AsyncMock()
+            mock_escalation_repo_cls.return_value.add = AsyncMock(return_value=fake_escalation)
+            mock_message_repo_cls.return_value.add = AsyncMock()
             result = await decide_next_step(state, _make_runtime())
         assert result.decision == "escalate_to_human"
         assert result.escalation_reason is not None
         assert "mad honey" in result.escalation_reason
         assert result.escalation_logged is True
         mock_escalation_repo_cls.return_value.add.assert_called_once()
+        assert result.draft_text == "x"
+        note = mock_message_repo_cls.return_value.add.call_args.args[0]
+        assert note.escalation_id == fake_escalation.id
 
 
 class TestDecideNextStepRouting:
@@ -260,17 +346,23 @@ class TestDecideNextStepRouting:
         state = _make_state("I want to order 5 jars right now, how do I pay?")
         state.detected_intent = "purchase_intent"
         state.lead_score = "hot"
+        fake_escalation = type("Escalation", (), {"id": uuid.uuid4()})()
         with (
             patch("app.pipeline.graph.TenantTriggerPhraseRepository") as mock_phrase_repo_cls,
             patch("app.pipeline.graph.TenantRepository") as mock_tenant_repo_cls,
             patch("app.pipeline.graph.EscalationRepository") as mock_escalation_repo_cls,
+            patch("app.pipeline.graph.MessageRepository") as mock_message_repo_cls,
+            patch("app.pipeline.graph.generate_text", return_value="x"),
         ):
             mock_phrase_repo_cls.return_value.list = AsyncMock(return_value=[])
             mock_tenant_repo_cls.return_value.get = AsyncMock(return_value=None)
-            mock_escalation_repo_cls.return_value.add = AsyncMock()
+            mock_escalation_repo_cls.return_value.add = AsyncMock(return_value=fake_escalation)
+            mock_message_repo_cls.return_value.add = AsyncMock()
             result = await decide_next_step(state, _make_runtime())
         assert result.decision == "escalate_to_human"
         assert result.escalation_logged is True
+        assert result.draft_text == "x"
+        mock_message_repo_cls.return_value.add.assert_called_once()
 
     async def test_logs_escalation_when_tenant_closing_action_is_escalate_to_human(
         self,
@@ -287,14 +379,18 @@ class TestDecideNextStepRouting:
         state.detected_intent = "purchase_intent"
         state.lead_score = "hot"
         fake_tenant = type("Tenant", (), {"closing_action": "escalate_to_human"})()
+        fake_escalation = type("Escalation", (), {"id": uuid.uuid4()})()
         with (
             patch("app.pipeline.graph.TenantTriggerPhraseRepository") as mock_phrase_repo_cls,
             patch("app.pipeline.graph.TenantRepository") as mock_tenant_repo_cls,
             patch("app.pipeline.graph.EscalationRepository") as mock_escalation_repo_cls,
+            patch("app.pipeline.graph.MessageRepository") as mock_message_repo_cls,
+            patch("app.pipeline.graph.generate_text", return_value="x"),
         ):
             mock_phrase_repo_cls.return_value.list = AsyncMock(return_value=[])
             mock_tenant_repo_cls.return_value.get = AsyncMock(return_value=fake_tenant)
-            mock_escalation_repo_cls.return_value.add = AsyncMock()
+            mock_escalation_repo_cls.return_value.add = AsyncMock(return_value=fake_escalation)
+            mock_message_repo_cls.return_value.add = AsyncMock()
             result = await decide_next_step(state, _make_runtime())
 
         assert result.decision == "escalate_to_human"
@@ -304,6 +400,10 @@ class TestDecideNextStepRouting:
         assert logged.reason == result.escalation_reason
         assert logged.layer == "business_rule"
         assert logged.status == "pending"
+        assert result.draft_text == "x"
+        note = mock_message_repo_cls.return_value.add.call_args.args[0]
+        assert note.escalation_id == fake_escalation.id
+        assert note.audience == "internal"
 
 
 class TestKeepChatting:
@@ -446,16 +546,27 @@ class TestLogLeadAndNotify:
         mock_escalation_repo_cls.return_value.add.assert_not_called()
 
     async def test_logs_an_escalation_when_escalated(self) -> None:
+        # This is the book_or_checkout-fallback catch (the only path that
+        # reaches this branch -- decide_next_step's own two escalation
+        # branches already set escalation_logged=True, see the test above
+        # this one), which never actually pauses the graph -- so
+        # blocks_pipeline must be False, or check_pending_escalation
+        # (docs/ROADMAP.md §3.1) would wrongly freeze this conversation
+        # over what's just a tenant-config nag.
         state = _make_state("Can you guarantee this will definitely cure my condition?")
         state.lead_score = "warm"
         state.decision = "escalate_to_human"
-        state.escalation_reason = "contraindication language (matched 'allerg')"
+        state.escalation_reason = "book_or_checkout: tenant has no closing_link configured"
+        state.draft_text = "Someone will follow up shortly to complete this."
+        fake_escalation = type("Escalation", (), {"id": uuid.uuid4()})()
         with (
             patch("app.pipeline.graph.LeadRepository") as mock_lead_repo_cls,
             patch("app.pipeline.graph.EscalationRepository") as mock_escalation_repo_cls,
+            patch("app.pipeline.graph.MessageRepository") as mock_message_repo_cls,
         ):
             mock_lead_repo_cls.return_value.add = AsyncMock()
-            mock_escalation_repo_cls.return_value.add = AsyncMock()
+            mock_escalation_repo_cls.return_value.add = AsyncMock(return_value=fake_escalation)
+            mock_message_repo_cls.return_value.add = AsyncMock()
             await log_lead_and_notify(state, _make_runtime())
 
         mock_escalation_repo_cls.return_value.add.assert_called_once()
@@ -463,6 +574,15 @@ class TestLogLeadAndNotify:
         assert logged_escalation.reason == state.escalation_reason
         assert logged_escalation.layer == "platform_floor"
         assert logged_escalation.status == "pending"
+        assert logged_escalation.blocks_pipeline is False
+        # No new generate_text call here -- book_or_checkout already set
+        # draft_text earlier in the same run; this just adds the internal
+        # note explaining why.
+        mock_message_repo_cls.return_value.add.assert_called_once()
+        note = mock_message_repo_cls.return_value.add.call_args.args[0]
+        assert note.audience == "internal"
+        assert note.escalation_id == fake_escalation.id
+        assert "closing_link" in note.text
 
     async def test_does_not_log_escalation_again_when_already_logged(self) -> None:
         # decide_next_step's safety-floor branch logs the Escalation itself

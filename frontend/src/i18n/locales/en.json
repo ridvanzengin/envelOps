@@ -75,7 +75,11 @@
     "threadLoadError": "Couldn't load this conversation's messages. Try again.",
     "filterEscalated": "Escalated",
     "replyPlaceholder": "Type a reply…",
-    "replyDisabledHint": "Sending replies isn't available yet"
+    "replyDisabledHint": "Sending replies isn't available yet",
+    "internalNoteSender": "Internal note"
+  },
+  "time": {
+    "justNow": "just now"
   },
   "auth": {
     "loginTitle": "Log in",

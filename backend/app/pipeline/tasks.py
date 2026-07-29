@@ -71,31 +71,44 @@ async def _process_incoming_message(
         async with get_checkpointer() as checkpointer:
             result = await run_pipeline(state, session, checkpointer)
 
-        # Written for both branches below (including the escalated
-        # early-return) -- the rail's intent/lead-score badges
-        # (docs/ROADMAP.md §3.3) need this regardless of whether the
-        # pipeline replied or paused.
-        await PipelineTraceRepository(session).record_result(
-            tenant_id, conversation_id, message_id, result
-        )
+        # Skipped when check_pending_escalation suppressed this run
+        # (docs/ROADMAP.md §3.1, state.already_escalated) -- nothing was
+        # decided (no LLM calls even ran), so a trace here would write a
+        # hollow detected_intent/lead_score/decision row that blanks out a
+        # previously-good rail badge for this conversation until the
+        # pending escalation is resolved.
+        already_escalated = bool(result.get("already_escalated"))
+        if not already_escalated:
+            await PipelineTraceRepository(session).record_result(
+                tenant_id, conversation_id, message_id, result
+            )
 
-        if "__interrupt__" in result:
-            # decide_next_step already logged the Escalation before this
-            # pause happened (see its own comment on why). Nothing else to
-            # do: no auto-reply on an escalated conversation, that's the
-            # entire point of the safety floor.
-            await session.commit()
-            await publish_pipeline_events(state, result)
-            return
-
+        # No special-casing for "__interrupt__" here anymore -- an
+        # escalation now sets draft_text too (the cover reply,
+        # app/pipeline/graph.py's decide_next_step), and the internal note
+        # explaining why is already written directly by the graph itself.
+        # This block now runs uniformly whether the pipeline paused or not.
+        #
+        # already_escalated MUST gate this explicitly, not just the trace
+        # above -- found live, not anticipated: check_pending_escalation
+        # short-circuits to END without decide_next_step/keep_chatting
+        # ever running again, but LangGraph's checkpointer merges this
+        # run's input with the *previously persisted* channel values for
+        # this thread_id rather than replacing them, so `result` still
+        # carries the FIRST run's stale draft_text/decision even though
+        # nothing was actually decided this time. Without this guard, a
+        # second message on an already-escalated conversation would
+        # silently re-send the first run's cover reply verbatim as if it
+        # were a fresh one.
         draft_text = result.get("draft_text")
-        if draft_text:
+        if draft_text and not already_escalated:
             message_repo = MessageRepository(session)
             await message_repo.add(
                 Message(
                     tenant_id=tenant_id,
                     conversation_id=conversation_id,
                     direction="outbound",
+                    audience="customer",
                     text=draft_text,
                 )
             )

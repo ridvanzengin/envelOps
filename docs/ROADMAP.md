@@ -13,14 +13,15 @@
 
 ## 1. Status as of 2026-07-29
 
-**PRs #23–#29 are all merged into `main`** (Test Console, multi-tenant
+**PRs #23–#30 are all merged into `main`** (Test Console, multi-tenant
 showcase seed, conversation-history threading, dev tenant switch,
 knowledge/trigger-phrase CRUD, Docker build bandwidth, clarifying
-question — §§3.3/3.4/5.1/2/5.4/5.5/3.2 respectively). **PR #30 (SSE +
-activity bar, §3.5) is open, not yet merged** (branch
-`feature/sse-live-updates`) — check `gh pr view <n> --json state` before
-assuming a given PR's status by the time this is read again, this line
-goes stale fast.
+question, SSE + activity bar — §§3.3/3.4/5.1/2/5.4/5.5/3.2/3.5
+respectively). **PR #31 (escalation cover message + internal note bubble,
+§3.1) is open, not yet merged** (branch
+`feature/escalation-cover-message-internal-note`) — check `gh pr view <n>
+--json state` before assuming a given PR's status by the time this is
+read again, this line goes stale fast.
 
 **The §5.1 safety-floor finding (outcome-guarantee check missing
 safety/risk-absence language) is explicitly postponed to a later
@@ -102,25 +103,139 @@ isolated single messages evaluated one at a time.
 directly, plus each of the four prompts asserting the history block is
 included when present and absent otherwise).
 
-## 3. New feature requests — scoped 2026-07-28, not yet built
+## 3. New feature requests — scoped 2026-07-28
 
 The user's product vision for the next phase of work, captured here so it
-doesn't live only in chat history. None of this is built yet; recommended
-sequencing follows each item where there's a dependency worth flagging.
+doesn't live only in chat history. **All five items (§3.1–§3.5) are now
+done** — each has its own "— done (date)" write-up below; this section
+header is just the original scoping context, not a current status claim.
+Recommended sequencing followed each item where there was a dependency
+worth flagging; see §5's "Updated sequencing" for what's left overall.
 
-### 3.1 Natural escalation cover + human-only context bubble
-AI replies should feel human when escalating — instead of a robotic
-refusal, something like "I'll confirm this with someone and get back to
-you," with the escalation happening behind that message. The escalation
-reason (class) and a summary of the conversation context should be visible
-in the chat UI as a distinct message bubble (different color), visible
-only to the internal user, never sent to the customer.
+### 3.1 Natural escalation cover + human-only context bubble — done (2026-07-29)
+AI replies should feel human when escalating — instead of silence,
+something like "I'll confirm this with someone and get back to you," with
+the escalation happening behind that message. The escalation reason
+should be visible in the chat UI as a distinct message bubble, visible
+only to the internal user, never sent to the customer. Also folded in
+during the same pass, at the user's request: relative timestamps on both
+the conversation rail and individual messages, and a guarantee that the
+escalation note lands as the last message when an escalation happens.
 
-Touches: pipeline (a customer-visible reply text distinct from an
-internal-only note), message data model (needs a visibility/audience
-flag, not just direction), frontend (new bubble style). Worth its own
-design pass rather than bolting onto the existing escalation path — see
-ARCHITECTURE §5 for how escalation logging currently works.
+**Data model:** `Message` gets `audience` ("customer" | "internal",
+default "customer" — every historical row unaffected) and a nullable
+`escalation_id` FK. `Escalation` gets `blocks_pipeline` (bool, default
+`True`) — a real bug caught during design review, not obvious going in:
+a `pending` `Escalation` doesn't always mean the graph is paused.
+`log_lead_and_notify`'s `book_or_checkout`-fallback catch (missing
+`closing_link`, a tenant-config issue) creates a `pending` row without
+ever pausing the graph, and `layer` can't tell the two cases apart
+(both are `"platform_floor"`). Without `blocks_pipeline`, the new
+second-message guard below would have frozen a conversation over a
+missing checkout link, not just a real safety pause — worse than the bug
+being fixed. Only the two real `decide_next_step` interrupt branches
+leave it at the `True` default.
+
+**Pipeline:** at each of the three sites that create an `Escalation` row,
+`app/pipeline/graph.py` now also generates a natural cover reply
+(`_generate_cover_reply`, mirroring `book_or_checkout`'s own existing
+holding-reply prompt style, withholding the actual reason) and writes the
+internal note directly from the graph node — same established pattern as
+the `Escalation`/`Lead` rows themselves, not deferred to the caller.
+`_clean_reason_for_display` strips `Escalation.reason`'s own
+audit-oriented technical suffix (e.g. the raw regex pattern
+`safety_gate.py` names for debugging false positives, the same thing the
+user's screenshot showed leaking into the UI) before it becomes the
+note's text — `Escalation.reason` itself is untouched, still fully
+technical for anyone debugging the safety gate via the API/DB directly.
+
+**Two real bugs found only by running this live, not by unit tests in
+isolation:**
+1. **A second inbound message on an already-escalated conversation was
+   never blocked at all.** Empirically verified by actually running the
+   pipeline twice against the same paused thread: `run_pipeline` on an
+   already-interrupted `thread_id` doesn't resume or no-op, it silently
+   starts a fresh run from the top. New node `check_pending_escalation`
+   (right after `load_history`) queries
+   `EscalationRepository.get_pending_by_conversation` (filtered to
+   `blocks_pipeline=True`) and routes straight to `END` — no LLM calls at
+   all — when one is already pending.
+2. **Stale checkpoint state leaked through even with that guard in
+   place.** First live test: a second message got a full duplicate of
+   the *first* message's cover reply, verbatim. Traced (not guessed) via
+   a direct script against the real `AsyncPostgresSaver`: LangGraph's
+   checkpointer merges a new invocation's input with the *previously
+   persisted* channel values for that `thread_id` rather than replacing
+   them — so even though `check_pending_escalation` correctly routed to
+   `END`, `result` still carried the first run's `draft_text`/`decision`.
+   Fixed at the root, not patched per-caller: `check_pending_escalation`
+   now explicitly resets `draft_text`/`decision`/`escalation_reason`/
+   `escalation_logged` to their defaults whenever it detects a blocking
+   pending escalation, so every consumer of the result (message-sending,
+   `publish_pipeline_events`, trace recording) sees accurate values
+   without each needing its own `already_escalated` special-case. A
+   regression test reproduces this exact interaction — two real
+   sequential `run_pipeline` calls sharing one `InMemorySaver` thread —
+   since the first (mock-seeded, no real prior checkpoint) version of
+   this test could not have caught it.
+   `PipelineTraceRepository.record_result` is also skipped entirely when
+   `already_escalated` — a hollow trace would otherwise blank out a
+   previously-good rail badge for that conversation until resolved.
+
+**Message ordering, without a new sequence column:** the cover message
+keeps the DB's `server_default=func.now()` (Postgres freezes this at
+*transaction start* — the earliest possible value in the transaction).
+The internal note explicitly sets `created_at=datetime.now(UTC)` (real
+wall-clock, captured after at least one LLM call has already run) —
+guaranteeing cover-message-timestamp < internal-note-timestamp regardless
+of which is physically inserted first. Accepted tradeoff: relies on the
+DB/app server clocks agreeing, fine for Phase 1's single-host
+docker-compose deployment.
+
+**Frontend:** the internal note renders in `MessageThread` as a distinct
+third participant in the thread — styled like a labeled system/group-chat
+message ("Internal note"), not just a recolored version of the customer/
+AI bubbles either side of it, per the user's own framing of how it should
+read. Reuses the `--danger` tokens already used for the
+`escalate_to_human` diagnostics pill rather than introducing a third
+accent color. The Resolve button lives inside this bubble, not a
+separate top banner (the old `conversation-panel__escalation` block is
+gone) — since the note is always the chronologically-last message right
+after an escalation, that's already where attention lands, no scrolling
+needed. Shown only while `escalationById.get(message.escalation_id)?.status === "pending"`
+— an already-resolved note still renders (audit trail) without the
+button. `TestConsole.tsx` shares the same `MessageThread` and gets the
+note bubble too, but keeps its own existing `escalatedNotice` banner as
+the resolve mechanism (it's a debug tool, not a real support queue).
+
+Relative timestamps (`frontend/src/utils/relativeTime.ts`, new
+`frontend/src/hooks/useTick.ts` for a 60s live-refresh) on every message
+bubble and each conversation-list row, reading `Message.created_at`/
+`Conversation.last_message_at` — both already returned by the API, this
+was pure frontend rendering work. Deliberately abbreviated units (m/h/d,
+falling back to a short date past ~7 days) rather than full sentences —
+sidesteps needing i18next plural-form keys entirely, which this codebase
+had no precedent for.
+
+**Verified live**, repeatedly, against the real backend (Test Console +
+direct API calls) and the real frontend (Playwright): a safety-floor
+trigger produced a natural cover reply, then a correctly-ordered internal
+note (cleaned reason, right `escalation_id`) as the true last message; a
+second message on the same still-pending conversation produced nothing
+extra (confirmed empty diagnostics, no new message) only after the two
+bugs above were found and fixed — the first live pass caught both;
+resolving via the UI's inline button worked, and the very next message
+afterward got a normal, fully-decided reply again, confirming the guard
+correctly stops blocking once resolved.
+
+15 new/updated backend tests (`test_pipeline_graph.py`'s three escalation
+call sites plus a dedicated `TestCheckPendingEscalation`/
+`TestCleanReasonForDisplay`, `test_pipeline_runner.py`'s two new
+already-escalated tests including the stale-checkpoint regression,
+`test_pipeline_tasks.py`'s rewritten interrupted-run test plus a new
+already-escalated one) — full suite (174 tests), ruff, and mypy all
+clean. No frontend test runner exists in this repo (verified live only,
+matching every other UI feature shipped so far).
 
 ### 3.2 One clarifying question before escalating — done (2026-07-29)
 Before escalating on an ambiguous message, the model should ask exactly
@@ -439,12 +554,15 @@ entries below (§5.2, §5.3) since the user scoped them further this
 session — REQUIREMENTS still holds the original phase-level reasoning for
 both.
 
-## 5. Platform-level requests — scoped 2026-07-29, not yet built
+## 5. Platform-level requests — scoped 2026-07-29
 
 Longer-horizon than §3's items — these are about testing infrastructure,
 onboarding, and a self-improving layer on top of the pipeline, not a
 single feature. Captured here so the ambition doesn't live only in chat
-history; none of this is designed in detail yet.
+history. **Status is mixed, not uniform** — §5.1/§5.4/§5.5 are done (own
+write-ups below); §5.2/§5.3 are still not designed in detail, see the
+"Updated sequencing" note at the end of this section for what's actually
+next.
 
 ### 5.1 Multi-tenant synthetic seed script with showcase scenarios visible in the rail — done (2026-07-29)
 Turn the existing single-tenant synthetic harness
@@ -704,11 +822,11 @@ source's text, saved, and confirmed the new text round-tripped correctly.
 1. ~~§3.4 (Test Console diagnostics)~~ / ~~§3.3 (rail badges)~~ /
    ~~§5.1 (multi-tenant seed + showcase scenarios)~~ /
    ~~§2 (conversation-history threading)~~ / ~~§3.2 (clarifying
-   question)~~ / ~~§3.5 (SSE + activity bar)~~ — all done. §5.1's
-   safety-floor finding explicitly postponed, see §1/§5.1 above.
-2. **§3.1** (escalation cover message + internal note bubble).
-3. **§5.2** (template gallery) — natural next step once §5.1 is
+   question)~~ / ~~§3.5 (SSE + activity bar)~~ / ~~§3.1 (escalation cover
+   message + internal note bubble)~~ — all done. §5.1's safety-floor
+   finding explicitly postponed, see §1/§5.1 above.
+2. **§5.2** (template gallery) — natural next step once §5.1 is
    battle-tested, not before.
-4. **§5.3** (AI copilot) — longest-horizon item here; needs §5.1's
+3. **§5.3** (AI copilot) — longest-horizon item here; needs §5.1's
    scenario diversity and §3.3/§3.4's data maturing first, and its own
    dedicated design pass on the approval-point question above.

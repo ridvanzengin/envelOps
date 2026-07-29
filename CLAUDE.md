@@ -205,6 +205,27 @@ read the resume value for anything, so any non-None value works; the
 resolve endpoint passes `{"resolved_by": <user id>}`. Applies to any future
 caller of `resume_pipeline()`, not just this one.
 
+**LangGraph gotcha already hit once — calling `run_pipeline()` again on an
+already-interrupted `thread_id` does not resume, does not no-op, and does
+not give you a clean slate:** empirically verified (not assumed) by
+running the real `AsyncPostgresSaver` twice against the same paused
+thread. It silently starts a brand-new run from `load_history` — but
+LangGraph's checkpointer *merges* this new run's channel values with the
+*previously persisted* ones for that `thread_id` rather than replacing
+them. Concretely: a node that only sets a flag (e.g. "skip everything,
+nothing to decide this time") and routes straight to `END` will still
+return the *previous* run's `draft_text`/`decision` in the result dict,
+since nothing in the new run overwrote them. Found building
+`check_pending_escalation` (docs/ROADMAP.md §3.1) — a second message on
+an already-escalated conversation re-sent the *first* message's cover
+reply verbatim, because the caller trusted `result.get("draft_text")`
+without knowing it could be stale. Fixed by having the short-circuiting
+node explicitly reset every field it isn't setting itself
+(`draft_text`/`decision`/`escalation_reason`/`escalation_logged`) before
+returning — not by patching each caller. Any future node that means
+"nothing happened this run" needs to make that true of the whole state,
+not just of whatever field it's checking.
+
 **Docker networking gotcha already hit and fixed once — don't reintroduce
 it:** `.env`/`.env.example` use `localhost` for `ENVELOPS_DATABASE_URL`/
 `ENVELOPS_REDIS_URL`, which is correct for host/venv dev but wrong inside

@@ -22,6 +22,12 @@ class PipelineState(BaseModel):
     # recent load_history._HISTORY_MAX_MESSAGES. Empty for a conversation's
     # first message, same as before this field existed.
     conversation_history: list[str] = []
+    # Set by check_pending_escalation, the graph's second node
+    # (docs/ROADMAP.md §3.1) -- True routes straight to END with no LLM
+    # calls at all, since a blocking pending Escalation already exists for
+    # this conversation and nothing new should be decided until a human
+    # resolves it.
+    already_escalated: bool = False
     detected_intent: str | None = None
     retrieved_chunks: list[str] = []
     lead_score: str | None = None

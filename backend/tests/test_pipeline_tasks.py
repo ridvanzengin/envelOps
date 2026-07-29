@@ -47,10 +47,23 @@ def test_process_incoming_message_parses_uuids_and_delegates() -> None:
 
 
 class TestProcessIncomingMessageAsync:
-    async def test_interrupted_run_commits_without_sending_anything(self) -> None:
+    async def test_interrupted_run_sends_cover_reply_and_commits(self) -> None:
+        # docs/ROADMAP.md §3.1 -- an interrupted/escalated run now ALSO
+        # sets draft_text (the cover reply) and already writes its own
+        # internal note directly from inside the graph node, so this
+        # caller-side handling is no longer special-cased: it sends/logs
+        # draft_text exactly like any other reply. Only a genuinely
+        # already_escalated run (see the test below) sends nothing.
         session = AsyncMock()
+        channel = MagicMock()
+        channel.bot_token = "test-bot-token"
+        channel.type = "telegram"
+        conversation = MagicMock()
+        conversation.external_contact_id = "999"
         interrupt_result = {
-            "__interrupt__": [Interrupt(value={"escalation_reason": "safety floor"})]
+            "__interrupt__": [Interrupt(value={"escalation_reason": "safety floor"})],
+            "decision": "escalate_to_human",
+            "draft_text": "Let me check on that and get back to you!",
         }
         with (
             patch("app.pipeline.tasks.async_session", return_value=_FakeAsyncCM(session)),
@@ -62,13 +75,17 @@ class TestProcessIncomingMessageAsync:
                 AsyncMock(return_value=interrupt_result),
             ),
             patch("app.pipeline.tasks.MessageRepository") as mock_message_repo_cls,
+            patch("app.pipeline.tasks.ConversationRepository") as mock_conv_repo_cls,
             patch("app.pipeline.tasks.ChannelRepository") as mock_channel_repo_cls,
             patch("app.pipeline.tasks.PipelineTraceRepository") as mock_trace_repo_cls,
             patch("app.pipeline.tasks.send_message") as mock_send,
             patch("app.pipeline.tasks.publish_pipeline_events") as mock_publish,
         ):
-            mock_channel_repo_cls.return_value.get = AsyncMock(return_value=None)
+            mock_message_repo_cls.return_value.add = AsyncMock()
+            mock_conv_repo_cls.return_value.get = AsyncMock(return_value=conversation)
+            mock_channel_repo_cls.return_value.get = AsyncMock(return_value=channel)
             mock_trace_repo_cls.return_value.record_result = AsyncMock()
+            mock_send.return_value = None
             mock_publish.return_value = None
             message_id = uuid.uuid4()
             await _process_incoming_message(
@@ -79,8 +96,14 @@ class TestProcessIncomingMessageAsync:
                 "Can you guarantee this cures allergies?",
             )
 
-        mock_message_repo_cls.return_value.add.assert_not_called()
-        mock_send.assert_not_called()
+        mock_message_repo_cls.return_value.add.assert_called_once()
+        logged = mock_message_repo_cls.return_value.add.call_args.args[0]
+        assert logged.direction == "outbound"
+        assert logged.audience == "customer"
+        assert logged.text == "Let me check on that and get back to you!"
+        mock_send.assert_called_once_with(
+            "test-bot-token", "999", "Let me check on that and get back to you!"
+        )
         # Diagnostics are still recorded for an escalated/interrupted run --
         # the rail's badges (docs/ROADMAP.md §3.3) shouldn't go blank just
         # because the pipeline paused instead of replying.
@@ -92,6 +115,40 @@ class TestProcessIncomingMessageAsync:
         mock_publish.assert_called_once()
         assert isinstance(mock_publish.call_args.args[0], PipelineState)
         assert mock_publish.call_args.args[1] is interrupt_result
+        session.commit.assert_called_once()
+
+    async def test_already_escalated_run_skips_trace_and_sends_nothing(self) -> None:
+        # docs/ROADMAP.md §3.1 -- check_pending_escalation suppressed this
+        # run entirely (a blocking escalation is already pending on this
+        # conversation): no draft_text, no trace (which would otherwise
+        # blank out a previously-good rail badge), no send.
+        session = AsyncMock()
+        already_escalated_result = {"already_escalated": True}
+        with (
+            patch("app.pipeline.tasks.async_session", return_value=_FakeAsyncCM(session)),
+            patch(
+                "app.pipeline.tasks.get_checkpointer", return_value=_FakeAsyncCM(AsyncMock())
+            ),
+            patch(
+                "app.pipeline.tasks.run_pipeline",
+                AsyncMock(return_value=already_escalated_result),
+            ),
+            patch("app.pipeline.tasks.MessageRepository") as mock_message_repo_cls,
+            patch("app.pipeline.tasks.ChannelRepository") as mock_channel_repo_cls,
+            patch("app.pipeline.tasks.PipelineTraceRepository") as mock_trace_repo_cls,
+            patch("app.pipeline.tasks.send_message") as mock_send,
+            patch("app.pipeline.tasks.publish_pipeline_events") as mock_publish,
+        ):
+            mock_channel_repo_cls.return_value.get = AsyncMock(return_value=None)
+            mock_trace_repo_cls.return_value.record_result = AsyncMock()
+            mock_publish.return_value = None
+            await _process_incoming_message(
+                uuid.uuid4(), uuid.uuid4(), uuid.uuid4(), uuid.uuid4(), "Any update?"
+            )
+
+        mock_message_repo_cls.return_value.add.assert_not_called()
+        mock_send.assert_not_called()
+        mock_trace_repo_cls.return_value.record_result.assert_not_called()
         session.commit.assert_called_once()
 
     async def test_sends_reply_and_logs_outbound_message(self) -> None:

@@ -27,6 +27,10 @@ export interface Message {
   direction: string;
   text: string;
   created_at: string;
+  // docs/ROADMAP.md §3.1 -- "internal" rows are escalation notes, visible
+  // only to the business owner, never sent to the customer.
+  audience: string;
+  escalation_id: string | null;
   diagnostics?: MessageDiagnostics | null;
 }
 
@@ -54,6 +58,11 @@ export interface ConversationPanelContextValue {
   // here only while it has an unresolved escalation (docs/ARCHITECTURE.md
   // §5), which is also what the panel's "escalated only" filter reads from.
   escalationByConversationId: Map<string, Escalation>;
+  // Every escalation regardless of status, keyed by its own id -- what the
+  // internal-note bubble (docs/ROADMAP.md §3.1) uses to decide whether to
+  // still show a Resolve action on a given note (escalationByConversationId
+  // above only ever holds pending ones, and only one per conversation).
+  escalationById: Map<string, Escalation>;
   // ChannelRail's per-icon badge -- one count per channel_type, not a
   // single tenant-wide number, now that Test Console channels mean more
   // than one channel type can be live at once.

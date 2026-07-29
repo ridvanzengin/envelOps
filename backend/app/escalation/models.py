@@ -17,6 +17,16 @@ class Escalation(Base, TenantScopedMixin):
     reason: Mapped[str] = mapped_column(nullable=False)
     layer: Mapped[str] = mapped_column(nullable=False)  # platform_floor | business_rule
     status: Mapped[str] = mapped_column(nullable=False, default="pending")
+    # True for the two real interrupt()-based safety-gate pauses
+    # (decide_next_step's safety-floor and hot-purchase-intent-default
+    # branches); False for log_lead_and_notify's book_or_checkout-fallback
+    # catch (a tenant-config nag -- missing closing_link -- that never
+    # actually pauses the graph). `layer` can't disambiguate these two
+    # cases itself (both are "platform_floor"), so this is what
+    # check_pending_escalation (app/pipeline/graph.py, docs/ROADMAP.md
+    # §3.1) filters on to avoid treating a config issue as a full
+    # conversation freeze.
+    blocks_pipeline: Mapped[bool] = mapped_column(nullable=False, default=True)
 
 
 class TenantTriggerPhrase(Base, TenantScopedMixin):
