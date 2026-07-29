@@ -103,11 +103,14 @@ isolated single messages evaluated one at a time.
 directly, plus each of the four prompts asserting the history block is
 included when present and absent otherwise).
 
-## 3. New feature requests — scoped 2026-07-28, not yet built
+## 3. New feature requests — scoped 2026-07-28
 
 The user's product vision for the next phase of work, captured here so it
-doesn't live only in chat history. None of this is built yet; recommended
-sequencing follows each item where there's a dependency worth flagging.
+doesn't live only in chat history. **All five items (§3.1–§3.5) are now
+done** — each has its own "— done (date)" write-up below; this section
+header is just the original scoping context, not a current status claim.
+Recommended sequencing followed each item where there was a dependency
+worth flagging; see §5's "Updated sequencing" for what's left overall.
 
 ### 3.1 Natural escalation cover + human-only context bubble — done (2026-07-29)
 AI replies should feel human when escalating — instead of silence,
@@ -551,12 +554,15 @@ entries below (§5.2, §5.3) since the user scoped them further this
 session — REQUIREMENTS still holds the original phase-level reasoning for
 both.
 
-## 5. Platform-level requests — scoped 2026-07-29, not yet built
+## 5. Platform-level requests — scoped 2026-07-29
 
 Longer-horizon than §3's items — these are about testing infrastructure,
 onboarding, and a self-improving layer on top of the pipeline, not a
 single feature. Captured here so the ambition doesn't live only in chat
-history; none of this is designed in detail yet.
+history. **Status is mixed, not uniform** — §5.1/§5.4/§5.5 are done (own
+write-ups below); §5.2/§5.3 are still not designed in detail, see the
+"Updated sequencing" note at the end of this section for what's actually
+next.
 
 ### 5.1 Multi-tenant synthetic seed script with showcase scenarios visible in the rail — done (2026-07-29)
 Turn the existing single-tenant synthetic harness
