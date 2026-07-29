@@ -75,7 +75,11 @@
     "threadLoadError": "Bu konuşmanın mesajları yüklenemedi. Tekrar deneyin.",
     "filterEscalated": "Yükseltilmiş",
     "replyPlaceholder": "Bir yanıt yazın…",
-    "replyDisabledHint": "Yanıt gönderme henüz kullanılamıyor"
+    "replyDisabledHint": "Yanıt gönderme henüz kullanılamıyor",
+    "internalNoteSender": "Dahili not"
+  },
+  "time": {
+    "justNow": "az önce"
   },
   "auth": {
     "loginTitle": "Giriş yap",

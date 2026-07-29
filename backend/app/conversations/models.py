@@ -34,3 +34,15 @@ class Message(Base, TenantScopedMixin):
     )
     direction: Mapped[str] = mapped_column(nullable=False)  # inbound | outbound
     text: Mapped[str] = mapped_column(nullable=False)
+    # docs/ROADMAP.md §3.1 -- customer: sent to the customer over their
+    # channel and visible to them; internal: an escalation note, visible
+    # only to the business owner in this app, never sent anywhere.
+    # Default keeps every historical row (and every ordinary reply) as
+    # "customer" with no backfill needed.
+    audience: Mapped[str] = mapped_column(nullable=False, default="customer")
+    # Set only for audience="internal" rows -- which specific Escalation
+    # this note explains, so the frontend can show a Resolve action on it
+    # while that escalation is still pending and drop it once resolved.
+    escalation_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("escalations.id"), nullable=True
+    )

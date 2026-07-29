@@ -2,8 +2,10 @@ import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { useConversationPanel } from "../context/conversationPanel/useConversationPanel";
+import { useTick } from "../hooks/useTick";
+import { formatRelativeTime } from "../utils/relativeTime";
 import { DiagnosticsBadges } from "./DiagnosticsBadges";
-import { ChevronLeftIcon, CheckIcon, SendIcon } from "./icons";
+import { ChevronLeftIcon, SendIcon } from "./icons";
 import { MessageThread } from "./MessageThread";
 import { StatusBadge } from "./StatusBadge";
 import "./ConversationPanel.css";
@@ -20,7 +22,7 @@ function loadStoredWidth(): number {
 }
 
 export function ConversationPanel() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const {
     isOpen,
     activeChannelType,
@@ -28,6 +30,7 @@ export function ConversationPanel() {
     conversations,
     conversationsError,
     escalationByConversationId,
+    escalationById,
     escalatedOnly,
     setEscalatedOnly,
     selectedConversationId,
@@ -39,6 +42,9 @@ export function ConversationPanel() {
     resolvingEscalationId,
     resolveError,
   } = useConversationPanel();
+  // Keeps conversation-list row timestamps live, same as MessageThread's
+  // own tick for its per-message timestamps.
+  useTick(60_000);
 
   // Persists across reopens and reloads, same drag-to-resize convention as
   // the sibling reference project's own right-side panel -- the handle
@@ -81,9 +87,6 @@ export function ConversationPanel() {
 
   const selectedConversation =
     conversations?.find((conversation) => conversation.id === selectedConversationId) ?? null;
-  const selectedEscalation = selectedConversationId
-    ? (escalationByConversationId.get(selectedConversationId) ?? null)
-    : null;
 
   // Counts escalations within the currently loaded (single-channel)
   // conversation list, not escalationByConversationId.size tenant-wide --
@@ -180,6 +183,15 @@ export function ConversationPanel() {
                     <div className="conversation-panel__row-preview">
                       {conversation.last_message_text ?? t("conversationPanel.noMessages")}
                     </div>
+                    {conversation.last_message_at && (
+                      <span className="conversation-panel__row-time">
+                        {formatRelativeTime(
+                          conversation.last_message_at,
+                          i18n.language,
+                          t("time.justNow"),
+                        )}
+                      </span>
+                    )}
                   </button>
                 </li>
               ))}
@@ -189,31 +201,24 @@ export function ConversationPanel() {
       ) : (
         <>
           <div className="conversation-panel__body">
-            {selectedEscalation && (
-              <div className="conversation-panel__escalation">
-                <div className="conversation-panel__escalation-reason">
-                  {selectedEscalation.reason}
-                </div>
-                <button
-                  type="button"
-                  className="button button--primary conversation-panel__resolve"
-                  disabled={resolvingEscalationId === selectedEscalation.id}
-                  onClick={() => void resolveEscalation(selectedEscalation.id)}
-                >
-                  <CheckIcon />
-                  {resolvingEscalationId === selectedEscalation.id
-                    ? t("escalations.resolving")
-                    : t("escalations.resolve")}
-                </button>
-                {resolveError && <p className="conversation-panel__hint" role="alert">{resolveError}</p>}
-              </div>
-            )}
-
+            {/* No more top banner -- the escalation reason + Resolve action
+                now live inline in the thread itself, on the internal-note
+                bubble MessageThread renders (docs/ROADMAP.md §3.1). That
+                bubble is always the last message right after an
+                escalation, exactly where attention already lands. */}
+            {resolveError && <p className="conversation-panel__hint" role="alert">{resolveError}</p>}
             {threadError && <p className="conversation-panel__hint" role="alert">{threadError}</p>}
             {messages === null && !threadError && (
               <p className="conversation-panel__hint">{t("conversationPanel.threadLoading")}</p>
             )}
-            {messages !== null && <MessageThread messages={messages} />}
+            {messages !== null && (
+              <MessageThread
+                messages={messages}
+                escalationById={escalationById}
+                onResolveEscalation={(escalationId) => void resolveEscalation(escalationId)}
+                resolvingEscalationId={resolvingEscalationId}
+              />
+            )}
           </div>
 
           {/* Placeholder only -- no backend capability yet for a human to

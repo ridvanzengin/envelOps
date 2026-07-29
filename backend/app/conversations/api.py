@@ -34,6 +34,10 @@ class MessageResponse(BaseModel):
     direction: str
     text: str
     created_at: datetime
+    # docs/ROADMAP.md §3.1 -- "internal" rows are escalation notes, visible
+    # only to the business owner, never sent to the customer.
+    audience: str
+    escalation_id: uuid.UUID | None
 
     model_config = {"from_attributes": True}
 

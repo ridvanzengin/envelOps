@@ -74,6 +74,19 @@ export function ConversationPanelProvider({ children }: { children: ReactNode })
     return map;
   }, [escalations]);
 
+  // Every escalation regardless of status, keyed by id -- MessageThread's
+  // internal-note bubbles (docs/ROADMAP.md §3.1) need this to tell a still-
+  // pending note (show Resolve) from an already-resolved one (audit trail
+  // only), which escalationByConversationId above can't answer (it only
+  // ever holds pending rows).
+  const escalationById = useMemo(() => {
+    const map = new Map<string, Escalation>();
+    for (const escalation of escalations) {
+      map.set(escalation.id, escalation);
+    }
+    return map;
+  }, [escalations]);
+
   const pendingEscalationCountByChannelType = useMemo(() => {
     const counts: Record<string, number> = {};
     for (const escalation of escalations) {
@@ -310,6 +323,7 @@ export function ConversationPanelProvider({ children }: { children: ReactNode })
       conversations,
       conversationsError,
       escalationByConversationId,
+      escalationById,
       pendingEscalationCountByChannelType,
       escalatedOnly,
       setEscalatedOnly,
@@ -330,6 +344,7 @@ export function ConversationPanelProvider({ children }: { children: ReactNode })
       conversations,
       conversationsError,
       escalationByConversationId,
+      escalationById,
       pendingEscalationCountByChannelType,
       escalatedOnly,
       selectedConversationId,

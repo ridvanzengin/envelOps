@@ -14,10 +14,14 @@ message, going through the full graph (load_history included) like any
 other reply.
 """
 
+import uuid
+from datetime import UTC, datetime
+
 from langgraph.graph import END, StateGraph
 from langgraph.runtime import Runtime
 from langgraph.types import interrupt
 
+from app.conversations.models import Message
 from app.conversations.repository import MessageRepository
 from app.core.llm import embed_text, generate_text
 from app.escalation.models import Escalation
@@ -138,6 +142,119 @@ def _history_block(state: PipelineState) -> str:
     return f"Earlier in this conversation:\n{transcript}\n\n"
 
 
+async def check_pending_escalation(
+    state: PipelineState, runtime: Runtime[PipelineContext]
+) -> PipelineState:
+    """Second node in the graph, right after load_history (docs/ROADMAP.md
+    §3.1) -- closes a real gap found while building the escalation cover-
+    message/internal-note feature: run_pipeline() called again on a
+    conversation that's already paused at escalate_to_human's interrupt()
+    doesn't resume or no-op, it silently starts a brand-new run from the
+    top (empirically verified, not assumed). Without this check, a second
+    inbound message on an already-escalated conversation could produce a
+    second, independent reply or even a second Escalation row, undermining
+    the internal note's own "this is the last message" guarantee.
+
+    Only counts *blocking* pending escalations (EscalationRepository.get_
+    pending_by_conversation already filters blocks_pipeline=True) --
+    book_or_checkout's missing-closing_link fallback creates a pending
+    Escalation without ever pausing the graph, and must not freeze a
+    conversation over what's just a tenant-config nag.
+
+    Explicitly clears draft_text/decision/escalation_reason/escalation_logged
+    below when skipping -- found live, not anticipated: LangGraph's
+    checkpointer merges this run's input with the *previously persisted*
+    channel values for this thread_id rather than replacing them, so
+    without this, `result` would still carry the FIRST run's stale
+    draft_text/decision even though nothing was actually decided this
+    time -- every caller reading those fields (message-sending,
+    publish_pipeline_events) would otherwise act on leftover state from
+    the escalation that already happened, not this message.
+    """
+    escalation_repo = EscalationRepository(runtime.context.session)
+    pending = await escalation_repo.get_pending_by_conversation(
+        state.tenant_id, state.conversation_id
+    )
+    state.already_escalated = pending is not None
+    if state.already_escalated:
+        state.draft_text = None
+        state.decision = None
+        state.escalation_reason = None
+        state.escalation_logged = False
+    return state
+
+
+def route_after_escalation_check(state: PipelineState) -> str:
+    return "skip" if state.already_escalated else "continue"
+
+
+def _clean_reason_for_display(reason: str) -> str:
+    """Escalation.reason (safety_gate.py) deliberately names the exact
+    regex pattern that fired, for audit/tuning purposes -- e.g.
+    "contraindication language (matched '\\ballerg(?:y|ic)\\b')". Fine for
+    an engineer debugging the safety gate, not for the internal-note
+    bubble a business owner reads -- this only affects that display text,
+    Escalation.reason itself is untouched. Works generically across every
+    current reason format (the plain parenthetical suffix is always where
+    the technical detail starts, whether it's "(matched ...)" or
+    "(certainty ... + efficacy ...)")."""
+    return reason.split(" (", 1)[0].strip()
+
+
+def _generate_cover_reply(state: PipelineState) -> str:
+    """The customer-facing reply sent alongside an escalation (docs/ROADMAP.md
+    §3.1) -- mirrors book_or_checkout's own existing missing-closing_link
+    fallback prompt style exactly (brief, natural, not apologetic/
+    corporate-sounding, holding-reply tone), since that's already a proven
+    "we can't actually answer this right now" cover message in this
+    codebase. Deliberately withholds the actual reason -- the customer
+    gets a natural holding reply, not a safety-floor explanation."""
+    tone_guidance = _CHANNEL_TONE_GUIDANCE.get(state.channel_type, _DEFAULT_CHANNEL_TONE)
+    return generate_text(
+        "You are a helpful customer support assistant for a small "
+        f"business, replying directly to a customer's message. "
+        f"{tone_guidance} This specific question needs a colleague to "
+        "weigh in before you can answer it properly -- let them know "
+        "briefly and naturally (not robotic, not apologetic-sounding) "
+        "that you'll confirm and get back to them shortly. Do not guess "
+        "an answer, and do not mention any specific policy, safety, or "
+        "eligibility reason.\n\n"
+        f"{_history_block(state)}"
+        "Customer's latest message (your reply MUST be in this exact "
+        f"same language -- do not translate): {state.incoming_text}"
+    )
+
+
+async def _write_internal_note(
+    runtime: Runtime[PipelineContext],
+    state: PipelineState,
+    escalation_id: uuid.UUID,
+    reason: str,
+) -> None:
+    """Written directly from the graph node under the caller's still-open
+    session, same established pattern as Escalation/Lead rows already
+    (not deferred to the caller like SSE publishing had to be -- this is
+    just another row in the same transaction, no cross-system visibility
+    race to worry about). created_at is set explicitly to real wall-clock
+    time rather than left on the column's server_default=func.now() --
+    Postgres freezes now() at transaction start, so the cover message
+    (which keeps the default, frozen at the earliest possible moment)
+    always sorts before this note regardless of insertion order. Accepted
+    tradeoff: relies on the DB/app server clocks agreeing, fine for
+    Phase 1's single-host docker-compose deployment."""
+    await MessageRepository(runtime.context.session).add(
+        Message(
+            tenant_id=state.tenant_id,
+            conversation_id=state.conversation_id,
+            direction="outbound",
+            audience="internal",
+            escalation_id=escalation_id,
+            text=_clean_reason_for_display(reason),
+            created_at=datetime.now(UTC),
+        )
+    )
+
+
 def understand_intent(state: PipelineState) -> PipelineState:
     # Explicit per-label definitions, not just the label names -- found via
     # REQUIREMENTS §12 stage 1 synthetic testing:
@@ -226,7 +343,7 @@ async def decide_next_step(
         # logging it can't wait for a step that only runs once someone's
         # already acted on it.
         escalation_repo = EscalationRepository(runtime.context.session)
-        await escalation_repo.add(
+        created = await escalation_repo.add(
             Escalation(
                 tenant_id=state.tenant_id,
                 conversation_id=state.conversation_id,
@@ -239,6 +356,12 @@ async def decide_next_step(
         # resuming past the pause (POST /escalations/{id}/resolve) doesn't
         # log it a second time.
         state.escalation_logged = True
+        # docs/ROADMAP.md §3.1 -- a natural cover reply instead of silence,
+        # plus an internal-only note explaining why, written directly here
+        # (same pattern as the Escalation row above), both before the
+        # pause below actually happens (escalate_to_human's interrupt()).
+        state.draft_text = _generate_cover_reply(state)
+        await _write_internal_note(runtime, state, created.id, trigger.reason)
         return state
 
     # Past the safety floor: auto-send is the Phase 1 default (ARCHITECTURE
@@ -273,7 +396,7 @@ async def decide_next_step(
                 "hot purchase-intent lead (tenant closing_action is escalate_to_human)"
             )
             escalation_repo = EscalationRepository(runtime.context.session)
-            await escalation_repo.add(
+            created = await escalation_repo.add(
                 Escalation(
                     tenant_id=state.tenant_id,
                     conversation_id=state.conversation_id,
@@ -283,6 +406,8 @@ async def decide_next_step(
                 )
             )
             state.escalation_logged = True
+            state.draft_text = _generate_cover_reply(state)
+            await _write_internal_note(runtime, state, created.id, state.escalation_reason)
         return state
 
     state.decision = "keep_chatting"
@@ -493,16 +618,30 @@ async def log_lead_and_notify(
         and state.escalation_reason is not None
         and not state.escalation_logged
     ):
+        # blocks_pipeline=False -- this is the book_or_checkout missing-
+        # closing_link fallback, the only path that reaches this branch
+        # (both real safety-gate escalations already set escalation_logged
+        # in decide_next_step, so they never re-add here). It's a tenant-
+        # config nag, not a safety pause -- the graph already ran to
+        # completion, unlike a real escalate_to_human interrupt() --
+        # so check_pending_escalation must not treat it as blocking, or a
+        # missing closing_link would silently freeze every future message
+        # on this conversation.
         escalation_repo = EscalationRepository(runtime.context.session)
-        await escalation_repo.add(
+        created = await escalation_repo.add(
             Escalation(
                 tenant_id=state.tenant_id,
                 conversation_id=state.conversation_id,
                 reason=state.escalation_reason,
                 layer="platform_floor",  # only Layer 1 exists so far (REQUIREMENTS §6)
                 status="pending",
+                blocks_pipeline=False,
             )
         )
+        # book_or_checkout already generated this run's cover reply
+        # (state.draft_text) before reaching this node -- no new LLM call
+        # needed here, just the internal note explaining why.
+        await _write_internal_note(runtime, state, created.id, state.escalation_reason)
 
     return state
 
@@ -511,6 +650,7 @@ def build_pipeline_graph() -> StateGraph[PipelineState, PipelineContext]:
     graph = StateGraph(PipelineState, context_schema=PipelineContext)
 
     graph.add_node("load_history", load_history)
+    graph.add_node("check_pending_escalation", check_pending_escalation)
     graph.add_node("understand_intent", understand_intent)
     graph.add_node("search_knowledge", search_knowledge)
     graph.add_node("score_lead", score_lead)
@@ -521,7 +661,12 @@ def build_pipeline_graph() -> StateGraph[PipelineState, PipelineContext]:
     graph.add_node("log_lead_and_notify", log_lead_and_notify)
 
     graph.set_entry_point("load_history")
-    graph.add_edge("load_history", "understand_intent")
+    graph.add_edge("load_history", "check_pending_escalation")
+    graph.add_conditional_edges(
+        "check_pending_escalation",
+        route_after_escalation_check,
+        {"skip": END, "continue": "understand_intent"},
+    )
     graph.add_edge("understand_intent", "search_knowledge")
     graph.add_edge("search_knowledge", "score_lead")
     graph.add_edge("score_lead", "decide_next_step")

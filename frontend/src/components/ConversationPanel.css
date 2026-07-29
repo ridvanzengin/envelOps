@@ -172,21 +172,9 @@
   white-space: nowrap;
 }
 
-.conversation-panel__escalation {
-  margin-bottom: 12px;
-  padding-bottom: 12px;
-  border-bottom: 1px solid var(--border);
-}
-
-.conversation-panel__escalation-reason {
-  font-size: 13px;
-  color: var(--text-h);
-  margin-bottom: 8px;
-}
-
-.conversation-panel__resolve {
-  width: 100%;
-  justify-content: center;
+.conversation-panel__row-time {
+  font-size: 10px;
+  color: var(--text);
 }
 
 .conversation-panel__thread {
@@ -231,6 +219,60 @@
   background: var(--accent-bg);
   color: var(--accent-h);
   border: 1px solid var(--accent-border);
+}
+
+.conversation-panel__message-time {
+  font-size: 10px;
+  color: var(--text);
+  padding: 0 2px;
+}
+
+/* Internal-note bubble (docs/ROADMAP.md §3.1) -- deliberately rendered
+   like a third participant in a group chat (full-width, centered, its own
+   labeled "sender"), not just a recolored version of the inbound/outbound
+   bubbles above, so it reads as a distinct voice rather than either side
+   of the conversation. Reuses the --danger tokens already used for the
+   escalate_to_human diagnostics pill, so the color vocabulary stays
+   consistent instead of introducing a third accent color. */
+.conversation-panel__message-group--internal {
+  display: flex;
+  width: 100%;
+}
+
+.conversation-panel__internal-note {
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--danger-bg);
+  border: 1px solid var(--danger);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.conversation-panel__internal-note-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.conversation-panel__internal-note-sender {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--danger);
+}
+
+.conversation-panel__internal-note-text {
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--text-h);
+  white-space: pre-wrap;
+}
+
+.conversation-panel__internal-note-resolve {
+  align-self: flex-start;
 }
 
 /* Pipeline reasoning badges (docs/ROADMAP.md §3.3/§3.4) -- used both above

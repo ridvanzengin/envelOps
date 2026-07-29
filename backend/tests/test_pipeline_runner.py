@@ -31,9 +31,17 @@ class TestRunPipelinePauses:
             patch("app.pipeline.graph.generate_text", return_value="other"),
             patch("app.pipeline.graph.TenantTriggerPhraseRepository") as mock_repo_cls,
             patch("app.pipeline.graph.EscalationRepository") as mock_escalation_repo_cls,
+            patch("app.pipeline.graph.MessageRepository") as mock_message_repo_cls,
         ):
             mock_repo_cls.return_value.list = AsyncMock(return_value=[])
             mock_escalation_repo_cls.return_value.add = AsyncMock()
+            mock_escalation_repo_cls.return_value.get_pending_by_conversation = AsyncMock(
+                return_value=None
+            )
+            mock_message_repo_cls.return_value.add = AsyncMock()
+            mock_message_repo_cls.return_value.list_by_conversation = AsyncMock(
+                return_value=[]
+            )
             result = await run_pipeline(state, AsyncMock(), InMemorySaver())
 
         assert "__interrupt__" in result
@@ -67,12 +75,20 @@ class TestRunPipelinePauses:
             patch("app.pipeline.graph.TenantRepository") as mock_tenant_repo_cls,
             patch("app.pipeline.graph.LeadRepository") as mock_lead_repo_cls,
             patch("app.pipeline.graph.EscalationRepository") as mock_escalation_repo_cls,
+            patch("app.pipeline.graph.MessageRepository") as mock_message_repo_cls,
         ):
             mock_knowledge_repo_cls.return_value.search_similar = AsyncMock(return_value=[])
             mock_phrase_repo_cls.return_value.list = AsyncMock(return_value=[])
             mock_tenant_repo_cls.return_value.get = AsyncMock(return_value=fake_tenant)
             mock_lead_repo_cls.return_value.add = AsyncMock()
             mock_escalation_repo_cls.return_value.add = AsyncMock()
+            mock_escalation_repo_cls.return_value.get_pending_by_conversation = AsyncMock(
+                return_value=None
+            )
+            mock_message_repo_cls.return_value.add = AsyncMock()
+            mock_message_repo_cls.return_value.list_by_conversation = AsyncMock(
+                return_value=[]
+            )
             result = await run_pipeline(state, AsyncMock(), InMemorySaver())
 
         assert "__interrupt__" not in result
@@ -93,10 +109,93 @@ class TestRunPipelinePauses:
             mock_phrase_repo_cls.return_value.list = AsyncMock(return_value=[])
             mock_lead_repo_cls.return_value.add = AsyncMock()
             mock_escalation_repo_cls.return_value.add = AsyncMock()
+            mock_escalation_repo_cls.return_value.get_pending_by_conversation = AsyncMock(
+                return_value=None
+            )
             result = await run_pipeline(state, AsyncMock(), InMemorySaver())
 
         assert "__interrupt__" not in result
         assert result["decision"] == "keep_chatting"
+
+    async def test_second_message_on_an_already_escalated_conversation_is_a_no_op(
+        self,
+    ) -> None:
+        # docs/ROADMAP.md §3.1 -- the concrete gap this whole guard exists
+        # for: empirically verified separately that calling run_pipeline
+        # again on an already-interrupted thread_id doesn't resume or
+        # no-op on its own, it silently starts a fresh run. Without
+        # check_pending_escalation, THIS message would reach
+        # understand_intent/decide_next_step and could produce a second
+        # reply or a second Escalation row. With it, nothing past
+        # check_pending_escalation ever runs -- not even one LLM call.
+        state = _make_state("Any update on my order?")
+        fake_pending = type("Escalation", (), {"id": uuid.uuid4()})()
+        with (
+            patch("app.pipeline.graph.generate_text") as mock_generate_text,
+            patch("app.pipeline.graph.EscalationRepository") as mock_escalation_repo_cls,
+        ):
+            mock_escalation_repo_cls.return_value.get_pending_by_conversation = AsyncMock(
+                return_value=fake_pending
+            )
+            result = await run_pipeline(state, AsyncMock(), InMemorySaver())
+
+        assert "__interrupt__" not in result
+        assert result["already_escalated"] is True
+        assert result.get("decision") is None
+        assert result.get("draft_text") is None
+        mock_generate_text.assert_not_called()
+
+    async def test_second_run_on_a_real_paused_thread_does_not_leak_stale_draft_text(
+        self,
+    ) -> None:
+        # Regression test for a real bug found live, not caught by the
+        # test above: that one seeds get_pending_by_conversation directly,
+        # with no real prior checkpoint on this thread_id. The actual bug
+        # only showed up with a REAL first run's checkpoint already
+        # sitting on the same thread_id -- LangGraph's checkpointer merges
+        # a second invocation's input with the *previously persisted*
+        # channel values rather than replacing them, so the first run's
+        # draft_text/decision were still present in the second run's
+        # result even though check_pending_escalation correctly routed it
+        # straight to END. check_pending_escalation must reset those
+        # fields itself when skipping, not just set already_escalated.
+        checkpointer = InMemorySaver()
+        first_state = _make_state("Can you guarantee this will definitely cure my allergy?")
+        fake_escalation = type("Escalation", (), {"id": uuid.uuid4()})()
+        with (
+            patch("app.pipeline.graph.generate_text", return_value="Cover reply text"),
+            patch("app.pipeline.graph.TenantTriggerPhraseRepository") as mock_phrase_repo_cls,
+            patch("app.pipeline.graph.EscalationRepository") as mock_escalation_repo_cls,
+            patch("app.pipeline.graph.MessageRepository") as mock_message_repo_cls,
+        ):
+            mock_phrase_repo_cls.return_value.list = AsyncMock(return_value=[])
+            mock_escalation_repo_cls.return_value.add = AsyncMock(return_value=fake_escalation)
+            mock_message_repo_cls.return_value.add = AsyncMock()
+            mock_message_repo_cls.return_value.list_by_conversation = AsyncMock(
+                return_value=[]
+            )
+
+            # First run: nothing pending yet -- this run is the one that
+            # creates the escalation and pauses.
+            mock_escalation_repo_cls.return_value.get_pending_by_conversation = AsyncMock(
+                return_value=None
+            )
+            first = await run_pipeline(first_state, AsyncMock(), checkpointer)
+            assert "__interrupt__" in first
+            assert first["draft_text"] == "Cover reply text"
+
+            # Second run, same thread_id (conversation_id) -- the
+            # escalation from the first run is now pending.
+            second_state = _make_state("Anyone there?")
+            second_state.conversation_id = first_state.conversation_id
+            mock_escalation_repo_cls.return_value.get_pending_by_conversation = AsyncMock(
+                return_value=fake_escalation
+            )
+            second = await run_pipeline(second_state, AsyncMock(), checkpointer)
+
+        assert second["already_escalated"] is True
+        assert second.get("draft_text") is None
+        assert second.get("decision") is None
 
 
 class TestResumePipeline:
@@ -109,10 +208,18 @@ class TestResumePipeline:
             patch("app.pipeline.graph.TenantTriggerPhraseRepository") as mock_phrase_repo_cls,
             patch("app.pipeline.graph.LeadRepository") as mock_lead_repo_cls,
             patch("app.pipeline.graph.EscalationRepository") as mock_escalation_repo_cls,
+            patch("app.pipeline.graph.MessageRepository") as mock_message_repo_cls,
         ):
             mock_phrase_repo_cls.return_value.list = AsyncMock(return_value=[])
             mock_lead_repo_cls.return_value.add = AsyncMock()
             mock_escalation_repo_cls.return_value.add = AsyncMock()
+            mock_escalation_repo_cls.return_value.get_pending_by_conversation = AsyncMock(
+                return_value=None
+            )
+            mock_message_repo_cls.return_value.add = AsyncMock()
+            mock_message_repo_cls.return_value.list_by_conversation = AsyncMock(
+                return_value=[]
+            )
 
             first = await run_pipeline(state, session, checkpointer)
             assert "__interrupt__" in first
@@ -139,9 +246,17 @@ class TestResumePipeline:
             patch("app.pipeline.graph.generate_text", return_value="other"),
             patch("app.pipeline.graph.TenantTriggerPhraseRepository") as mock_repo_cls,
             patch("app.pipeline.graph.EscalationRepository") as mock_escalation_repo_cls,
+            patch("app.pipeline.graph.MessageRepository") as mock_message_repo_cls,
         ):
             mock_repo_cls.return_value.list = AsyncMock(return_value=[])
             mock_escalation_repo_cls.return_value.add = AsyncMock()
+            mock_escalation_repo_cls.return_value.get_pending_by_conversation = AsyncMock(
+                return_value=None
+            )
+            mock_message_repo_cls.return_value.add = AsyncMock()
+            mock_message_repo_cls.return_value.list_by_conversation = AsyncMock(
+                return_value=[]
+            )
             result_a = await run_pipeline(state_a, AsyncMock(), checkpointer)
             result_b = await run_pipeline(state_b, AsyncMock(), checkpointer)
 

@@ -27,6 +27,8 @@ def _fake_message(**overrides: object) -> MagicMock:
     message.direction = "inbound"
     message.text = "Do you ship internationally?"
     message.created_at = datetime.now(UTC)
+    message.audience = "customer"
+    message.escalation_id = None
     for key, value in overrides.items():
         setattr(message, key, value)
     return message
