@@ -13,16 +13,14 @@
 
 ## 1. Status as of 2026-07-30
 
-**PRs #23–#35 are all merged into `main`** (Test Console through §3.7's
-typed per-tenant AI behavior configuration — see §3.1–§3.7 below for
-what each one shipped). **PR #36 (§3.8, tenant settings API + UI, PR
-#35's direct fast-follow) is open, not yet merged** — check
-`gh pr view <n> --json state` before assuming a given PR's status by
-the time this is read again, this line goes stale fast (learned the
-hard way in a prior session: pushing more commits to an already-merged
-PR's branch does NOT bring them into `main` — always verify with
-`gh pr view`, don't assume a `git push` succeeding means the changes
-are live).
+**PRs #23–#36 are all merged into `main`** (Test Console through §3.8's
+tenant settings API + UI — see §3.1–§3.8 below for what each one
+shipped). Check `gh pr view <n> --json state` before assuming a given
+PR's status by the time this is read again, this line goes stale fast
+(learned the hard way in a prior session: pushing more commits to an
+already-merged PR's branch does NOT bring them into `main` — always
+verify with `gh pr view`, don't assume a `git push` succeeding means
+the changes are live).
 
 **The §5.1 safety-floor finding (outcome-guarantee check missing
 safety/risk-absence language) is explicitly postponed to a later
