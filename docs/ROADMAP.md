@@ -11,23 +11,18 @@
 
 ---
 
-## 1. Status as of 2026-07-29
+## 1. Status as of 2026-07-30
 
-**PRs #23–#31 are all merged into `main`** (Test Console, multi-tenant
-showcase seed, conversation-history threading, dev tenant switch,
-knowledge/trigger-phrase CRUD, Docker build bandwidth, clarifying
-question, SSE + activity bar, escalation cover message + internal note
-bubble — §§3.3/3.4/5.1/2/5.4/5.5/3.2/3.5/3.1 respectively). **PR #32
-(Bitext stress-test script + the original knowledge-gap escalation fix,
-§3.6) is also merged.** **PR #33 (three more §3.6 fixes found live
-right after #32 merged — dropped STATUS tags, the out-of-domain
-clarify loop, and the "other"-intent echo bug) is open, not yet
-merged** — check `gh pr view <n> --json state` before assuming a given
-PR's status by the time this is read again, this line goes stale fast
-(learned the hard way this same session: pushing more commits to an
-already-merged PR's branch does NOT bring them into `main` — always
-verify with `gh pr view`, don't assume a `git push` succeeding means
-the changes are live).
+**PRs #23–#34 are all merged into `main`** (Test Console through §3.6's
+three follow-on live fixes and a docs-only status correction — see
+§3.1–§3.6 below for what each one shipped). **PR #35 (§3.7, typed
+per-tenant AI behavior configuration) is open, not yet merged** — check
+`gh pr view <n> --json state` before assuming a given PR's status by
+the time this is read again, this line goes stale fast (learned the
+hard way in the prior session: pushing more commits to an already-merged
+PR's branch does NOT bring them into `main` — always verify with
+`gh pr view`, don't assume a `git push` succeeding means the changes
+are live).
 
 **The §5.1 safety-floor finding (outcome-guarantee check missing
 safety/risk-absence language) is explicitly postponed to a later
