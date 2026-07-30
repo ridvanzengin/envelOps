@@ -1,10 +1,28 @@
 import uuid
 from collections import defaultdict
 
-from sqlalchemy import delete, select
+from sqlalchemy import Select, delete, select
 
 from app.core.repository import TenantScopedRepository
 from app.knowledge.models import KnowledgeChunk, KnowledgeSource
+
+
+def _build_search_stmt(
+    tenant_id: uuid.UUID,
+    query_embedding: list[float],
+    *,
+    limit: int,
+    max_distance: float | None,
+) -> Select[tuple[KnowledgeChunk]]:
+    """Split out from search_similar for testability -- lets a plain
+    offline test compile this statement and inspect its SQL without a
+    real database, since this repo has no existing precedent for a
+    real-DB repository test to follow instead."""
+    distance = KnowledgeChunk.embedding.cosine_distance(query_embedding)
+    stmt = select(KnowledgeChunk).where(KnowledgeChunk.tenant_id == tenant_id)
+    if max_distance is not None:
+        stmt = stmt.where(distance <= max_distance)
+    return stmt.order_by(distance).limit(limit)
 
 
 class KnowledgeSourceRepository(TenantScopedRepository[KnowledgeSource]):
@@ -57,16 +75,31 @@ class KnowledgeChunkRepository(TenantScopedRepository[KnowledgeChunk]):
         await self.session.execute(stmt)
 
     async def search_similar(
-        self, tenant_id: uuid.UUID, query_embedding: list[float], *, limit: int = 5
+        self,
+        tenant_id: uuid.UUID,
+        query_embedding: list[float],
+        *,
+        limit: int = 5,
+        max_distance: float | None = None,
     ) -> list[KnowledgeChunk]:
         """Tenant-scoped pgvector cosine-similarity search (ARCHITECTURE
         §6) — never crosses tenant boundaries, same as every other query
-        here (ARCHITECTURE §2)."""
-        stmt = (
-            select(KnowledgeChunk)
-            .where(KnowledgeChunk.tenant_id == tenant_id)
-            .order_by(KnowledgeChunk.embedding.cosine_distance(query_embedding))
-            .limit(limit)
+        here (ARCHITECTURE §2).
+
+        max_distance is a cosine_distance ceiling (0=identical ..
+        ~2=opposite). None (default) reproduces this method's original
+        behavior exactly -- no filtering, always the top-K nearest
+        chunks regardless of true relevance. Filtered in the query
+        itself (the WHERE uses the same distance expression the ORDER
+        BY does), not post-filtered in Python -- `limit` still means
+        "up to N *matching* chunks," not "N chunks, some discarded
+        after." Root-cause fix for a real bug (docs/ROADMAP.md §3.6):
+        with no floor, an entirely unrelated question always retrieved
+        *some* chunks, and the model treated "some knowledge exists" as
+        "just needs narrowing down" instead of "wrong topic entirely."
+        """
+        stmt = _build_search_stmt(
+            tenant_id, query_embedding, limit=limit, max_distance=max_distance
         )
         result = await self.session.scalars(stmt)
         return list(result)

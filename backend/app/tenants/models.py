@@ -1,5 +1,7 @@
 import uuid
+from typing import Any
 
+from sqlalchemy import JSON
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -34,3 +36,15 @@ class Tenant(Base, TimestampMixin):
     # this, not a replacement of it -- some tenants will never connect a
     # platform and still need this to work.
     closing_link: Mapped[str | None] = mapped_column(nullable=True)
+
+    # Raw storage for app.tenants.behavior_config.TenantBehaviorConfig --
+    # a dumb dict at the DB layer (same pattern as PipelineTrace.state,
+    # app/pipeline/models.py, this repo's only other loosely-typed JSON
+    # column), validated only at the app boundary via
+    # load_tenant_behavior_config(). Plain JSON, not postgresql.JSONB --
+    # always read whole by tenant_id PK lookup, never filtered on its
+    # internal contents, so JSONB's indexing/containment-query
+    # advantages buy nothing here.
+    behavior_config: Mapped[dict[str, Any]] = mapped_column(
+        JSON, nullable=False, default=dict
+    )

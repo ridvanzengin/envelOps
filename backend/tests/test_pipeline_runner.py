@@ -29,10 +29,14 @@ class TestRunPipelinePauses:
         state = _make_state("Can you guarantee this will definitely cure my allergy?")
         with (
             patch("app.pipeline.graph.generate_text", return_value="other"),
+            patch("app.pipeline.graph.TenantRepository") as mock_tenant_repo_cls,
             patch("app.pipeline.graph.TenantTriggerPhraseRepository") as mock_repo_cls,
             patch("app.pipeline.graph.EscalationRepository") as mock_escalation_repo_cls,
             patch("app.pipeline.graph.MessageRepository") as mock_message_repo_cls,
         ):
+            mock_tenant_repo_cls.return_value.get = AsyncMock(
+                return_value=type("Tenant", (), {"behavior_config": {}})()
+            )
             mock_repo_cls.return_value.list = AsyncMock(return_value=[])
             mock_escalation_repo_cls.return_value.add = AsyncMock()
             mock_escalation_repo_cls.return_value.get_pending_by_conversation = AsyncMock(
@@ -62,7 +66,13 @@ class TestRunPipelinePauses:
         # interrupt()-pausing like the actual escalate_to_human node does.
         state = _make_state("I want to order 5 jars right now, how do I pay?")
         fake_tenant = type(
-            "Tenant", (), {"closing_action": "book_or_checkout", "closing_link": None}
+            "Tenant",
+            (),
+            {
+                "closing_action": "book_or_checkout",
+                "closing_link": None,
+                "behavior_config": {},
+            },
         )()
         with (
             patch(
@@ -100,11 +110,15 @@ class TestRunPipelinePauses:
         with (
             patch("app.pipeline.graph.generate_text", return_value="cold"),
             patch("app.pipeline.graph.embed_text", return_value=[0.1]),
+            patch("app.pipeline.graph.TenantRepository") as mock_tenant_repo_cls,
             patch("app.pipeline.graph.KnowledgeChunkRepository") as mock_knowledge_repo_cls,
             patch("app.pipeline.graph.TenantTriggerPhraseRepository") as mock_phrase_repo_cls,
             patch("app.pipeline.graph.LeadRepository") as mock_lead_repo_cls,
             patch("app.pipeline.graph.EscalationRepository") as mock_escalation_repo_cls,
         ):
+            mock_tenant_repo_cls.return_value.get = AsyncMock(
+                return_value=type("Tenant", (), {"behavior_config": {}})()
+            )
             mock_knowledge_repo_cls.return_value.search_similar = AsyncMock(return_value=[])
             mock_phrase_repo_cls.return_value.list = AsyncMock(return_value=[])
             mock_lead_repo_cls.return_value.add = AsyncMock()
@@ -164,10 +178,14 @@ class TestRunPipelinePauses:
         fake_escalation = type("Escalation", (), {"id": uuid.uuid4()})()
         with (
             patch("app.pipeline.graph.generate_text", return_value="Cover reply text"),
+            patch("app.pipeline.graph.TenantRepository") as mock_tenant_repo_cls,
             patch("app.pipeline.graph.TenantTriggerPhraseRepository") as mock_phrase_repo_cls,
             patch("app.pipeline.graph.EscalationRepository") as mock_escalation_repo_cls,
             patch("app.pipeline.graph.MessageRepository") as mock_message_repo_cls,
         ):
+            mock_tenant_repo_cls.return_value.get = AsyncMock(
+                return_value=type("Tenant", (), {"behavior_config": {}})()
+            )
             mock_phrase_repo_cls.return_value.list = AsyncMock(return_value=[])
             mock_escalation_repo_cls.return_value.add = AsyncMock(return_value=fake_escalation)
             mock_message_repo_cls.return_value.add = AsyncMock()
@@ -205,11 +223,15 @@ class TestResumePipeline:
         session = AsyncMock()
         with (
             patch("app.pipeline.graph.generate_text", return_value="other"),
+            patch("app.pipeline.graph.TenantRepository") as mock_tenant_repo_cls,
             patch("app.pipeline.graph.TenantTriggerPhraseRepository") as mock_phrase_repo_cls,
             patch("app.pipeline.graph.LeadRepository") as mock_lead_repo_cls,
             patch("app.pipeline.graph.EscalationRepository") as mock_escalation_repo_cls,
             patch("app.pipeline.graph.MessageRepository") as mock_message_repo_cls,
         ):
+            mock_tenant_repo_cls.return_value.get = AsyncMock(
+                return_value=type("Tenant", (), {"behavior_config": {}})()
+            )
             mock_phrase_repo_cls.return_value.list = AsyncMock(return_value=[])
             mock_lead_repo_cls.return_value.add = AsyncMock()
             mock_escalation_repo_cls.return_value.add = AsyncMock()
@@ -244,10 +266,14 @@ class TestResumePipeline:
         checkpointer = InMemorySaver()
         with (
             patch("app.pipeline.graph.generate_text", return_value="other"),
+            patch("app.pipeline.graph.TenantRepository") as mock_tenant_repo_cls,
             patch("app.pipeline.graph.TenantTriggerPhraseRepository") as mock_repo_cls,
             patch("app.pipeline.graph.EscalationRepository") as mock_escalation_repo_cls,
             patch("app.pipeline.graph.MessageRepository") as mock_message_repo_cls,
         ):
+            mock_tenant_repo_cls.return_value.get = AsyncMock(
+                return_value=type("Tenant", (), {"behavior_config": {}})()
+            )
             mock_repo_cls.return_value.list = AsyncMock(return_value=[])
             mock_escalation_repo_cls.return_value.add = AsyncMock()
             mock_escalation_repo_cls.return_value.get_pending_by_conversation = AsyncMock(
