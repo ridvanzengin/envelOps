@@ -8,7 +8,7 @@
   "pages": {
     "knowledge": "Add (URL/PDF/manual), list, and refresh knowledge sources.",
     "testConsole": "Send a test message through the real pipeline on any platform, to compare how replies differ by channel.",
-    "settings": "Safety trigger phrases (system defaults locked, add your own below). Channel connection status isn't shown here yet.",
+    "settings": "Safety trigger phrases (system defaults locked, add your own below) and AI behavior/business settings. Channel connection status isn't shown here yet.",
     "dashboard": "Leads today, escalations today, response times."
   },
   "theme": {
@@ -146,6 +146,94 @@
     "loadError": "Couldn't load trigger phrases. Try again.",
     "delete": "Delete",
     "deleteConfirm": "Delete this trigger phrase? This can't be undone.",
-    "deleteError": "Couldn't delete this phrase. Try again."
+    "deleteError": "Couldn't delete this phrase. Try again.",
+    "tenantSettings": {
+      "title": "AI behavior & business settings",
+      "loading": "Loading settings…",
+      "loadError": "Couldn't load settings. Try again.",
+      "save": "Save",
+      "saving": "Saving…",
+      "saveError": "Couldn't save settings. Try again.",
+      "tone": "Tone",
+      "toneOptions": {
+        "friendlyBusiness": "Friendly & casual",
+        "formalBusiness": "Formal & professional"
+      },
+      "closingBehavior": {
+        "title": "Closing behavior",
+        "closingAction": "When a lead is ready to close",
+        "closingActionOptions": {
+          "keepChatting": "Keep chatting",
+          "escalateToHuman": "Escalate to a human",
+          "bookOrCheckout": "Send a booking/checkout link"
+        },
+        "closingLink": "Booking / checkout link"
+      },
+      "greeting": {
+        "title": "Greeting",
+        "inviteFollowup": "Invite a follow-up question after greeting",
+        "additionalContext": "Anything the AI should know when greeting a customer"
+      },
+      "offTopic": {
+        "title": "Off-topic messages",
+        "additionalContext": "Anything the AI should know when a message is off-topic"
+      },
+      "knowledgeQuery": {
+        "title": "Knowledge questions",
+        "limitToConfident": "Only answer when confident it's a real match",
+        "notFoundMaxDistance": "Confidence threshold ({{value}}) — lower is stricter",
+        "additionalContext": "Anything the AI should know when answering questions"
+      },
+      "complaint": {
+        "title": "Complaints",
+        "empatheticAcknowledgment": "Acknowledge the complaint with empathy first",
+        "additionalContext": "Anything the AI should know when handling a complaint"
+      },
+      "leadHandling": {
+        "title": "Lead handling",
+        "closingActionOverride": "Override closing behavior for hot leads",
+        "closingActionOverrideOptions": {
+          "useClosingBehaviorAbove": "Use closing behavior above",
+          "keepChatting": "Keep chatting",
+          "escalateToHuman": "Escalate to a human",
+          "bookOrCheckout": "Send a booking/checkout link"
+        },
+        "hotLeadRequiresPurchaseIntent": "Only treat a hot lead as ready to close when they show clear purchase intent",
+        "additionalContext": "Anything the AI should know about qualifying leads"
+      },
+      "escalationCover": {
+        "title": "Escalation cover message",
+        "additionalContext": "Anything the AI should know when covering for an escalation"
+      },
+      "bookOrCheckout": {
+        "title": "Booking / checkout",
+        "ctaStyle": "Call-to-action style",
+        "ctaStyleOptions": {
+          "naturalMention": "Mention naturally",
+          "directCta": "Direct call-to-action"
+        },
+        "additionalContext": "Anything the AI should know when sending the link"
+      },
+      "channelOverrides": {
+        "title": "Platform-specific tone",
+        "overrideChannel": "Override tone for {{channel}}",
+        "formality": "Formality",
+        "formalityOptions": {
+          "casualChat": "Casual chat",
+          "formalEmail": "Formal email"
+        },
+        "includeGreeting": "Include a greeting",
+        "includeSignOff": "Include a sign-off",
+        "lengthGuidance": "Reply length",
+        "lengthGuidanceOptions": {
+          "brief": "Brief",
+          "asNeeded": "As needed"
+        }
+      },
+      "generalContext": {
+        "title": "General business context",
+        "label": "Anything the AI should always keep in mind"
+      }
+    }
   }
 }

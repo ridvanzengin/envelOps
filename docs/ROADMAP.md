@@ -13,13 +13,13 @@
 
 ## 1. Status as of 2026-07-30
 
-**PRs #23–#34 are all merged into `main`** (Test Console through §3.6's
-three follow-on live fixes and a docs-only status correction — see
-§3.1–§3.6 below for what each one shipped). **PR #35 (§3.7, typed
-per-tenant AI behavior configuration) is open, not yet merged** — check
+**PRs #23–#35 are all merged into `main`** (Test Console through §3.7's
+typed per-tenant AI behavior configuration — see §3.1–§3.7 below for
+what each one shipped). **PR #36 (§3.8, tenant settings API + UI, PR
+#35's direct fast-follow) is open, not yet merged** — check
 `gh pr view <n> --json state` before assuming a given PR's status by
 the time this is read again, this line goes stale fast (learned the
-hard way in the prior session: pushing more commits to an already-merged
+hard way in a prior session: pushing more commits to an already-merged
 PR's branch does NOT bring them into `main` — always verify with
 `gh pr view`, don't assume a `git push` succeeding means the changes
 are live).
@@ -882,6 +882,114 @@ graph's fixed node/edge structure beyond the one new `load_tenant_config`
 node. No change to `escalation/safety_gate.py`'s own pattern-matching
 logic — `EscalationCoverConfig` only touches the cover-reply prose
 generated *after* a gate has already fired, never the gate itself.
+
+### 3.8 Tenant settings API + UI — done (2026-07-30)
+Direct fast-follow to §3.7's own "explicitly out of scope" line: PR #35
+built `TenantBehaviorConfig` but left it entirely script/SQL-only, not
+even covering the two pre-existing settings fields (`Tenant.closing_action`,
+`closing_link`). Session started from a fully-designed, user-approved
+plan written at the end of the §3.7 session specifically so this could
+be picked up cold. Went through two real design passes, not one straight
+build:
+
+**Pass 1 (single form, full-object save)** — implemented directly against
+the carried-over plan: one `GET`/`PUT /tenants/settings`, a combined
+`TenantSettingsResponse` model both directions, one long single-column
+`Settings.tsx` section with every area stacked top to bottom and one
+global Save button. Verified live and working, but the user's own
+reaction on seeing it: the single-column layout wasted the page's right-
+hand space, and `.form`'s default flex `align-items: stretch` made every
+button/input balloon to the full column width once that column was wide
+— both real usability problems, not nitpicks, so a second pass followed
+immediately rather than shipping pass 1 as-is.
+
+**Pass 2 (two-column, tabbed, independent per-tab save) — the shipped
+design**, arrived at through direct back-and-forth with the user rather
+than decided solo:
+- **Layout**: `Settings.tsx` now renders two columns via a new
+  `.settings-columns` CSS grid (`3fr 2fr`, capped `max-width: 1180px`,
+  collapsing to one column under 900px) — "AI behavior & business
+  settings" (tabbed) on the left, the pre-existing "Safety trigger
+  phrases" section unchanged on the right. Splits the page along its
+  real seam (behavior config vs. the safety floor are different
+  concerns) instead of one long scroll, and both columns now actually
+  use the width instead of one narrow stack leaving the rest empty.
+- **Tabs**: a new `.tabs`/`.tabs__tab` strip, one tab per behavior area
+  plus Closing (10 total: Closing, Greeting, Off-topic, Knowledge,
+  Complaints, Leads, Escalation, Booking, Channels, General) — only the
+  active tab's fields are mounted, each area's own existing `.title` i18n
+  string reused directly as its tab label (no new i18n needed for that
+  part). First tab component this app has ever had.
+- **Per-tab independent save — the bigger change, from direct user
+  feedback mid-build ("instead of just one save button user should be
+  able save tabs independently")**: this doesn't work as a frontend-only
+  change on top of the full-object `PUT` — sending the whole local
+  `settings` object on every tab's save would silently persist whatever
+  unsaved edits happened to be sitting in *other* tabs too, which is the
+  opposite of independent. Replaced `PUT /tenants/settings` with
+  `PATCH /tenants/settings` (`app/tenants/api.py`) taking a new
+  `TenantSettingsPatch` — every field optional, but which top-level keys
+  were *actually sent* is read from Pydantic's `model_fields_set`, not
+  `is not None`, since `closing_link`/`general_context` are meaningfully
+  nullable themselves (clearing one is a real, intentional patch, not an
+  absent field). Each tab's Save button PATCHes only its own slice — one
+  area's full sub-model (`{"greeting": {...}}`), the closing pair
+  together, the whole `channel_overrides` dict together, or
+  `general_context` alone — server-side merges just that one key into
+  the stored `behavior_config` dict, leaving every other area exactly as
+  stored. Still zero hand-rolled validation: each patched field is the
+  exact same typed sub-model as before (`GreetingConfig`, etc.), so
+  `Literal`/`ge`/`le` constraints still 422 automatically.
+- **Frontend save state is keyed per tab** (`savingTab: TabKey | null`,
+  `saveErrors: Partial<Record<TabKey, string>>`), not one shared flag —
+  switching tabs mid-save or after an error on a different tab can't
+  bleed a stale spinner/message onto the wrong tab.
+- **Button-width fix scoped, not global**: `.form` has no `align-items`
+  set (default `stretch`), which is exactly right for `Login.tsx`'s own
+  full-width submit button in its narrow 360px card — changing `.form`
+  itself would have shrunk that too. Added an opt-in `.button--fit
+  { align-self: flex-start }` modifier instead, applied to the tenant-
+  settings Save button and the trigger-phrase "Add phrase" button (same
+  oversized-bar problem, just not flagged until the two-column pass made
+  the column narrower and more obviously wrong), leaving Login untouched.
+- Fields within a tab panel use a new `.tenant-settings__fields` grid
+  (`repeat(auto-fit, minmax(220px, 1fr))`) instead of one full-width
+  column per field, so short controls (dropdowns, checkboxes) sit two-up;
+  `.tenant-settings__fields--full` opts a field (additional-context text,
+  the closing link, the slider, each channel's own block) back to full
+  width.
+- Same two new UI primitives from pass 1, unchanged: an editable checkbox
+  (the one pre-existing checkbox was disabled/read-only) and an
+  `<input type="range">` slider (`knowledge_query.not_found_max_distance`),
+  styled via `accent-color: var(--accent)` alone.
+
+**Verified live**, twice — once for pass 1 (full-object save, since
+superseded), once for pass 2 against the real rebuilt backend
+(`docker compose up -d --build backend worker` to pick up the new PATCH
+route) and the real UI (Playwright, headless Chrome for Testing), both
+against the already-seeded Aurora Aesthetics Clinic tenant, restoring
+Aurora's original showcase config via per-slice PATCHes afterward each
+time so neither pass left the documented §5.1 demo tenant altered. Pass
+2's own live checks, specifically proving independence (not just that
+saving works): edited the Closing tab's dropdown *without saving it*,
+switched to Greeting, edited and saved *that* tab — a fresh `GET`
+confirmed Greeting's change persisted while Closing's unsaved edit was
+correctly discarded, not silently carried along. Reloaded and confirmed
+the UI reflected that same server truth. Then saved Closing on its own
+tab and confirmed *that* persisted too, with Greeting and the untouched
+Knowledge-query area both exactly as they were — independence proven in
+both directions, not just asserted. Also confirmed the two-column layout
+renders left-to-right as intended and all 10 tabs render. Zero page/
+console errors throughout both live passes.
+
+11 backend tests rewritten for `PATCH` semantics in
+`test_tenants_api.py` (401/404/defaults-filled GET on empty and partial
+stored dicts/patches-closing-pair-only/patches-one-behavior-area-leaving-
+others-untouched/patches-channel-overrides-as-one-dict/patches-and-clears-
+general_context-to-null/empty-patch-changes-nothing/422 on bad
+`closing_action`, out-of-bounds `not_found_max_distance`, and a bad
+channel-override literal) — full suite (237 tests), ruff, mypy all clean.
+`npm run build`/`npm run lint` clean throughout both passes.
 
 ### Recommended sequencing
 Superseded by §5's "Updated sequencing given 5.1–5.3" below — kept this
