@@ -11,6 +11,7 @@ from app.pipeline.graph import (
     decide_next_step,
     keep_chatting,
     load_history,
+    load_tenant_config,
     log_lead_and_notify,
     route_after_decision,
     route_after_escalation_check,
@@ -76,6 +77,29 @@ class TestLoadHistory:
         assert len(result.conversation_history) == 10
         assert result.conversation_history[-1] == "Customer: msg 19"
         assert result.conversation_history[0] == "Customer: msg 10"
+
+
+class TestLoadTenantConfig:
+    async def test_stashes_the_tenants_raw_behavior_config_dict(self) -> None:
+        state = _make_state("hi")
+        fake_tenant = type(
+            "Tenant", (), {"behavior_config": {"greeting": {"tone": "formal_business"}}}
+        )()
+        with patch("app.pipeline.graph.TenantRepository") as mock_tenant_repo_cls:
+            mock_tenant_repo_cls.return_value.get = AsyncMock(return_value=fake_tenant)
+            result = await load_tenant_config(state, _make_runtime())
+        assert result.tenant_behavior_config == {"greeting": {"tone": "formal_business"}}
+
+    async def test_missing_tenant_row_defaults_to_empty_dict(self) -> None:
+        # Shouldn't be possible in practice (state.tenant_id comes from an
+        # already-authenticated context), but a missing row must not crash
+        # this node -- every downstream load_tenant_behavior_config() call
+        # already treats {} as "all defaults."
+        state = _make_state("hi")
+        with patch("app.pipeline.graph.TenantRepository") as mock_tenant_repo_cls:
+            mock_tenant_repo_cls.return_value.get = AsyncMock(return_value=None)
+            result = await load_tenant_config(state, _make_runtime())
+        assert result.tenant_behavior_config == {}
 
 
 class TestCheckPendingEscalation:
@@ -200,6 +224,32 @@ class TestSearchKnowledge:
             mock_repo_cls.return_value.search_similar = AsyncMock(return_value=[])
             result = await search_knowledge(state, _make_runtime())
         assert result.retrieved_chunks == []
+
+    async def test_passes_the_tenants_not_found_max_distance_through(self) -> None:
+        # docs/ROADMAP.md §3.6 -- the root-cause fix for the out-of-domain
+        # clarify-loop bug: a tenant's configured threshold must actually
+        # reach search_similar, not just exist in the schema.
+        state = _make_state("Do you ship internationally?")
+        state.tenant_behavior_config = {"knowledge_query": {"not_found_max_distance": 0.5}}
+        with (
+            patch("app.pipeline.graph.embed_text", return_value=[0.1, 0.2, 0.3]),
+            patch("app.pipeline.graph.KnowledgeChunkRepository") as mock_repo_cls,
+        ):
+            mock_repo_cls.return_value.search_similar = AsyncMock(return_value=[])
+            await search_knowledge(state, _make_runtime())
+        call_kwargs = mock_repo_cls.return_value.search_similar.call_args.kwargs
+        assert call_kwargs["max_distance"] == 0.5
+
+    async def test_defaults_to_no_max_distance_when_tenant_has_no_config(self) -> None:
+        state = _make_state("Do you ship internationally?")
+        with (
+            patch("app.pipeline.graph.embed_text", return_value=[0.1, 0.2, 0.3]),
+            patch("app.pipeline.graph.KnowledgeChunkRepository") as mock_repo_cls,
+        ):
+            mock_repo_cls.return_value.search_similar = AsyncMock(return_value=[])
+            await search_knowledge(state, _make_runtime())
+        call_kwargs = mock_repo_cls.return_value.search_similar.call_args.kwargs
+        assert call_kwargs["max_distance"] is None
 
     async def test_uses_retrieval_query_task_type(self) -> None:
         state = _make_state("Do you ship internationally?")
@@ -404,6 +454,65 @@ class TestDecideNextStepRouting:
         note = mock_message_repo_cls.return_value.add.call_args.args[0]
         assert note.escalation_id == fake_escalation.id
         assert note.audience == "internal"
+
+    async def test_hot_lead_requires_purchase_intent_false_widens_the_gate(self) -> None:
+        # docs/ROADMAP.md §3.6 -- Vertex Growth Partners (B2B, "almost
+        # always human-closed" per REQUIREMENTS §2) wants ANY hot lead
+        # routed toward closing, even one that arrived as a
+        # knowledge_question rather than purchase_intent.
+        state = _make_state("How fast can we get a proposal, this is urgent")
+        state.detected_intent = "knowledge_question"
+        state.lead_score = "hot"
+        state.tenant_behavior_config = {
+            "lead_handling": {"hot_lead_requires_purchase_intent": False}
+        }
+        fake_tenant = type("Tenant", (), {"closing_action": "escalate_to_human"})()
+        fake_escalation = type("Escalation", (), {"id": uuid.uuid4()})()
+        with (
+            patch("app.pipeline.graph.TenantTriggerPhraseRepository") as mock_phrase_repo_cls,
+            patch("app.pipeline.graph.TenantRepository") as mock_tenant_repo_cls,
+            patch("app.pipeline.graph.EscalationRepository") as mock_escalation_repo_cls,
+            patch("app.pipeline.graph.MessageRepository") as mock_message_repo_cls,
+            patch("app.pipeline.graph.generate_text", return_value="x"),
+        ):
+            mock_phrase_repo_cls.return_value.list = AsyncMock(return_value=[])
+            mock_tenant_repo_cls.return_value.get = AsyncMock(return_value=fake_tenant)
+            mock_escalation_repo_cls.return_value.add = AsyncMock(return_value=fake_escalation)
+            mock_message_repo_cls.return_value.add = AsyncMock()
+            result = await decide_next_step(state, _make_runtime())
+        assert result.decision == "escalate_to_human"
+
+    async def test_hot_lead_requires_purchase_intent_default_keeps_the_gate_narrow(
+        self,
+    ) -> None:
+        # Same message/lead_score as above, default config -- must NOT
+        # escalate, proving the widened-gate test above is actually
+        # testing the option, not just always-escalating regardless.
+        state = _make_state("How fast can we get a proposal, this is urgent")
+        state.detected_intent = "knowledge_question"
+        state.lead_score = "hot"
+        with patch("app.pipeline.graph.TenantTriggerPhraseRepository") as mock_repo_cls:
+            mock_repo_cls.return_value.list = AsyncMock(return_value=[])
+            result = await decide_next_step(state, _make_runtime())
+        assert result.decision == "keep_chatting"
+
+    async def test_closing_action_override_takes_precedence_over_tenant_column(self) -> None:
+        state = _make_state("I want to order 5 jars right now, how do I pay?")
+        state.detected_intent = "purchase_intent"
+        state.lead_score = "hot"
+        state.tenant_behavior_config = {
+            "lead_handling": {"closing_action_override": "book_or_checkout"}
+        }
+        # Tenant.closing_action says escalate_to_human -- the override must win.
+        fake_tenant = type("Tenant", (), {"closing_action": "escalate_to_human"})()
+        with (
+            patch("app.pipeline.graph.TenantTriggerPhraseRepository") as mock_phrase_repo_cls,
+            patch("app.pipeline.graph.TenantRepository") as mock_tenant_repo_cls,
+        ):
+            mock_phrase_repo_cls.return_value.list = AsyncMock(return_value=[])
+            mock_tenant_repo_cls.return_value.get = AsyncMock(return_value=fake_tenant)
+            result = await decide_next_step(state, _make_runtime())
+        assert result.decision == "book_or_checkout"
 
 
 class TestKeepChatting:

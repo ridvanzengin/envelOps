@@ -37,7 +37,8 @@ just shared across more tenants instead of one.
 
 import asyncio
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -51,6 +52,16 @@ from app.knowledge.models import KnowledgeChunk, KnowledgeSource
 from app.pipeline.repository import PipelineTraceRepository
 from app.pipeline.runner import get_checkpointer, run_pipeline
 from app.pipeline.state import PipelineState
+from app.tenants.behavior_config import (
+    BookOrCheckoutConfig,
+    ComplaintConfig,
+    EscalationCoverConfig,
+    GreetingConfig,
+    KnowledgeQueryConfig,
+    LeadHandlingConfig,
+    OffTopicConfig,
+    TenantBehaviorConfig,
+)
 from app.tenants.models import Tenant
 
 _DELAY_BETWEEN_MESSAGES_SECONDS = 20.0
@@ -69,6 +80,13 @@ class TenantSpec:
     closing_link: str | None
     chat_channel_type: str  # the four non-Telegram, non-email rail platforms
     knowledge: list[str]
+    # Differentiated per vertical (docs/ROADMAP.md §3.6) -- proves
+    # TenantBehaviorConfig actually varies real pipeline behavior per
+    # business model, not just cosmetic tone. {} (the default) is a
+    # deliberately valid, fully-inert config -- see
+    # run_synthetic_conversations.py's tenant, which never sets this at
+    # all and behaves identically to before this feature existed.
+    behavior_config: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -97,6 +115,23 @@ TENANTS: list[TenantSpec] = [
             "We do not perform procedures on patients under 18 without "
             "parental consent and a documented medical reason.",
         ],
+        behavior_config=TenantBehaviorConfig(
+            greeting=GreetingConfig(tone="formal_business"),
+            off_topic=OffTopicConfig(tone="formal_business"),
+            # Tight -- no guessing near health claims (§5.1's still-open
+            # safety-floor finding is about a different gap, but the same
+            # instinct applies here: this vertical should lean toward
+            # escalating rather than answering when genuinely uncertain).
+            knowledge_query=KnowledgeQueryConfig(
+                tone="formal_business", not_found_max_distance=0.5
+            ),
+            complaint=ComplaintConfig(empathetic_acknowledgment=True),
+            escalation_cover=EscalationCoverConfig(tone="formal_business"),
+            general_context=(
+                "Facial/rhinoplasty-focused clinic operating under Turkish "
+                "health-tourism regulations."
+            ),
+        ).model_dump(),
     ),
     # Product/e-commerce (REQUIREMENTS §2 row 2) -- a distinct showcase
     # tenant, not the real honey-seller pilot (that one stays isolated in
@@ -114,6 +149,15 @@ TENANTS: list[TenantSpec] = [
             "orders of 6 or more (wedding favors, corporate gifts).",
             "Returns are accepted within 14 days if the seal is unbroken.",
         ],
+        # Low-stakes e-commerce -- default tone/threshold everywhere is
+        # the right call here, just a more direct checkout nudge.
+        behavior_config=TenantBehaviorConfig(
+            book_or_checkout=BookOrCheckoutConfig(cta_style="direct_cta"),
+            general_context=(
+                "Small-batch honey seller; jars are the product, not "
+                "skincare or supplements."
+            ),
+        ).model_dump(),
     ),
     # Local/booking (REQUIREMENTS §2 row 3).
     TenantSpec(
@@ -129,6 +173,13 @@ TENANTS: list[TenantSpec] = [
             "Bridal party bookings (4+ people) need at least 2 weeks "
             "notice and a 20% non-refundable deposit.",
         ],
+        behavior_config=TenantBehaviorConfig(
+            knowledge_query=KnowledgeQueryConfig(not_found_max_distance=0.8),
+            book_or_checkout=BookOrCheckoutConfig(cta_style="direct_cta"),
+            # A bad-haircut complaint benefits from acknowledgment before
+            # getting straight to policy/availability facts.
+            complaint=ComplaintConfig(empathetic_acknowledgment=True),
+        ).model_dump(),
     ),
     # B2B/high-ticket (REQUIREMENTS §2 row 4) -- "almost always human-closed"
     # per that row, hence escalate_to_human even for a clearly hot lead.
@@ -146,6 +197,20 @@ TENANTS: list[TenantSpec] = [
             "Recent client work includes a Series B fintech client that "
             "grew qualified pipeline 3x in two quarters.",
         ],
+        behavior_config=TenantBehaviorConfig(
+            greeting=GreetingConfig(tone="formal_business"),
+            off_topic=OffTopicConfig(tone="formal_business"),
+            knowledge_query=KnowledgeQueryConfig(
+                tone="formal_business", not_found_max_distance=0.6
+            ),
+            escalation_cover=EscalationCoverConfig(tone="formal_business"),
+            # Real deterministic routing, not just tone: any hot lead --
+            # even one that arrived as a knowledge_question, not a
+            # purchase_intent -- should route toward human-closing here,
+            # matching REQUIREMENTS §2's "almost always human-closed" row
+            # for this vertical.
+            lead_handling=LeadHandlingConfig(hot_lead_requires_purchase_intent=False),
+        ).model_dump(),
     ),
 ]
 
@@ -219,6 +284,7 @@ async def _setup_tenant(
         name=spec.name,
         closing_action=spec.closing_action,
         closing_link=spec.closing_link,
+        behavior_config=spec.behavior_config,
     )
     session.add(tenant)
     await session.flush()

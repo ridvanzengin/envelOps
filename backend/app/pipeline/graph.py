@@ -31,8 +31,18 @@ from app.escalation.safety_gate import check_safety_floor
 from app.knowledge.repository import KnowledgeChunkRepository
 from app.leads.models import Lead
 from app.leads.repository import LeadRepository
+from app.pipeline.behavior import (
+    render_book_or_checkout_instruction,
+    render_channel_tone,
+    render_complaint_addendum,
+    render_escalation_cover_modifier,
+    render_greeting_instruction,
+    render_knowledge_query_instruction,
+    render_off_topic_instruction,
+)
 from app.pipeline.context import PipelineContext
 from app.pipeline.state import PipelineState
+from app.tenants.behavior_config import load_tenant_behavior_config
 from app.tenants.repository import TenantRepository
 
 _KNOWLEDGE_SEARCH_TOP_K = 5
@@ -104,42 +114,11 @@ def _looks_like_not_found_disclaimer(text: str) -> bool:
 # is the safer default than overstating it.
 _LEAD_SCORES = frozenset({"hot", "warm", "cold"})
 
-# First-pass, generic, not tenant-configurable yet -- same "revisit once
-# real usage shows what's missing" status as _INTENT_LABELS/_LEAD_SCORES
-# above. Drives keep_chatting/book_or_checkout's reply tone; validated via
-# the Test Console (frontend TestConsole.tsx), not synthetic messages,
-# since tone is a presentational property the synthetic harness's own
-# "does this look right to a human" standard doesn't really cover on its
-# own -- send the same question through multiple channels and compare.
-_CHANNEL_TONE_GUIDANCE: dict[str, str] = {
-    "email": (
-        "This reply is an EMAIL. Use a brief greeting, complete sentences, "
-        "a slightly more formal/professional register than a chat message, "
-        "and a short sign-off. It's fine for this to run a few sentences "
-        "if the question needs it."
-    ),
-    "telegram": (
-        "This reply is a TELEGRAM message. Keep it short and casual, like "
-        "a real person texting back -- no greeting, no sign-off."
-    ),
-    "whatsapp": (
-        "This reply is a WHATSAPP message. Keep it short and casual, like "
-        "a real person texting back -- no greeting, no sign-off."
-    ),
-    "instagram": (
-        "This reply is an INSTAGRAM DM. Keep it short and casual, like a "
-        "real person texting back -- no greeting, no sign-off."
-    ),
-    "facebook": (
-        "This reply is a FACEBOOK MESSENGER DM. Keep it short and casual, "
-        "like a real person texting back -- no greeting, no sign-off."
-    ),
-}
-# Chat-style, not email-style -- matches every real channel built so far
-# (Telegram) and every disabled-rail channel besides email, so an
-# unrecognized channel_type reads the same way those already do rather
-# than silently turning formal.
-_DEFAULT_CHANNEL_TONE = _CHANNEL_TONE_GUIDANCE["telegram"]
+# Per-channel_type ("platform") reply tone moved to
+# app.pipeline.behavior.render_channel_tone -- was a hardcoded, not-
+# tenant-configurable dict here; now the system-default half of that
+# render function, with tenant overrides layered on top via
+# TenantBehaviorConfig.channel_overrides.
 
 
 async def load_history(
@@ -222,6 +201,24 @@ async def check_pending_escalation(
     return state
 
 
+async def load_tenant_config(
+    state: PipelineState, runtime: Runtime[PipelineContext]
+) -> PipelineState:
+    """Runs once per pipeline invocation, right after check_pending_escalation
+    (whose "skip" branch bypasses this node entirely -- an already-
+    escalated conversation about to route straight to END never needs
+    this fetch either, same "don't do unnecessary work" reasoning as
+    that node). Fetches Tenant once and stores its raw behavior_config
+    dict on state -- not the parsed TenantBehaviorConfig; see
+    PipelineState.tenant_behavior_config's own docstring for why. Every
+    node needing the typed view calls
+    load_tenant_behavior_config(state.tenant_behavior_config) locally --
+    cheap, pure, no I/O, safe to call more than once per run."""
+    tenant = await TenantRepository(runtime.context.session).get(state.tenant_id)
+    state.tenant_behavior_config = tenant.behavior_config if tenant is not None else {}
+    return state
+
+
 def route_after_escalation_check(state: PipelineState) -> str:
     return "skip" if state.already_escalated else "continue"
 
@@ -247,7 +244,9 @@ def _generate_cover_reply(state: PipelineState) -> str:
     "we can't actually answer this right now" cover message in this
     codebase. Deliberately withholds the actual reason -- the customer
     gets a natural holding reply, not a safety-floor explanation."""
-    tone_guidance = _CHANNEL_TONE_GUIDANCE.get(state.channel_type, _DEFAULT_CHANNEL_TONE)
+    behavior_config = load_tenant_behavior_config(state.tenant_behavior_config)
+    tone_guidance = render_channel_tone(state.channel_type, behavior_config.channel_overrides)
+    cover_modifier = render_escalation_cover_modifier(behavior_config.escalation_cover)
     return generate_text(
         "You are a helpful customer support assistant for a small "
         f"business, replying directly to a customer's message. "
@@ -257,6 +256,7 @@ def _generate_cover_reply(state: PipelineState) -> str:
         "that you'll confirm and get back to them shortly. Do not guess "
         "an answer, and do not mention any specific policy, safety, or "
         "eligibility reason.\n\n"
+        f"{cover_modifier}"
         f"{_history_block(state)}"
         "Customer's latest message (your reply MUST be in this exact "
         f"same language -- do not translate): {state.incoming_text}"
@@ -335,10 +335,14 @@ def understand_intent(state: PipelineState) -> PipelineState:
 async def search_knowledge(
     state: PipelineState, runtime: Runtime[PipelineContext]
 ) -> PipelineState:
+    behavior_config = load_tenant_behavior_config(state.tenant_behavior_config)
     query_embedding = embed_text(state.incoming_text, task_type="RETRIEVAL_QUERY")
     chunk_repo = KnowledgeChunkRepository(runtime.context.session)
     chunks = await chunk_repo.search_similar(
-        state.tenant_id, query_embedding, limit=_KNOWLEDGE_SEARCH_TOP_K
+        state.tenant_id,
+        query_embedding,
+        limit=_KNOWLEDGE_SEARCH_TOP_K,
+        max_distance=behavior_config.knowledge_query.not_found_max_distance,
     )
     state.retrieved_chunks = [chunk.content for chunk in chunks]
     return state
@@ -406,13 +410,32 @@ async def decide_next_step(
     # §5), so anything short of a hot, clearly-buying lead just keeps
     # chatting rather than escalating on a hunch — there's no general
     # "when in doubt, ask a human" rule here, only the safety floor above.
-    if state.lead_score == "hot" and state.detected_intent == "purchase_intent":
+    # hot_lead_requires_purchase_intent=False (LeadHandlingConfig) widens
+    # this gate to any hot lead regardless of intent label -- real,
+    # deterministic routing, e.g. Vertex Growth Partners (B2B, "almost
+    # always human-closed" per REQUIREMENTS §2) wants a hot lead routed
+    # toward closing even if it arrived as a knowledge_question.
+    behavior_config = load_tenant_behavior_config(state.tenant_behavior_config)
+    lead_handling = behavior_config.lead_handling
+    intent_matches_hot_lead = (
+        state.detected_intent == "purchase_intent"
+        or not lead_handling.hot_lead_requires_purchase_intent
+    )
+    if state.lead_score == "hot" and intent_matches_hot_lead:
         tenant_repo = TenantRepository(runtime.context.session)
         tenant = await tenant_repo.get(state.tenant_id)
         # A missing tenant row shouldn't be possible in practice (state.tenant_id
         # comes from an already-authenticated context), but if it somehow
         # happened, defaulting to auto-send here would be exactly backwards.
-        state.decision = tenant.closing_action if tenant is not None else "escalate_to_human"
+        # closing_action_override (LeadHandlingConfig), when set, takes
+        # precedence over Tenant.closing_action -- a dormant, opt-in seam;
+        # None (the default) reproduces today's exact tenant.closing_action
+        # read.
+        state.decision = (
+            lead_handling.closing_action_override
+            or (tenant.closing_action if tenant is not None else None)
+            or "escalate_to_human"
+        )
         if state.decision == "escalate_to_human":
             # Real bug, found via Test Console (not synthetic testing --
             # the synthetic tenant always sets closing_action=
@@ -462,7 +485,8 @@ def route_after_decision(state: PipelineState) -> str:
 async def keep_chatting(
     state: PipelineState, runtime: Runtime[PipelineContext]
 ) -> PipelineState:
-    tone_guidance = _CHANNEL_TONE_GUIDANCE.get(state.channel_type, _DEFAULT_CHANNEL_TONE)
+    behavior_config = load_tenant_behavior_config(state.tenant_behavior_config)
+    tone_guidance = render_channel_tone(state.channel_type, behavior_config.channel_overrides)
 
     # Found via real Test Console usage (not synthetic testing -- REQUIREMENTS
     # §12's fixed message list never included a bare greeting/check-in): the
@@ -472,91 +496,36 @@ async def keep_chatting(
     # was nothing in the knowledge base about greetings either. Only
     # information-seeking intents actually need the "don't guess" rule; a
     # greeting just needs a greeting back.
+    #
+    # The clarifying-question branch (docs/ROADMAP.md §3.2) inside
+    # render_knowledge_query_instruction (app/pipeline/behavior.py) is
+    # checked FIRST, before the disclaimer -- an ambiguous question
+    # ("kırmızı var mı?" with no product named) isn't "missing from the
+    # knowledge base," it's missing a detail needed to even look it up.
+    # That instruction also explicitly requires the knowledge below to
+    # already be about the same general topic -- found live (2026-07-29):
+    # search_knowledge (KnowledgeChunkRepository.search_similar) had no
+    # relevance floor, so the model saw *some* knowledge block next to an
+    # entirely unrelated question ("do you sell watches?") and kept
+    # asking which specific watch/model/brand across three turns instead
+    # of recognizing the whole category wasn't covered at all -- fixed at
+    # the root now via KnowledgeQueryConfig.not_found_max_distance
+    # (search_knowledge), this instruction wording is the second layer.
     if state.detected_intent in _INTENTS_NEEDING_GROUNDING:
         context_block = (
             "\n".join(f"- {chunk}" for chunk in state.retrieved_chunks)
             if state.retrieved_chunks
             else "(no matching knowledge found for this question)"
         )
-        # The stronger, more explicit anti-hallucination wording below
-        # (naming prices/policies/guarantees specifically, and calling out
-        # Turkish by name) exists because of a real synthetic-test finding
-        # (REQUIREMENTS §12 stage 1): a Turkish
-        # price question got told "prices are fixed" -- not present
-        # anywhere in the knowledge base in either language -- while the
-        # English equivalent correctly declined to guess. The original
-        # single soft "say so honestly" line wasn't forceful enough for
-        # the model to hold the line equally well in both languages.
-        #
-        # The clarifying-question branch (docs/ROADMAP.md §3.2) is checked
-        # FIRST, before the disclaimer -- an ambiguous question ("kırmızı
-        # var mı?" with no product named) isn't "missing from the
-        # knowledge base," it's missing a detail needed to even look it up,
-        # and the honest disclaimer was the wrong response to that case,
-        # not just an unhelpful one. Relies on conversation_history (§2) to
-        # ask at most one: if the model already asked a clarifying question
-        # last turn, it shows up in the history block below, so the
-        # customer's reply lands in branch 2/3 instead of asking again.
-        #
-        # Branch 1 explicitly requires the knowledge below to already be
-        # about the same general topic -- found live (2026-07-29):
-        # search_knowledge (KnowledgeChunkRepository.search_similar) has no
-        # relevance floor, it always returns the top-K nearest chunks by
-        # cosine distance regardless of whether any of them are actually
-        # about what's being asked. Without this qualifier the model saw
-        # *some* knowledge block (honey facts) next to an entirely
-        # unrelated question ("do you sell watches?") and kept asking
-        # which specific watch/model/brand across three turns instead of
-        # recognizing the whole category isn't something it has any
-        # information about at all -- no amount of narrowing down "which
-        # watch" would ever produce an answer that isn't there.
-        content_instruction = (
-            "Ground your reply ONLY in the knowledge listed below. Decide "
-            "which of these three situations applies, in this order:\n"
-            "1. The knowledge below IS about the same general product or "
-            "topic being asked about, but the message is missing a detail "
-            "you'd need before you could pick the right answer -- e.g. "
-            "asking about the price/availability/color of \"it\" or \"the "
-            "red one\" without saying which product, when the knowledge "
-            "below does cover that kind of product, and the earlier "
-            "conversation doesn't already say which one. In this case, ask "
-            "exactly ONE short, natural clarifying question to find out "
-            "what they mean -- do not guess, do not answer partially, and "
-            "do not say a person will confirm anything, since this is just "
-            "one follow-up question, not an escalation.\n"
-            "2. Otherwise, the knowledge below explicitly contains the "
-            "answer -- answer using only that information.\n"
-            "3. Otherwise -- either the knowledge below has nothing to do "
-            "with what's being asked at all (a different product/topic "
-            "entirely, not just an unspecified variant of one the "
-            "knowledge below does cover), or it's a specific-enough "
-            "question but the answer, including specific facts like "
-            "prices, policies, or guarantees, simply isn't in the "
-            "knowledge below -- you MUST say you don't have that "
-            "information and a person will confirm, rather than guessing "
-            "or inferring an answer that merely sounds plausible.\n"
-            "Apply this the same way in every language; do not be any less "
-            "careful in Turkish than you would be in English.\n\n"
-            "Your entire response must be exactly this shape: a first line "
-            "containing only the single word CLARIFY, ANSWERED, or "
-            "NOT_FOUND (matching whichever of the three situations above "
-            "applies), then your reply to the customer starting on the "
-            "next line -- nothing else on that first line, and don't "
-            "mention which case this is anywhere in the reply itself.\n\n"
-            f"Relevant knowledge:\n{context_block}\n\n"
+        content_instruction = render_knowledge_query_instruction(
+            behavior_config.knowledge_query, context_block
         )
+        if state.detected_intent == "complaint_or_problem":
+            content_instruction = (
+                render_complaint_addendum(behavior_config.complaint) + content_instruction
+            )
     elif state.detected_intent == "small_talk":
-        content_instruction = (
-            "This message isn't asking a specific question (it's a greeting, "
-            "small talk, or similar) -- there's nothing to ground in a "
-            "knowledge base here. Reply briefly and warmly, but as a "
-            "business assistant greeting a customer, not a personal friend "
-            "-- e.g. a greeting should get a greeting back plus an offer "
-            "to help (\"Hi! How can I help you today?\"), not personal "
-            "small talk like asking how their day is going. Do not say "
-            "you don't have information or that someone will follow up; "
-            "nothing was actually asked.\n\n"
-        )
+        content_instruction = render_greeting_instruction(behavior_config.greeting)
     else:
         # "other" is understand_intent's genuine catch-all ("doesn't fit
         # any of the above") -- found live (2026-07-29): this used to
@@ -565,22 +534,10 @@ async def keep_chatting(
         # "yes the boss" -- a real message, just not a business question,
         # complaint, or purchase interest -- that false premise produced
         # a confused reply, up to and including literally echoing the
-        # customer's own message back verbatim. This gets its own
-        # instruction: acknowledge something was actually said, don't
-        # pretend otherwise, and explicitly rule out parroting it back.
-        content_instruction = (
-            "This message doesn't fit a specific business question, "
-            "complaint, or purchase interest -- it may be off-topic, "
-            "unclear, or unrelated to what this business offers, but "
-            "something WAS actually said. Acknowledge that briefly and "
-            "naturally, without pretending nothing was asked, then "
-            "redirect to how you can help with this business specifically "
-            "(e.g. \"I'm not sure I can help with that, but happy to "
-            "answer anything about [what this business does]!\"). Never "
-            "repeat or echo the customer's own message back to them as "
-            "your reply, and never guess or invent an answer to something "
-            "you don't actually know.\n\n"
-        )
+        # customer's own message back verbatim. render_off_topic_instruction
+        # gets its own wording: acknowledge something was actually said,
+        # don't pretend otherwise, and explicitly rule out parroting it back.
+        content_instruction = render_off_topic_instruction(behavior_config.off_topic)
 
     history_block = _history_block(state)
     # Only relevant once there's actually a prior turn to not repeat --
@@ -697,7 +654,10 @@ async def book_or_checkout(
         # reply instead of leaving them hanging over what's just a config
         # issue, not a safety one -- deliberately different tradeoff than
         # the safety floor, which must never auto-send.
-        tone_guidance = _CHANNEL_TONE_GUIDANCE.get(state.channel_type, _DEFAULT_CHANNEL_TONE)
+        behavior_config = load_tenant_behavior_config(state.tenant_behavior_config)
+        tone_guidance = render_channel_tone(
+            state.channel_type, behavior_config.channel_overrides
+        )
         state.decision = "escalate_to_human"
         state.escalation_reason = "book_or_checkout: tenant has no closing_link configured"
         state.draft_text = generate_text(
@@ -713,13 +673,15 @@ async def book_or_checkout(
         )
         return state
 
-    tone_guidance = _CHANNEL_TONE_GUIDANCE.get(state.channel_type, _DEFAULT_CHANNEL_TONE)
+    behavior_config = load_tenant_behavior_config(state.tenant_behavior_config)
+    tone_guidance = render_channel_tone(state.channel_type, behavior_config.channel_overrides)
+    cta_instruction = render_book_or_checkout_instruction(
+        behavior_config.book_or_checkout, closing_link
+    )
     prompt = (
         "You are a helpful customer support assistant for a small business, "
-        f"replying directly to a customer's message. {tone_guidance} The "
-        "customer is ready to buy/book right now — reply naturally and "
-        "include this exact link so they can complete it themselves: "
-        f"{closing_link}\n\n"
+        f"replying directly to a customer's message. {tone_guidance} "
+        f"{cta_instruction}\n\n"
         f"{_history_block(state)}"
         "Customer's latest message (your reply MUST be in this exact same "
         f"language — do not translate, do not switch languages): {state.incoming_text}"
@@ -792,6 +754,7 @@ def build_pipeline_graph() -> StateGraph[PipelineState, PipelineContext]:
 
     graph.add_node("load_history", load_history)
     graph.add_node("check_pending_escalation", check_pending_escalation)
+    graph.add_node("load_tenant_config", load_tenant_config)
     graph.add_node("understand_intent", understand_intent)
     graph.add_node("search_knowledge", search_knowledge)
     graph.add_node("score_lead", score_lead)
@@ -806,8 +769,9 @@ def build_pipeline_graph() -> StateGraph[PipelineState, PipelineContext]:
     graph.add_conditional_edges(
         "check_pending_escalation",
         route_after_escalation_check,
-        {"skip": END, "continue": "understand_intent"},
+        {"skip": END, "continue": "load_tenant_config"},
     )
+    graph.add_edge("load_tenant_config", "understand_intent")
     graph.add_edge("understand_intent", "search_knowledge")
     graph.add_edge("search_knowledge", "score_lead")
     graph.add_edge("score_lead", "decide_next_step")

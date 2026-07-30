@@ -1,4 +1,5 @@
 import uuid
+from typing import Any
 
 from pydantic import BaseModel
 
@@ -22,6 +23,19 @@ class PipelineState(BaseModel):
     # recent load_history._HISTORY_MAX_MESSAGES. Empty for a conversation's
     # first message, same as before this field existed.
     conversation_history: list[str] = []
+    # Populated once by load_tenant_config (right after
+    # check_pending_escalation) -- Tenant.behavior_config's raw dict, not
+    # the parsed app.tenants.behavior_config.TenantBehaviorConfig. Stays a
+    # plain dict deliberately: this state is checkpointed by LangGraph's
+    # Postgres checkpointer across the escalate_to_human pause, and a
+    # plain dict is a proven-safe shape for that (PipelineTrace.state
+    # already is one) -- a nested Pydantic model's behavior under
+    # LangGraph's own state serializer, across a schema change made
+    # between a pause and its resume, is untested risk not worth taking.
+    # Every node that needs the typed view calls
+    # load_tenant_behavior_config(state.tenant_behavior_config) locally --
+    # cheap, pure, no I/O, safe to call more than once per run.
+    tenant_behavior_config: dict[str, Any] = {}
     # Set by check_pending_escalation, the graph's second node
     # (docs/ROADMAP.md §3.1) -- True routes straight to END with no LLM
     # calls at all, since a blocking pending Escalation already exists for

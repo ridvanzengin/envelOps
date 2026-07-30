@@ -737,6 +737,157 @@ is meaningfully short of "smooth store assistant" quality yet, not a
 one-bug problem. No single further fix closes that gap — it's a
 direction for ongoing work, not a checklist item.
 
+### 3.7 Typed, extensible per-tenant AI behavior configuration — done (2026-07-30)
+Direct response to §3.6's own closing line: four real behavior bugs in
+one session, all from hand-editing prose in `keep_chatting`, was the
+signal that ad-hoc prompt-patching had stopped scaling. Discussed at
+length with the user first (not started from a spec) — the real
+question wasn't "can we add more tenant settings," it was whether an
+*abstracted, configurable* AI behavior model is even tractable across
+genuinely different domains (health tourism vs. e-commerce vs. B2B) at
+all, informed directly by the user's own prior experience: an AI
+copilot built for a sibling project (IoTOps) with only 4
+deterministic, schema-constrained actions was *already* hard to make
+reliably behave. Landed on the actual distinction that makes this
+tractable: **bounded policy parameters, not open-ended tenant-authored
+instructions.** `closing_action`/trigger-phrases were already proof
+this works; the new schema formalizes and extends that pattern rather
+than introducing free-text "AI personality" fields, which would
+reintroduce the exact competing-instructions failure class §3.6 just
+spent three rounds fixing.
+
+**Schema** (`app/tenants/behavior_config.py`, new): `TenantBehaviorConfig`
+— `schema_version` + one sub-model per behavior area (`greeting`,
+`off_topic`, `knowledge_query`, `complaint`, `lead_handling`,
+`escalation_cover`, `book_or_checkout`) plus `channel_overrides`
+(per-`channel_type` — "platform" in this project's own UI vocabulary —
+tone, the `_CHANNEL_TONE_GUIDANCE` dict's replacement) and a top-level
+`general_context` escape hatch. Every model uses `extra="ignore"` (not
+pydantic-settings' default `"forbid"`, which CLAUDE.md already
+documents breaking the whole app once over one unmapped env var) — the
+actual elasticity mechanism: a stored config from an older or newer
+schema version deserializes without raising, silently dropping fields
+this version doesn't know. Every new value field is `Literal`, a
+deliberate break from this codebase's existing "loosely-typed str,
+validity enforced by code" convention (`Tenant.closing_action`,
+`PipelineState.channel_type`), since this schema's whole purpose is
+future dropdown/radio UI introspection. One considered exception:
+`channel_overrides` keys stay plain `str`, not `Literal` — Pydantic
+validates dict *keys* against a `Literal` regardless of `extra`, so an
+unrecognized channel_type would raise on load instead of degrading
+gracefully.
+
+**The escape hatch (`additional_context`, per-area + one top-level
+`general_context`) is DATA, never behavior** — same shape as
+`TenantTriggerPhrase` (a plain fact, appended verbatim, never composed
+into new decision logic). Worded in the rendered prompt as "a fact to
+be aware of, not an instruction," specifically so it can't quietly
+become the free-text-behavior escape valve this whole design exists to
+avoid.
+
+**Storage:** one new `Tenant.behavior_config` column (`app/tenants/models.py`),
+plain `sa.JSON` (not `postgresql.JSONB` — this column is always read
+whole by tenant_id PK lookup, never filtered on its contents; matches
+`PipelineTrace.state`, this repo's only other loosely-typed JSON
+column). Migration `f556289472b0` — hit the documented checkpoint-table
+autogenerate gotcha again (stripped the spurious `DROP TABLE` ops for
+`checkpoints`/`checkpoint_migrations`/`checkpoint_writes`/`checkpoint_blobs`
+by hand, same as every migration before this one that's hit it).
+
+**Loading:** a new graph node, `load_tenant_config` (`app/pipeline/graph.py`),
+wired between `check_pending_escalation` and `understand_intent` —
+fetches `Tenant` once per run, stores the *raw dict* on a new
+`PipelineState.tenant_behavior_config` field, not the parsed model.
+Deliberate: `PipelineState` is checkpointed by LangGraph's Postgres
+checkpointer across the `escalate_to_human` pause, and a plain dict is
+a proven-safe shape for that; a nested Pydantic model's behavior under
+LangGraph's own state serializer across a schema change made between a
+pause and its resume was untested risk not worth taking. Every node
+needing the typed view calls `load_tenant_behavior_config(...)`
+locally — cheap, pure, no I/O.
+
+**Render functions** (`app/pipeline/behavior.py`, new): one per
+behavior area, replacing the hardcoded prose that used to live directly
+in `graph.py`'s nodes. Hard acceptance bar enforced by test, not just
+description: every render function called with an all-defaults config
+returns text equal to what the pre-refactor hardcoded string produced
+— which is what let `test_pipeline_graph.py`'s entire existing suite
+pass **completely unmodified**, the concrete proof this refactor is
+behavior-preserving by default. `keep_chatting`'s own decision
+mechanism (the `_KEEP_CHATTING_STATUS_RE` parsing, the
+`_looks_like_not_found_disclaimer` fallback, NOT_FOUND→escalation
+creation — all from §3.6, two live bug fixes deep already) was
+deliberately left untouched here; this pass only changes how prompt
+*text* is built, never that already-fragile logic, specifically to
+avoid compounding risk on it.
+
+**Retrieval threshold, folded in per the user's own call:**
+`KnowledgeChunkRepository.search_similar` (`app/knowledge/repository.py`)
+gained a real `max_distance` parameter (a cosine_distance ceiling),
+`None` by default (today's exact prior behavior — always top-K
+regardless of relevance). `KnowledgeQueryConfig.not_found_max_distance`
+wires a per-tenant value through `search_knowledge`. This is the actual
+root-cause fix for §3.6's out-of-domain clarify-loop bug, now a
+tunable instead of a deferred "needs real calibration" problem — the
+config model itself *is* the calibration mechanism, no global constant
+to guess.
+
+**Deterministic routing, not just tone:** `decide_next_step`'s hot-lead
+gate (`lead_score == "hot" and detected_intent == "purchase_intent"`)
+now widens to any hot lead when
+`LeadHandlingConfig.hot_lead_requires_purchase_intent=False`, and
+`closing_action_override` takes precedence over `Tenant.closing_action`
+when set (`None` default reproduces today's exact read). Real, code-level
+behavior difference, not cosmetic — proven live (see below), not just
+asserted.
+
+**Per-vertical starter configs** (`backend/scripts/seed_showcase_tenants.py`):
+Aurora Aesthetics Clinic (health-tourism) gets `formal_business` tone
+across every area, a tight `not_found_max_distance=0.5` (no guessing
+near health claims), and empathetic complaint acknowledgment. Vertex
+Growth Partners (B2B, "almost always human-closed" per REQUIREMENTS
+§2) gets `formal_business` tone plus
+`hot_lead_requires_purchase_intent=False` — the one field demonstrating
+genuinely different *deterministic routing* per vertical, not just
+tone. Meadow & Jar Honey Co and Luna Hair Studio stay closer to
+defaults (`direct_cta` for both, empathetic complaints for Luna) —
+low-stakes verticals where the defaults are already the right call.
+`run_synthetic_conversations.py`'s tenant stays completely untouched —
+never sets this column at all, `{}` default, unaffected — a live proof
+of the non-breaking promise, not just an assertion of one.
+
+**Verified live**, not just via the 26 new unit tests: re-updated the
+already-seeded Aurora and Vertex tenants' `behavior_config` directly
+(the seed script's own re-run isn't idempotent against unique email
+constraints — pre-existing limitation, not touched here) and hit them
+through the real Test Console API. Aurora: a rhinoplasty recovery
+question got a correctly formal, complete-sentence reply ("Typical
+recovery involves one to two weeks of visible swelling...") with no
+casual contractions. Vertex: a hot-scored `knowledge_question`
+("This is time-sensitive: does your team have direct experience
+working with fintech companies specifically?" — deliberately not
+`purchase_intent`) correctly escalated (`decision: escalate_to_human`)
+where the default gate would have kept chatting — the widened
+`hot_lead_requires_purchase_intent=False` gate firing for real, not
+just in a mock.
+
+26 new tests across four new files (`test_tenant_behavior_config.py`,
+`test_pipeline_behavior.py`, `test_knowledge_repository.py` — this
+module's first-ever test coverage, an offline statement-compilation
+check since this repo has no real-DB repository test precedent to
+follow — plus additions to `test_pipeline_graph.py`) — full suite (222
+tests), ruff, mypy all clean.
+
+**Explicitly out of scope this pass, by direct instruction:** no
+`app/tenants/api.py`, no frontend/settings UI (there's no tenant-config
+HTTP API of any kind yet, not even for the pre-existing
+`closing_action`/`closing_link`) — a deliberate, separate fast-follow.
+No change to `understand_intent`'s fixed 5-label taxonomy or the
+graph's fixed node/edge structure beyond the one new `load_tenant_config`
+node. No change to `escalation/safety_gate.py`'s own pattern-matching
+logic — `EscalationCoverConfig` only touches the cover-reply prose
+generated *after* a gate has already fired, never the gate itself.
+
 ### Recommended sequencing
 Superseded by §5's "Updated sequencing given 5.1–5.3" below — kept this
 pointer rather than two separately-maintained orderings that could drift
