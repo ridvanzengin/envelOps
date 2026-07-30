@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import type { FormEvent } from "react";
 import { useTranslation } from "react-i18next";
 
-import { apiDelete, apiGet, apiPost, apiPut, ApiError } from "../api/client";
+import { apiDelete, apiGet, apiPatch, apiPost, ApiError } from "../api/client";
 import { useAuth } from "../auth/useAuth";
 import { TrashIcon } from "../components/icons";
 
@@ -23,9 +23,8 @@ const SYSTEM_DEFAULT_CATEGORY_KEYS = [
 ] as const;
 
 // Mirrors backend/app/tenants/behavior_config.py exactly -- one combined
-// model reused for both the GET response and the PUT request body (see
-// the plan this was built from: closing_action/closing_link/behavior_config
-// are the entire editable surface, nothing to exclude either direction).
+// shape for the full GET response; PATCH sends only one tab's own slice
+// at a time (see TAB_ORDER/buildTabPatch below), never this whole object.
 type BusinessTone = "friendly_business" | "formal_business";
 type ClosingAction = "keep_chatting" | "escalate_to_human" | "book_or_checkout";
 
@@ -99,6 +98,75 @@ type BehaviorAreaKey =
   | "escalation_cover"
   | "book_or_checkout";
 
+// One entry per tab (left column) -- each saves independently, PATCHing
+// only its own slice of TenantSettings. Order here is the tab order.
+type TabKey =
+  | "closing"
+  | "greeting"
+  | "offTopic"
+  | "knowledgeQuery"
+  | "complaint"
+  | "leadHandling"
+  | "escalationCover"
+  | "bookOrCheckout"
+  | "channels"
+  | "generalContext";
+
+const TAB_ORDER: TabKey[] = [
+  "closing",
+  "greeting",
+  "offTopic",
+  "knowledgeQuery",
+  "complaint",
+  "leadHandling",
+  "escalationCover",
+  "bookOrCheckout",
+  "channels",
+  "generalContext",
+];
+
+const TAB_TITLE_KEYS: Record<TabKey, string> = {
+  closing: "settings.tenantSettings.closingBehavior.title",
+  greeting: "settings.tenantSettings.greeting.title",
+  offTopic: "settings.tenantSettings.offTopic.title",
+  knowledgeQuery: "settings.tenantSettings.knowledgeQuery.title",
+  complaint: "settings.tenantSettings.complaint.title",
+  leadHandling: "settings.tenantSettings.leadHandling.title",
+  escalationCover: "settings.tenantSettings.escalationCover.title",
+  bookOrCheckout: "settings.tenantSettings.bookOrCheckout.title",
+  channels: "settings.tenantSettings.channelOverrides.title",
+  generalContext: "settings.tenantSettings.generalContext.title",
+};
+
+// Exactly what PATCH /tenants/settings accepts for a given tab -- always
+// that tab's own field(s) in full, never a deeper partial within one
+// (app/tenants/api.py's TenantSettingsPatch mirrors this one-slice-per-
+// key shape exactly).
+function buildTabPatch(tab: TabKey, settings: TenantSettings): Record<string, unknown> {
+  switch (tab) {
+    case "closing":
+      return { closing_action: settings.closing_action, closing_link: settings.closing_link };
+    case "greeting":
+      return { greeting: settings.behavior_config.greeting };
+    case "offTopic":
+      return { off_topic: settings.behavior_config.off_topic };
+    case "knowledgeQuery":
+      return { knowledge_query: settings.behavior_config.knowledge_query };
+    case "complaint":
+      return { complaint: settings.behavior_config.complaint };
+    case "leadHandling":
+      return { lead_handling: settings.behavior_config.lead_handling };
+    case "escalationCover":
+      return { escalation_cover: settings.behavior_config.escalation_cover };
+    case "bookOrCheckout":
+      return { book_or_checkout: settings.behavior_config.book_or_checkout };
+    case "channels":
+      return { channel_overrides: settings.behavior_config.channel_overrides };
+    case "generalContext":
+      return { general_context: settings.behavior_config.general_context };
+  }
+}
+
 // Not exported from ChannelRail.tsx today, so duplicated here -- same five
 // platform keys, same order, matching that file's own CHANNELS list.
 const CHANNEL_TYPES = ["telegram", "whatsapp", "facebook", "instagram", "email"] as const;
@@ -145,7 +213,7 @@ function AdditionalContextField({
   label: string;
 }) {
   return (
-    <label className="form__field">
+    <label className="form__field tenant-settings__fields--full">
       {label}
       <input
         type="text"
@@ -170,8 +238,12 @@ export default function Settings() {
 
   const [settings, setSettings] = useState<TenantSettings | null>(null);
   const [settingsError, setSettingsError] = useState<string | null>(null);
-  const [savingSettings, setSavingSettings] = useState(false);
-  const [saveError, setSaveError] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<TabKey>("closing");
+  // Keyed by tab, not a single shared value -- each tab saves
+  // independently, so an in-flight save or a stale error on one tab
+  // must never bleed into another tab's button/message.
+  const [savingTab, setSavingTab] = useState<TabKey | null>(null);
+  const [saveErrors, setSaveErrors] = useState<Partial<Record<TabKey, string>>>({});
 
   const loadSettings = useCallback(async () => {
     setSettingsError(null);
@@ -191,22 +263,29 @@ export default function Settings() {
     void loadSettings();
   }, [loadSettings]);
 
-  async function handleSaveSettings(event: FormEvent<HTMLFormElement>) {
+  async function handleSaveTab(tab: TabKey, event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!settings) return;
-    setSaveError(null);
-    setSavingSettings(true);
+    setSaveErrors((current) => ({ ...current, [tab]: undefined }));
+    setSavingTab(tab);
     try {
-      const updated = await apiPut<TenantSettings>("/tenants/settings", settings, token);
+      const updated = await apiPatch<TenantSettings>(
+        "/tenants/settings",
+        buildTabPatch(tab, settings),
+        token,
+      );
       setSettings(updated);
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
         logout();
         return;
       }
-      setSaveError(err instanceof ApiError ? err.message : t("settings.tenantSettings.saveError"));
+      setSaveErrors((current) => ({
+        ...current,
+        [tab]: err instanceof ApiError ? err.message : t("settings.tenantSettings.saveError"),
+      }));
     } finally {
-      setSavingSettings(false);
+      setSavingTab(null);
     }
   }
 
@@ -346,439 +425,505 @@ export default function Settings() {
       </div>
       <p className="page__description">{t("pages.settings")}</p>
 
-      <h2>{t("settings.safetyTriggersTitle")}</h2>
-
-      <h3>{t("settings.systemDefaultsTitle")}</h3>
-      <div className="card">
-        <ul className="list">
-          {SYSTEM_DEFAULT_CATEGORY_KEYS.map((key) => (
-            <li key={key} className="list__item">
-              <label>
-                <input type="checkbox" checked disabled />
-                {t(`settings.systemDefaultCategories.${key}`)}
-              </label>
-            </li>
-          ))}
-        </ul>
-      </div>
-
-      <h3>{t("settings.tenantPhrasesTitle")}</h3>
-      {error && (
-        <p className="error-message" role="alert">
-          {error}
-        </p>
-      )}
-      {phrases === null && !error && <p>{t("settings.loading")}</p>}
-      {phrases !== null && phrases.length === 0 && (
-        <div className="empty-state">{t("settings.empty")}</div>
-      )}
-      {phrases !== null && phrases.length > 0 && (
-        <div className="card">
-          <ul className="list">
-            {phrases.map((phrase) => (
-              <li key={phrase.id} className="list__item list__item--with-action">
-                <span>{phrase.phrase}</span>
-                <button
-                  type="button"
-                  className="button button--danger"
-                  disabled={deletingId === phrase.id}
-                  onClick={() => void handleDelete(phrase.id)}
-                  aria-label={t("settings.delete")}
-                  title={t("settings.delete")}
-                >
-                  <TrashIcon />
-                </button>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-
-      <form className="form" onSubmit={(event) => void handleSubmit(event)}>
-        <label className="form__field">
-          {t("settings.newPhrase")}
-          <input
-            type="text"
-            value={newPhrase}
-            onChange={(e) => setNewPhrase(e.target.value)}
-            required
-          />
-        </label>
-        <button type="submit" className="button button--primary" disabled={submitting}>
-          {submitting ? t("settings.adding") : t("settings.add")}
-        </button>
-        {formError && (
-          <p className="error-message" role="alert">
-            {formError}
-          </p>
-        )}
-      </form>
-
-      <h2>{t("settings.tenantSettings.title")}</h2>
-      {settingsError && (
-        <p className="error-message" role="alert">
-          {settingsError}
-        </p>
-      )}
-      {settings === null && !settingsError && <p>{t("settings.tenantSettings.loading")}</p>}
-      {settings !== null && (
-        <form className="form tenant-settings" onSubmit={(event) => void handleSaveSettings(event)}>
-          <div className="tenant-settings__section">
-            <h3>{t("settings.tenantSettings.closingBehavior.title")}</h3>
-            <label className="form__field">
-              {t("settings.tenantSettings.closingBehavior.closingAction")}
-              <select
-                value={settings.closing_action}
-                onChange={(e) => updateClosingAction(e.target.value as ClosingAction)}
-              >
-                <option value="keep_chatting">
-                  {t("settings.tenantSettings.closingBehavior.closingActionOptions.keepChatting")}
-                </option>
-                <option value="escalate_to_human">
-                  {t(
-                    "settings.tenantSettings.closingBehavior.closingActionOptions.escalateToHuman",
-                  )}
-                </option>
-                <option value="book_or_checkout">
-                  {t(
-                    "settings.tenantSettings.closingBehavior.closingActionOptions.bookOrCheckout",
-                  )}
-                </option>
-              </select>
-            </label>
-            {settings.closing_action === "book_or_checkout" && (
-              <label className="form__field">
-                {t("settings.tenantSettings.closingBehavior.closingLink")}
-                <input
-                  type="url"
-                  value={settings.closing_link ?? ""}
-                  onChange={(e) => updateClosingLink(e.target.value)}
-                />
-              </label>
-            )}
-          </div>
-
-          <div className="tenant-settings__section">
-            <h3>{t("settings.tenantSettings.greeting.title")}</h3>
-            <ToneSelect
-              value={settings.behavior_config.greeting.tone}
-              onChange={(tone) => updateArea("greeting", { tone })}
-              label={t("settings.tenantSettings.tone")}
-            />
-            <label className="form__field form__field--checkbox">
-              <input
-                type="checkbox"
-                checked={settings.behavior_config.greeting.invite_followup_question}
-                onChange={(e) =>
-                  updateArea("greeting", { invite_followup_question: e.target.checked })
-                }
-              />
-              {t("settings.tenantSettings.greeting.inviteFollowup")}
-            </label>
-            <AdditionalContextField
-              value={settings.behavior_config.greeting.additional_context}
-              onChange={(additional_context) => updateArea("greeting", { additional_context })}
-              label={t("settings.tenantSettings.greeting.additionalContext")}
-            />
-          </div>
-
-          <div className="tenant-settings__section">
-            <h3>{t("settings.tenantSettings.offTopic.title")}</h3>
-            <ToneSelect
-              value={settings.behavior_config.off_topic.tone}
-              onChange={(tone) => updateArea("off_topic", { tone })}
-              label={t("settings.tenantSettings.tone")}
-            />
-            <AdditionalContextField
-              value={settings.behavior_config.off_topic.additional_context}
-              onChange={(additional_context) => updateArea("off_topic", { additional_context })}
-              label={t("settings.tenantSettings.offTopic.additionalContext")}
-            />
-          </div>
-
-          <div className="tenant-settings__section">
-            <h3>{t("settings.tenantSettings.knowledgeQuery.title")}</h3>
-            <ToneSelect
-              value={settings.behavior_config.knowledge_query.tone}
-              onChange={(tone) => updateArea("knowledge_query", { tone })}
-              label={t("settings.tenantSettings.tone")}
-            />
-            <label className="form__field form__field--checkbox">
-              <input
-                type="checkbox"
-                checked={settings.behavior_config.knowledge_query.not_found_max_distance !== null}
-                onChange={(e) =>
-                  updateArea("knowledge_query", {
-                    not_found_max_distance: e.target.checked ? 1.0 : null,
-                  })
-                }
-              />
-              {t("settings.tenantSettings.knowledgeQuery.limitToConfident")}
-            </label>
-            {settings.behavior_config.knowledge_query.not_found_max_distance !== null && (
-              <label className="form__field">
-                {t("settings.tenantSettings.knowledgeQuery.notFoundMaxDistance", {
-                  value: settings.behavior_config.knowledge_query.not_found_max_distance.toFixed(
-                    1,
-                  ),
-                })}
-                <input
-                  type="range"
-                  min={0}
-                  max={2}
-                  step={0.1}
-                  value={settings.behavior_config.knowledge_query.not_found_max_distance}
-                  onChange={(e) =>
-                    updateArea("knowledge_query", {
-                      not_found_max_distance: Number(e.target.value),
-                    })
-                  }
-                />
-              </label>
-            )}
-            <AdditionalContextField
-              value={settings.behavior_config.knowledge_query.additional_context}
-              onChange={(additional_context) =>
-                updateArea("knowledge_query", { additional_context })
-              }
-              label={t("settings.tenantSettings.knowledgeQuery.additionalContext")}
-            />
-          </div>
-
-          <div className="tenant-settings__section">
-            <h3>{t("settings.tenantSettings.complaint.title")}</h3>
-            <label className="form__field form__field--checkbox">
-              <input
-                type="checkbox"
-                checked={settings.behavior_config.complaint.empathetic_acknowledgment}
-                onChange={(e) =>
-                  updateArea("complaint", { empathetic_acknowledgment: e.target.checked })
-                }
-              />
-              {t("settings.tenantSettings.complaint.empatheticAcknowledgment")}
-            </label>
-            <AdditionalContextField
-              value={settings.behavior_config.complaint.additional_context}
-              onChange={(additional_context) => updateArea("complaint", { additional_context })}
-              label={t("settings.tenantSettings.complaint.additionalContext")}
-            />
-          </div>
-
-          <div className="tenant-settings__section">
-            <h3>{t("settings.tenantSettings.leadHandling.title")}</h3>
-            <label className="form__field">
-              {t("settings.tenantSettings.leadHandling.closingActionOverride")}
-              <select
-                value={settings.behavior_config.lead_handling.closing_action_override ?? ""}
-                onChange={(e) =>
-                  updateArea("lead_handling", {
-                    closing_action_override: (e.target.value || null) as ClosingAction | null,
-                  })
-                }
-              >
-                <option value="">
-                  {t(
-                    "settings.tenantSettings.leadHandling.closingActionOverrideOptions.useClosingBehaviorAbove",
-                  )}
-                </option>
-                <option value="keep_chatting">
-                  {t(
-                    "settings.tenantSettings.leadHandling.closingActionOverrideOptions.keepChatting",
-                  )}
-                </option>
-                <option value="escalate_to_human">
-                  {t(
-                    "settings.tenantSettings.leadHandling.closingActionOverrideOptions.escalateToHuman",
-                  )}
-                </option>
-                <option value="book_or_checkout">
-                  {t(
-                    "settings.tenantSettings.leadHandling.closingActionOverrideOptions.bookOrCheckout",
-                  )}
-                </option>
-              </select>
-            </label>
-            <label className="form__field form__field--checkbox">
-              <input
-                type="checkbox"
-                checked={settings.behavior_config.lead_handling.hot_lead_requires_purchase_intent}
-                onChange={(e) =>
-                  updateArea("lead_handling", {
-                    hot_lead_requires_purchase_intent: e.target.checked,
-                  })
-                }
-              />
-              {t("settings.tenantSettings.leadHandling.hotLeadRequiresPurchaseIntent")}
-            </label>
-            <AdditionalContextField
-              value={settings.behavior_config.lead_handling.additional_context}
-              onChange={(additional_context) =>
-                updateArea("lead_handling", { additional_context })
-              }
-              label={t("settings.tenantSettings.leadHandling.additionalContext")}
-            />
-          </div>
-
-          <div className="tenant-settings__section">
-            <h3>{t("settings.tenantSettings.escalationCover.title")}</h3>
-            <ToneSelect
-              value={settings.behavior_config.escalation_cover.tone}
-              onChange={(tone) => updateArea("escalation_cover", { tone })}
-              label={t("settings.tenantSettings.tone")}
-            />
-            <AdditionalContextField
-              value={settings.behavior_config.escalation_cover.additional_context}
-              onChange={(additional_context) =>
-                updateArea("escalation_cover", { additional_context })
-              }
-              label={t("settings.tenantSettings.escalationCover.additionalContext")}
-            />
-          </div>
-
-          <div className="tenant-settings__section">
-            <h3>{t("settings.tenantSettings.bookOrCheckout.title")}</h3>
-            <label className="form__field">
-              {t("settings.tenantSettings.bookOrCheckout.ctaStyle")}
-              <select
-                value={settings.behavior_config.book_or_checkout.cta_style}
-                onChange={(e) =>
-                  updateArea("book_or_checkout", {
-                    cta_style: e.target.value as BookOrCheckoutConfig["cta_style"],
-                  })
-                }
-              >
-                <option value="natural_mention">
-                  {t("settings.tenantSettings.bookOrCheckout.ctaStyleOptions.naturalMention")}
-                </option>
-                <option value="direct_cta">
-                  {t("settings.tenantSettings.bookOrCheckout.ctaStyleOptions.directCta")}
-                </option>
-              </select>
-            </label>
-            <AdditionalContextField
-              value={settings.behavior_config.book_or_checkout.additional_context}
-              onChange={(additional_context) =>
-                updateArea("book_or_checkout", { additional_context })
-              }
-              label={t("settings.tenantSettings.bookOrCheckout.additionalContext")}
-            />
-          </div>
-
-          <div className="tenant-settings__section">
-            <h3>{t("settings.tenantSettings.channelOverrides.title")}</h3>
-            {CHANNEL_TYPES.map((channel) => {
-              const override = settings.behavior_config.channel_overrides[channel];
-              return (
-                <div key={channel} className="tenant-settings__channel">
-                  <label className="form__field form__field--checkbox">
-                    <input
-                      type="checkbox"
-                      checked={override !== undefined}
-                      onChange={(e) => toggleChannelOverride(channel, e.target.checked)}
-                    />
-                    {t("settings.tenantSettings.channelOverrides.overrideChannel", {
-                      channel: t(`channelRail.${channel}`),
-                    })}
-                  </label>
-                  {override && (
-                    <div className="tenant-settings__channel-fields">
-                      <label className="form__field">
-                        {t("settings.tenantSettings.channelOverrides.formality")}
-                        <select
-                          value={override.formality}
-                          onChange={(e) =>
-                            updateChannelOverride(channel, {
-                              formality: e.target.value as ChannelToneConfig["formality"],
-                            })
-                          }
-                        >
-                          <option value="casual_chat">
-                            {t(
-                              "settings.tenantSettings.channelOverrides.formalityOptions.casualChat",
-                            )}
-                          </option>
-                          <option value="formal_email">
-                            {t(
-                              "settings.tenantSettings.channelOverrides.formalityOptions.formalEmail",
-                            )}
-                          </option>
-                        </select>
-                      </label>
-                      <label className="form__field form__field--checkbox">
-                        <input
-                          type="checkbox"
-                          checked={override.include_greeting}
-                          onChange={(e) =>
-                            updateChannelOverride(channel, { include_greeting: e.target.checked })
-                          }
-                        />
-                        {t("settings.tenantSettings.channelOverrides.includeGreeting")}
-                      </label>
-                      <label className="form__field form__field--checkbox">
-                        <input
-                          type="checkbox"
-                          checked={override.include_sign_off}
-                          onChange={(e) =>
-                            updateChannelOverride(channel, { include_sign_off: e.target.checked })
-                          }
-                        />
-                        {t("settings.tenantSettings.channelOverrides.includeSignOff")}
-                      </label>
-                      <label className="form__field">
-                        {t("settings.tenantSettings.channelOverrides.lengthGuidance")}
-                        <select
-                          value={override.length_guidance}
-                          onChange={(e) =>
-                            updateChannelOverride(channel, {
-                              length_guidance: e.target
-                                .value as ChannelToneConfig["length_guidance"],
-                            })
-                          }
-                        >
-                          <option value="brief">
-                            {t(
-                              "settings.tenantSettings.channelOverrides.lengthGuidanceOptions.brief",
-                            )}
-                          </option>
-                          <option value="as_needed">
-                            {t(
-                              "settings.tenantSettings.channelOverrides.lengthGuidanceOptions.asNeeded",
-                            )}
-                          </option>
-                        </select>
-                      </label>
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-
-          <div className="tenant-settings__section">
-            <h3>{t("settings.tenantSettings.generalContext.title")}</h3>
-            <label className="form__field">
-              {t("settings.tenantSettings.generalContext.label")}
-              <input
-                type="text"
-                maxLength={500}
-                value={settings.behavior_config.general_context ?? ""}
-                onChange={(e) => updateGeneralContext(e.target.value || null)}
-              />
-            </label>
-          </div>
-
-          <button type="submit" className="button button--primary" disabled={savingSettings}>
-            {savingSettings
-              ? t("settings.tenantSettings.saving")
-              : t("settings.tenantSettings.save")}
-          </button>
-          {saveError && (
+      <div className="settings-columns">
+        <div>
+          <h2>{t("settings.tenantSettings.title")}</h2>
+          {settingsError && (
             <p className="error-message" role="alert">
-              {saveError}
+              {settingsError}
             </p>
           )}
-        </form>
-      )}
+          {settings === null && !settingsError && <p>{t("settings.tenantSettings.loading")}</p>}
+          {settings !== null && (
+            <>
+              <div className="tabs" role="tablist">
+                {TAB_ORDER.map((tab) => (
+                  <button
+                    key={tab}
+                    type="button"
+                    role="tab"
+                    aria-selected={activeTab === tab}
+                    className={`tabs__tab${activeTab === tab ? " tabs__tab--active" : ""}`}
+                    onClick={() => setActiveTab(tab)}
+                  >
+                    {t(TAB_TITLE_KEYS[tab])}
+                  </button>
+                ))}
+              </div>
+
+              <form
+                className="form tenant-settings"
+                onSubmit={(event) => void handleSaveTab(activeTab, event)}
+              >
+                {activeTab === "closing" && (
+                  <div className="tenant-settings__fields">
+                    <label className="form__field">
+                      {t("settings.tenantSettings.closingBehavior.closingAction")}
+                      <select
+                        value={settings.closing_action}
+                        onChange={(e) => updateClosingAction(e.target.value as ClosingAction)}
+                      >
+                        <option value="keep_chatting">
+                          {t(
+                            "settings.tenantSettings.closingBehavior.closingActionOptions.keepChatting",
+                          )}
+                        </option>
+                        <option value="escalate_to_human">
+                          {t(
+                            "settings.tenantSettings.closingBehavior.closingActionOptions.escalateToHuman",
+                          )}
+                        </option>
+                        <option value="book_or_checkout">
+                          {t(
+                            "settings.tenantSettings.closingBehavior.closingActionOptions.bookOrCheckout",
+                          )}
+                        </option>
+                      </select>
+                    </label>
+                    {settings.closing_action === "book_or_checkout" && (
+                      <label className="form__field">
+                        {t("settings.tenantSettings.closingBehavior.closingLink")}
+                        <input
+                          type="url"
+                          value={settings.closing_link ?? ""}
+                          onChange={(e) => updateClosingLink(e.target.value)}
+                        />
+                      </label>
+                    )}
+                  </div>
+                )}
+
+                {activeTab === "greeting" && (
+                  <div className="tenant-settings__fields">
+                    <ToneSelect
+                      value={settings.behavior_config.greeting.tone}
+                      onChange={(tone) => updateArea("greeting", { tone })}
+                      label={t("settings.tenantSettings.tone")}
+                    />
+                    <label className="form__field form__field--checkbox">
+                      <input
+                        type="checkbox"
+                        checked={settings.behavior_config.greeting.invite_followup_question}
+                        onChange={(e) =>
+                          updateArea("greeting", { invite_followup_question: e.target.checked })
+                        }
+                      />
+                      {t("settings.tenantSettings.greeting.inviteFollowup")}
+                    </label>
+                    <AdditionalContextField
+                      value={settings.behavior_config.greeting.additional_context}
+                      onChange={(additional_context) =>
+                        updateArea("greeting", { additional_context })
+                      }
+                      label={t("settings.tenantSettings.greeting.additionalContext")}
+                    />
+                  </div>
+                )}
+
+                {activeTab === "offTopic" && (
+                  <div className="tenant-settings__fields">
+                    <ToneSelect
+                      value={settings.behavior_config.off_topic.tone}
+                      onChange={(tone) => updateArea("off_topic", { tone })}
+                      label={t("settings.tenantSettings.tone")}
+                    />
+                    <AdditionalContextField
+                      value={settings.behavior_config.off_topic.additional_context}
+                      onChange={(additional_context) =>
+                        updateArea("off_topic", { additional_context })
+                      }
+                      label={t("settings.tenantSettings.offTopic.additionalContext")}
+                    />
+                  </div>
+                )}
+
+                {activeTab === "knowledgeQuery" && (
+                  <div className="tenant-settings__fields">
+                    <ToneSelect
+                      value={settings.behavior_config.knowledge_query.tone}
+                      onChange={(tone) => updateArea("knowledge_query", { tone })}
+                      label={t("settings.tenantSettings.tone")}
+                    />
+                    <label className="form__field form__field--checkbox">
+                      <input
+                        type="checkbox"
+                        checked={
+                          settings.behavior_config.knowledge_query.not_found_max_distance !== null
+                        }
+                        onChange={(e) =>
+                          updateArea("knowledge_query", {
+                            not_found_max_distance: e.target.checked ? 1.0 : null,
+                          })
+                        }
+                      />
+                      {t("settings.tenantSettings.knowledgeQuery.limitToConfident")}
+                    </label>
+                    {settings.behavior_config.knowledge_query.not_found_max_distance !== null && (
+                      <label className="form__field tenant-settings__fields--full">
+                        {t("settings.tenantSettings.knowledgeQuery.notFoundMaxDistance", {
+                          value:
+                            settings.behavior_config.knowledge_query.not_found_max_distance.toFixed(
+                              1,
+                            ),
+                        })}
+                        <input
+                          type="range"
+                          min={0}
+                          max={2}
+                          step={0.1}
+                          value={settings.behavior_config.knowledge_query.not_found_max_distance}
+                          onChange={(e) =>
+                            updateArea("knowledge_query", {
+                              not_found_max_distance: Number(e.target.value),
+                            })
+                          }
+                        />
+                      </label>
+                    )}
+                    <AdditionalContextField
+                      value={settings.behavior_config.knowledge_query.additional_context}
+                      onChange={(additional_context) =>
+                        updateArea("knowledge_query", { additional_context })
+                      }
+                      label={t("settings.tenantSettings.knowledgeQuery.additionalContext")}
+                    />
+                  </div>
+                )}
+
+                {activeTab === "complaint" && (
+                  <div className="tenant-settings__fields">
+                    <label className="form__field form__field--checkbox">
+                      <input
+                        type="checkbox"
+                        checked={settings.behavior_config.complaint.empathetic_acknowledgment}
+                        onChange={(e) =>
+                          updateArea("complaint", { empathetic_acknowledgment: e.target.checked })
+                        }
+                      />
+                      {t("settings.tenantSettings.complaint.empatheticAcknowledgment")}
+                    </label>
+                    <AdditionalContextField
+                      value={settings.behavior_config.complaint.additional_context}
+                      onChange={(additional_context) =>
+                        updateArea("complaint", { additional_context })
+                      }
+                      label={t("settings.tenantSettings.complaint.additionalContext")}
+                    />
+                  </div>
+                )}
+
+                {activeTab === "leadHandling" && (
+                  <div className="tenant-settings__fields">
+                    <label className="form__field">
+                      {t("settings.tenantSettings.leadHandling.closingActionOverride")}
+                      <select
+                        value={settings.behavior_config.lead_handling.closing_action_override ?? ""}
+                        onChange={(e) =>
+                          updateArea("lead_handling", {
+                            closing_action_override: (e.target.value || null) as
+                              | ClosingAction
+                              | null,
+                          })
+                        }
+                      >
+                        <option value="">
+                          {t(
+                            "settings.tenantSettings.leadHandling.closingActionOverrideOptions.useClosingBehaviorAbove",
+                          )}
+                        </option>
+                        <option value="keep_chatting">
+                          {t(
+                            "settings.tenantSettings.leadHandling.closingActionOverrideOptions.keepChatting",
+                          )}
+                        </option>
+                        <option value="escalate_to_human">
+                          {t(
+                            "settings.tenantSettings.leadHandling.closingActionOverrideOptions.escalateToHuman",
+                          )}
+                        </option>
+                        <option value="book_or_checkout">
+                          {t(
+                            "settings.tenantSettings.leadHandling.closingActionOverrideOptions.bookOrCheckout",
+                          )}
+                        </option>
+                      </select>
+                    </label>
+                    <label className="form__field form__field--checkbox">
+                      <input
+                        type="checkbox"
+                        checked={
+                          settings.behavior_config.lead_handling.hot_lead_requires_purchase_intent
+                        }
+                        onChange={(e) =>
+                          updateArea("lead_handling", {
+                            hot_lead_requires_purchase_intent: e.target.checked,
+                          })
+                        }
+                      />
+                      {t("settings.tenantSettings.leadHandling.hotLeadRequiresPurchaseIntent")}
+                    </label>
+                    <AdditionalContextField
+                      value={settings.behavior_config.lead_handling.additional_context}
+                      onChange={(additional_context) =>
+                        updateArea("lead_handling", { additional_context })
+                      }
+                      label={t("settings.tenantSettings.leadHandling.additionalContext")}
+                    />
+                  </div>
+                )}
+
+                {activeTab === "escalationCover" && (
+                  <div className="tenant-settings__fields">
+                    <ToneSelect
+                      value={settings.behavior_config.escalation_cover.tone}
+                      onChange={(tone) => updateArea("escalation_cover", { tone })}
+                      label={t("settings.tenantSettings.tone")}
+                    />
+                    <AdditionalContextField
+                      value={settings.behavior_config.escalation_cover.additional_context}
+                      onChange={(additional_context) =>
+                        updateArea("escalation_cover", { additional_context })
+                      }
+                      label={t("settings.tenantSettings.escalationCover.additionalContext")}
+                    />
+                  </div>
+                )}
+
+                {activeTab === "bookOrCheckout" && (
+                  <div className="tenant-settings__fields">
+                    <label className="form__field">
+                      {t("settings.tenantSettings.bookOrCheckout.ctaStyle")}
+                      <select
+                        value={settings.behavior_config.book_or_checkout.cta_style}
+                        onChange={(e) =>
+                          updateArea("book_or_checkout", {
+                            cta_style: e.target.value as BookOrCheckoutConfig["cta_style"],
+                          })
+                        }
+                      >
+                        <option value="natural_mention">
+                          {t("settings.tenantSettings.bookOrCheckout.ctaStyleOptions.naturalMention")}
+                        </option>
+                        <option value="direct_cta">
+                          {t("settings.tenantSettings.bookOrCheckout.ctaStyleOptions.directCta")}
+                        </option>
+                      </select>
+                    </label>
+                    <AdditionalContextField
+                      value={settings.behavior_config.book_or_checkout.additional_context}
+                      onChange={(additional_context) =>
+                        updateArea("book_or_checkout", { additional_context })
+                      }
+                      label={t("settings.tenantSettings.bookOrCheckout.additionalContext")}
+                    />
+                  </div>
+                )}
+
+                {activeTab === "channels" && (
+                  <div className="tenant-settings__fields">
+                    {CHANNEL_TYPES.map((channel) => {
+                      const override = settings.behavior_config.channel_overrides[channel];
+                      return (
+                        <div
+                          key={channel}
+                          className="tenant-settings__channel tenant-settings__fields--full"
+                        >
+                          <label className="form__field form__field--checkbox">
+                            <input
+                              type="checkbox"
+                              checked={override !== undefined}
+                              onChange={(e) => toggleChannelOverride(channel, e.target.checked)}
+                            />
+                            {t("settings.tenantSettings.channelOverrides.overrideChannel", {
+                              channel: t(`channelRail.${channel}`),
+                            })}
+                          </label>
+                          {override && (
+                            <div className="tenant-settings__channel-fields tenant-settings__fields">
+                              <label className="form__field">
+                                {t("settings.tenantSettings.channelOverrides.formality")}
+                                <select
+                                  value={override.formality}
+                                  onChange={(e) =>
+                                    updateChannelOverride(channel, {
+                                      formality: e.target.value as ChannelToneConfig["formality"],
+                                    })
+                                  }
+                                >
+                                  <option value="casual_chat">
+                                    {t(
+                                      "settings.tenantSettings.channelOverrides.formalityOptions.casualChat",
+                                    )}
+                                  </option>
+                                  <option value="formal_email">
+                                    {t(
+                                      "settings.tenantSettings.channelOverrides.formalityOptions.formalEmail",
+                                    )}
+                                  </option>
+                                </select>
+                              </label>
+                              <label className="form__field">
+                                {t("settings.tenantSettings.channelOverrides.lengthGuidance")}
+                                <select
+                                  value={override.length_guidance}
+                                  onChange={(e) =>
+                                    updateChannelOverride(channel, {
+                                      length_guidance: e.target
+                                        .value as ChannelToneConfig["length_guidance"],
+                                    })
+                                  }
+                                >
+                                  <option value="brief">
+                                    {t(
+                                      "settings.tenantSettings.channelOverrides.lengthGuidanceOptions.brief",
+                                    )}
+                                  </option>
+                                  <option value="as_needed">
+                                    {t(
+                                      "settings.tenantSettings.channelOverrides.lengthGuidanceOptions.asNeeded",
+                                    )}
+                                  </option>
+                                </select>
+                              </label>
+                              <label className="form__field form__field--checkbox">
+                                <input
+                                  type="checkbox"
+                                  checked={override.include_greeting}
+                                  onChange={(e) =>
+                                    updateChannelOverride(channel, {
+                                      include_greeting: e.target.checked,
+                                    })
+                                  }
+                                />
+                                {t("settings.tenantSettings.channelOverrides.includeGreeting")}
+                              </label>
+                              <label className="form__field form__field--checkbox">
+                                <input
+                                  type="checkbox"
+                                  checked={override.include_sign_off}
+                                  onChange={(e) =>
+                                    updateChannelOverride(channel, {
+                                      include_sign_off: e.target.checked,
+                                    })
+                                  }
+                                />
+                                {t("settings.tenantSettings.channelOverrides.includeSignOff")}
+                              </label>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {activeTab === "generalContext" && (
+                  <div className="tenant-settings__fields">
+                    <label className="form__field tenant-settings__fields--full">
+                      {t("settings.tenantSettings.generalContext.label")}
+                      <input
+                        type="text"
+                        maxLength={500}
+                        value={settings.behavior_config.general_context ?? ""}
+                        onChange={(e) => updateGeneralContext(e.target.value || null)}
+                      />
+                    </label>
+                  </div>
+                )}
+
+                <button
+                  type="submit"
+                  className="button button--primary button--fit"
+                  disabled={savingTab === activeTab}
+                >
+                  {savingTab === activeTab
+                    ? t("settings.tenantSettings.saving")
+                    : t("settings.tenantSettings.save")}
+                </button>
+                {saveErrors[activeTab] && (
+                  <p className="error-message" role="alert">
+                    {saveErrors[activeTab]}
+                  </p>
+                )}
+              </form>
+            </>
+          )}
+        </div>
+
+        <div>
+          <h2>{t("settings.safetyTriggersTitle")}</h2>
+
+          <h3>{t("settings.systemDefaultsTitle")}</h3>
+          <div className="card">
+            <ul className="list">
+              {SYSTEM_DEFAULT_CATEGORY_KEYS.map((key) => (
+                <li key={key} className="list__item">
+                  <label>
+                    <input type="checkbox" checked disabled />
+                    {t(`settings.systemDefaultCategories.${key}`)}
+                  </label>
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          <h3>{t("settings.tenantPhrasesTitle")}</h3>
+          {error && (
+            <p className="error-message" role="alert">
+              {error}
+            </p>
+          )}
+          {phrases === null && !error && <p>{t("settings.loading")}</p>}
+          {phrases !== null && phrases.length === 0 && (
+            <div className="empty-state">{t("settings.empty")}</div>
+          )}
+          {phrases !== null && phrases.length > 0 && (
+            <div className="card">
+              <ul className="list">
+                {phrases.map((phrase) => (
+                  <li key={phrase.id} className="list__item list__item--with-action">
+                    <span>{phrase.phrase}</span>
+                    <button
+                      type="button"
+                      className="button button--danger"
+                      disabled={deletingId === phrase.id}
+                      onClick={() => void handleDelete(phrase.id)}
+                      aria-label={t("settings.delete")}
+                      title={t("settings.delete")}
+                    >
+                      <TrashIcon />
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          <form className="form" onSubmit={(event) => void handleSubmit(event)}>
+            <label className="form__field">
+              {t("settings.newPhrase")}
+              <input
+                type="text"
+                value={newPhrase}
+                onChange={(e) => setNewPhrase(e.target.value)}
+                required
+              />
+            </label>
+            <button
+              type="submit"
+              className="button button--primary button--fit"
+              disabled={submitting}
+            >
+              {submitting ? t("settings.adding") : t("settings.add")}
+            </button>
+            {formError && (
+              <p className="error-message" role="alert">
+                {formError}
+              </p>
+            )}
+          </form>
+        </div>
+      </div>
     </section>
   );
 }

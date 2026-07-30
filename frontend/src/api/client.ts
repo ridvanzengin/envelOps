@@ -74,3 +74,11 @@ export function apiPut<T>(
 ): Promise<T> {
   return request<T>(path, { method: "PUT", token, body });
 }
+
+export function apiPatch<T>(
+  path: string,
+  body: unknown,
+  token: string | null,
+): Promise<T> {
+  return request<T>(path, { method: "PATCH", token, body });
+}

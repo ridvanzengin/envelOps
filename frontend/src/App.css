@@ -331,22 +331,68 @@
   border-color: var(--danger);
 }
 
-/* Tenant settings (docs/ROADMAP.md fast-follow to PR #35's
-   TenantBehaviorConfig) -- one big .form, sections divided by a rule
-   rather than separate .card blocks (this is one Save action for the
-   whole object, not independent per-section state). */
-.tenant-settings__section {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  padding-bottom: 20px;
-  margin-bottom: 4px;
-  border-bottom: 1px solid var(--border);
+/* Settings page: AI behavior (tabbed, wider) beside Safety trigger
+   phrases (static, narrower) -- two independent concerns, not one long
+   scroll. Capped max-width so the pair doesn't stretch edge-to-edge on
+   a wide monitor; single column below 900px since a cramped 2-up
+   doesn't help there. */
+.settings-columns {
+  display: grid;
+  grid-template-columns: 3fr 2fr;
+  gap: 40px;
+  align-items: start;
+  max-width: 1180px;
 }
 
-.tenant-settings__section:last-of-type {
-  border-bottom: none;
-  padding-bottom: 0;
+@media (max-width: 900px) {
+  .settings-columns {
+    grid-template-columns: 1fr;
+  }
+}
+
+.tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 20px;
+}
+
+.tabs__tab {
+  padding: 8px 12px;
+  border: none;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.tabs__tab:hover {
+  color: var(--text-h);
+}
+
+.tabs__tab--active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+
+/* Fields inside one tab panel -- two-up when there's room, instead of
+   every field (including short dropdowns/checkboxes) taking a full
+   stacked row down a wide column. */
+.tenant-settings__fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px 20px;
+  align-items: start;
+}
+
+.tenant-settings__fields--full {
+  grid-column: 1 / -1;
 }
 
 .tenant-settings__channel {
@@ -356,13 +402,6 @@
   border: 1px solid var(--border);
   border-radius: 6px;
   padding: 12px;
-}
-
-.tenant-settings__channel-fields {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  padding-left: 4px;
 }
 
 /* First editable checkbox in this app (the one that existed before this
@@ -390,6 +429,18 @@
   background: transparent;
   accent-color: var(--accent);
   height: 20px;
+}
+
+/* Opt-in intrinsic width for a .form's submit/add button -- .form has no
+   align-items set (defaults to stretch), which is exactly right for
+   Login's own full-width CTA in its narrow 360px card, but stretches a
+   button to the full column width everywhere else, which reads as an
+   oversized bar once a column is wider than a couple hundred px (this
+   settings page's own two columns, KnowledgeSources' Add button). Scoped
+   modifier instead of changing .form itself so Login's button is
+   untouched. */
+.button--fit {
+  align-self: flex-start;
 }
 
 .status-badge {

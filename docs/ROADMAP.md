@@ -889,66 +889,107 @@ built `TenantBehaviorConfig` but left it entirely script/SQL-only, not
 even covering the two pre-existing settings fields (`Tenant.closing_action`,
 `closing_link`). Session started from a fully-designed, user-approved
 plan written at the end of the §3.7 session specifically so this could
-be picked up cold — implemented directly against it, no re-design.
+be picked up cold. Went through two real design passes, not one straight
+build:
 
-**Backend:** one new module, `app/tenants/api.py` (no tenant HTTP API
-existed at all before this) — `GET`/`PUT /tenants/settings`, a single
-`TenantSettingsResponse` model reused both directions (deliberate, not a
-shortcut: `closing_action`/`closing_link`/`behavior_config` are the
-entire editable surface, nothing to exclude the way create/update pairs
-elsewhere need to). No hand-rolled validation — every field already
-carries its constraint at the type level from `behavior_config.py`
-(`Literal`/`ge`/`le`/`max_length`), so a bad body 422s from Pydantic
-alone. `Tenant.closing_action` is plain `str` at the DB layer (validity
-enforced by code, not the type system, same as ever) — `cast(ClosingAction,
-...)` narrows it for the typed response, the one place this pass touched
-mypy.
+**Pass 1 (single form, full-object save)** — implemented directly against
+the carried-over plan: one `GET`/`PUT /tenants/settings`, a combined
+`TenantSettingsResponse` model both directions, one long single-column
+`Settings.tsx` section with every area stacked top to bottom and one
+global Save button. Verified live and working, but the user's own
+reaction on seeing it: the single-column layout wasted the page's right-
+hand space, and `.form`'s default flex `align-items: stretch` made every
+button/input balloon to the full column width once that column was wide
+— both real usability problems, not nitpicks, so a second pass followed
+immediately rather than shipping pass 1 as-is.
 
-**Frontend:** a second section on the existing `Settings.tsx` (not a new
-route) — "AI behavior & business settings" below the pre-existing safety
-trigger phrases. Full-object load/edit/save, one Save button for the
-whole form, no autosave/optimistic UI, no success toast (confirmed no
-page in this app has one). Covers every `TenantBehaviorConfig` area
-(greeting, off-topic, knowledge query, complaint, lead handling,
-escalation cover, book-or-checkout, five per-channel overrides, general
-context) plus the bundled `closing_action`/`closing_link`. Two genuinely
-new UI primitives this app had zero precedent for going in: an editable
-checkbox (the one pre-existing checkbox was disabled/read-only) and an
-`<input type="range">` slider (`knowledge_query.not_found_max_distance`,
-gated behind an "only answer when confident" checkbox — unchecked sends
-`null`, today's exact inert default) — new `.form__field--checkbox` and
-`input[type="range"]` rules in `App.css`, the range styled via
-`accent-color: var(--accent)` alone rather than per-browser
-`::-webkit-slider-thumb`/`::-moz-range-*` rules. New `settings.tenantSettings.*`
-i18n block in both `en.json`/`tr.json`, Turkish written to match the
-file's existing tone, not left as placeholders.
+**Pass 2 (two-column, tabbed, independent per-tab save) — the shipped
+design**, arrived at through direct back-and-forth with the user rather
+than decided solo:
+- **Layout**: `Settings.tsx` now renders two columns via a new
+  `.settings-columns` CSS grid (`3fr 2fr`, capped `max-width: 1180px`,
+  collapsing to one column under 900px) — "AI behavior & business
+  settings" (tabbed) on the left, the pre-existing "Safety trigger
+  phrases" section unchanged on the right. Splits the page along its
+  real seam (behavior config vs. the safety floor are different
+  concerns) instead of one long scroll, and both columns now actually
+  use the width instead of one narrow stack leaving the rest empty.
+- **Tabs**: a new `.tabs`/`.tabs__tab` strip, one tab per behavior area
+  plus Closing (10 total: Closing, Greeting, Off-topic, Knowledge,
+  Complaints, Leads, Escalation, Booking, Channels, General) — only the
+  active tab's fields are mounted, each area's own existing `.title` i18n
+  string reused directly as its tab label (no new i18n needed for that
+  part). First tab component this app has ever had.
+- **Per-tab independent save — the bigger change, from direct user
+  feedback mid-build ("instead of just one save button user should be
+  able save tabs independently")**: this doesn't work as a frontend-only
+  change on top of the full-object `PUT` — sending the whole local
+  `settings` object on every tab's save would silently persist whatever
+  unsaved edits happened to be sitting in *other* tabs too, which is the
+  opposite of independent. Replaced `PUT /tenants/settings` with
+  `PATCH /tenants/settings` (`app/tenants/api.py`) taking a new
+  `TenantSettingsPatch` — every field optional, but which top-level keys
+  were *actually sent* is read from Pydantic's `model_fields_set`, not
+  `is not None`, since `closing_link`/`general_context` are meaningfully
+  nullable themselves (clearing one is a real, intentional patch, not an
+  absent field). Each tab's Save button PATCHes only its own slice — one
+  area's full sub-model (`{"greeting": {...}}`), the closing pair
+  together, the whole `channel_overrides` dict together, or
+  `general_context` alone — server-side merges just that one key into
+  the stored `behavior_config` dict, leaving every other area exactly as
+  stored. Still zero hand-rolled validation: each patched field is the
+  exact same typed sub-model as before (`GreetingConfig`, etc.), so
+  `Literal`/`ge`/`le` constraints still 422 automatically.
+- **Frontend save state is keyed per tab** (`savingTab: TabKey | null`,
+  `saveErrors: Partial<Record<TabKey, string>>`), not one shared flag —
+  switching tabs mid-save or after an error on a different tab can't
+  bleed a stale spinner/message onto the wrong tab.
+- **Button-width fix scoped, not global**: `.form` has no `align-items`
+  set (default `stretch`), which is exactly right for `Login.tsx`'s own
+  full-width submit button in its narrow 360px card — changing `.form`
+  itself would have shrunk that too. Added an opt-in `.button--fit
+  { align-self: flex-start }` modifier instead, applied to the tenant-
+  settings Save button and the trigger-phrase "Add phrase" button (same
+  oversized-bar problem, just not flagged until the two-column pass made
+  the column narrower and more obviously wrong), leaving Login untouched.
+- Fields within a tab panel use a new `.tenant-settings__fields` grid
+  (`repeat(auto-fit, minmax(220px, 1fr))`) instead of one full-width
+  column per field, so short controls (dropdowns, checkboxes) sit two-up;
+  `.tenant-settings__fields--full` opts a field (additional-context text,
+  the closing link, the slider, each channel's own block) back to full
+  width.
+- Same two new UI primitives from pass 1, unchanged: an editable checkbox
+  (the one pre-existing checkbox was disabled/read-only) and an
+  `<input type="range">` slider (`knowledge_query.not_found_max_distance`),
+  styled via `accent-color: var(--accent)` alone.
 
-**Verified live**, not just via 11 new backend tests
-(`test_tenants_api.py`: 401/404/defaults-filled-on-empty-and-partial-dict/
-persists-all-three-fields/422-on-bad-`closing_action`/422-on-out-of-bounds-
-`not_found_max_distance`/422-on-bad-channel-override-literal) and a clean
-`npm run build`/`npm run lint`: drove the real UI (Playwright, headless
-Chrome for Testing, same setup `.claude/skills/run/SKILL.md` documents)
-against the already-seeded Aurora Aesthetics Clinic tenant. Confirmed
-`GET` prefills real seeded values, not blanks or defaults (formal tone,
-the 0.5 confidence slider, the clinic's own `general_context` sentence).
-Edited one of each control type in a single pass — the `closing_action`
-dropdown (to `book_or_checkout`, revealing the conditional `closing_link`
-field), the confidence slider (0.5→0.3), a Telegram channel-tone
-override, and unchecked `hot_lead_requires_purchase_intent` — saved with
-no error, then did a hard page reload and re-read every field from a
-fresh `GET`: all five persisted exactly. Then proved the saved change
-drives real pipeline behavior, same standard §3.7 used for Vertex: sent
-a hot-scored, deliberately non-`purchase_intent` knowledge question
-("time-sensitive... board-certified surgeons with direct rhinoplasty
-revision experience?") through the real Test Console API — came back
-`decision: book_or_checkout` (both the widened hot-lead gate *and* the
-newly-saved `closing_action` firing together, not the tenant's original
-`escalate_to_human` default). Restored Aurora's original showcase config
-via a final `PUT` afterward so this verification pass didn't leave the
-documented §5.1 demo tenant in a different state than
-`seed_showcase_tenants.py` set it up in. Zero page/console errors
-throughout.
+**Verified live**, twice — once for pass 1 (full-object save, since
+superseded), once for pass 2 against the real rebuilt backend
+(`docker compose up -d --build backend worker` to pick up the new PATCH
+route) and the real UI (Playwright, headless Chrome for Testing), both
+against the already-seeded Aurora Aesthetics Clinic tenant, restoring
+Aurora's original showcase config via per-slice PATCHes afterward each
+time so neither pass left the documented §5.1 demo tenant altered. Pass
+2's own live checks, specifically proving independence (not just that
+saving works): edited the Closing tab's dropdown *without saving it*,
+switched to Greeting, edited and saved *that* tab — a fresh `GET`
+confirmed Greeting's change persisted while Closing's unsaved edit was
+correctly discarded, not silently carried along. Reloaded and confirmed
+the UI reflected that same server truth. Then saved Closing on its own
+tab and confirmed *that* persisted too, with Greeting and the untouched
+Knowledge-query area both exactly as they were — independence proven in
+both directions, not just asserted. Also confirmed the two-column layout
+renders left-to-right as intended and all 10 tabs render. Zero page/
+console errors throughout both live passes.
+
+11 backend tests rewritten for `PATCH` semantics in
+`test_tenants_api.py` (401/404/defaults-filled GET on empty and partial
+stored dicts/patches-closing-pair-only/patches-one-behavior-area-leaving-
+others-untouched/patches-channel-overrides-as-one-dict/patches-and-clears-
+general_context-to-null/empty-patch-changes-nothing/422 on bad
+`closing_action`, out-of-bounds `not_found_max_distance`, and a bad
+channel-override literal) — full suite (237 tests), ruff, mypy all clean.
+`npm run build`/`npm run lint` clean throughout both passes.
 
 ### Recommended sequencing
 Superseded by §5's "Updated sequencing given 5.1–5.3" below — kept this

@@ -151,7 +151,7 @@
       "title": "AI behavior & business settings",
       "loading": "Loading settings…",
       "loadError": "Couldn't load settings. Try again.",
-      "save": "Save settings",
+      "save": "Save",
       "saving": "Saving…",
       "saveError": "Couldn't save settings. Try again.",
       "tone": "Tone",
