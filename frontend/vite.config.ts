@@ -41,6 +41,7 @@ export default defineConfig({
       '^/dashboard(/|\\?)': 'http://localhost:8000',
       '^/test(/|\\?)': 'http://localhost:8000',
       '^/events(/|\\?)': 'http://localhost:8000',
+      '^/tenants(/|\\?)': 'http://localhost:8000',
     },
   },
 })

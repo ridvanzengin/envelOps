@@ -8,7 +8,7 @@
   "pages": {
     "knowledge": "Bilgi kaynağı ekle (URL/PDF/manuel), listele ve yenile.",
     "testConsole": "Yanıtların platforma göre nasıl farklılaştığını karşılaştırmak için herhangi bir platformda gerçek pipeline üzerinden test mesajı gönderin.",
-    "settings": "Güvenlik tetikleyici ifadeleri (sistem varsayılanları kilitli, kendi ifadelerinizi aşağıya ekleyin). Kanal bağlantı durumu henüz burada gösterilmiyor.",
+    "settings": "Güvenlik tetikleyici ifadeleri (sistem varsayılanları kilitli, kendi ifadelerinizi aşağıya ekleyin) ve yapay zeka davranışı/işletme ayarları. Kanal bağlantı durumu henüz burada gösterilmiyor.",
     "dashboard": "Bugünkü potansiyel müşteriler, bugünkü yükseltmeler, yanıt süreleri."
   },
   "theme": {
@@ -146,6 +146,94 @@
     "loadError": "Tetikleyici ifadeler yüklenemedi. Tekrar deneyin.",
     "delete": "Sil",
     "deleteConfirm": "Bu tetikleyici ifade silinsin mi? Bu işlem geri alınamaz.",
-    "deleteError": "Bu ifade silinemedi. Tekrar deneyin."
+    "deleteError": "Bu ifade silinemedi. Tekrar deneyin.",
+    "tenantSettings": {
+      "title": "Yapay zeka davranışı ve işletme ayarları",
+      "loading": "Ayarlar yükleniyor…",
+      "loadError": "Ayarlar yüklenemedi. Tekrar deneyin.",
+      "save": "Ayarları kaydet",
+      "saving": "Kaydediliyor…",
+      "saveError": "Ayarlar kaydedilemedi. Tekrar deneyin.",
+      "tone": "Ton",
+      "toneOptions": {
+        "friendlyBusiness": "Samimi ve rahat",
+        "formalBusiness": "Resmi ve profesyonel"
+      },
+      "closingBehavior": {
+        "title": "Kapanış davranışı",
+        "closingAction": "Bir potansiyel müşteri kapanışa hazır olduğunda",
+        "closingActionOptions": {
+          "keepChatting": "Sohbete devam et",
+          "escalateToHuman": "Bir insana yükselt",
+          "bookOrCheckout": "Rezervasyon/ödeme bağlantısı gönder"
+        },
+        "closingLink": "Rezervasyon / ödeme bağlantısı"
+      },
+      "greeting": {
+        "title": "Karşılama",
+        "inviteFollowup": "Karşılamadan sonra bir takip sorusu sor",
+        "additionalContext": "Bir müşteriyi karşılarken yapay zekanın bilmesi gereken herhangi bir şey"
+      },
+      "offTopic": {
+        "title": "Konu dışı mesajlar",
+        "additionalContext": "Bir mesaj konu dışı olduğunda yapay zekanın bilmesi gereken herhangi bir şey"
+      },
+      "knowledgeQuery": {
+        "title": "Bilgi soruları",
+        "limitToConfident": "Yalnızca gerçek bir eşleşmeden eminken yanıtla",
+        "notFoundMaxDistance": "Güven eşiği ({{value}}) — düşük değer daha katı",
+        "additionalContext": "Soruları yanıtlarken yapay zekanın bilmesi gereken herhangi bir şey"
+      },
+      "complaint": {
+        "title": "Şikayetler",
+        "empatheticAcknowledgment": "Önce şikayeti empatiyle karşıla",
+        "additionalContext": "Bir şikayeti ele alırken yapay zekanın bilmesi gereken herhangi bir şey"
+      },
+      "leadHandling": {
+        "title": "Potansiyel müşteri yönetimi",
+        "closingActionOverride": "Sıcak potansiyel müşteriler için kapanış davranışını geçersiz kıl",
+        "closingActionOverrideOptions": {
+          "useClosingBehaviorAbove": "Yukarıdaki kapanış davranışını kullan",
+          "keepChatting": "Sohbete devam et",
+          "escalateToHuman": "Bir insana yükselt",
+          "bookOrCheckout": "Rezervasyon/ödeme bağlantısı gönder"
+        },
+        "hotLeadRequiresPurchaseIntent": "Bir potansiyel müşteriyi yalnızca net satın alma niyeti gösterdiğinde kapanışa hazır say",
+        "additionalContext": "Potansiyel müşterileri değerlendirirken yapay zekanın bilmesi gereken herhangi bir şey"
+      },
+      "escalationCover": {
+        "title": "Yükseltme kapak mesajı",
+        "additionalContext": "Bir yükseltmeyi kapatırken yapay zekanın bilmesi gereken herhangi bir şey"
+      },
+      "bookOrCheckout": {
+        "title": "Rezervasyon / ödeme",
+        "ctaStyle": "Eylem çağrısı stili",
+        "ctaStyleOptions": {
+          "naturalMention": "Doğal şekilde bahset",
+          "directCta": "Doğrudan eylem çağrısı"
+        },
+        "additionalContext": "Bağlantıyı gönderirken yapay zekanın bilmesi gereken herhangi bir şey"
+      },
+      "channelOverrides": {
+        "title": "Platforma özel ton",
+        "overrideChannel": "{{channel}} için tonu geçersiz kıl",
+        "formality": "Resmiyet",
+        "formalityOptions": {
+          "casualChat": "Rahat sohbet",
+          "formalEmail": "Resmi e-posta"
+        },
+        "includeGreeting": "Bir karşılama ekle",
+        "includeSignOff": "Bir kapanış imzası ekle",
+        "lengthGuidance": "Yanıt uzunluğu",
+        "lengthGuidanceOptions": {
+          "brief": "Kısa",
+          "asNeeded": "Gerektiği kadar"
+        }
+      },
+      "generalContext": {
+        "title": "Genel işletme bağlamı",
+        "label": "Yapay zekanın her zaman aklında tutması gereken herhangi bir şey"
+      }
+    }
   }
 }

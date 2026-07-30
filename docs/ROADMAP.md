@@ -13,16 +13,16 @@
 
 ## 1. Status as of 2026-07-30
 
-**PRs #23–#34 are all merged into `main`** (Test Console through §3.6's
-three follow-on live fixes and a docs-only status correction — see
-§3.1–§3.6 below for what each one shipped). **PR #35 (§3.7, typed
-per-tenant AI behavior configuration) is open, not yet merged** — check
-`gh pr view <n> --json state` before assuming a given PR's status by
-the time this is read again, this line goes stale fast (learned the
-hard way in the prior session: pushing more commits to an already-merged
-PR's branch does NOT bring them into `main` — always verify with
-`gh pr view`, don't assume a `git push` succeeding means the changes
-are live).
+**PRs #23–#35 are all merged into `main`** (Test Console through §3.7's
+typed per-tenant AI behavior configuration — see §3.1–§3.7 below for
+what each one shipped). **§3.8 (tenant settings API + UI, PR #35's
+direct fast-follow) is implemented on `main`'s working tree this
+session, not yet its own PR** — check `gh pr view <n> --json state` /
+`git status` before assuming a given PR's status by the time this is
+read again, this line goes stale fast (learned the hard way in a prior
+session: pushing more commits to an already-merged PR's branch does NOT
+bring them into `main` — always verify with `gh pr view`, don't assume a
+`git push` succeeding means the changes are live).
 
 **The §5.1 safety-floor finding (outcome-guarantee check missing
 safety/risk-absence language) is explicitly postponed to a later
@@ -882,6 +882,73 @@ graph's fixed node/edge structure beyond the one new `load_tenant_config`
 node. No change to `escalation/safety_gate.py`'s own pattern-matching
 logic — `EscalationCoverConfig` only touches the cover-reply prose
 generated *after* a gate has already fired, never the gate itself.
+
+### 3.8 Tenant settings API + UI — done (2026-07-30)
+Direct fast-follow to §3.7's own "explicitly out of scope" line: PR #35
+built `TenantBehaviorConfig` but left it entirely script/SQL-only, not
+even covering the two pre-existing settings fields (`Tenant.closing_action`,
+`closing_link`). Session started from a fully-designed, user-approved
+plan written at the end of the §3.7 session specifically so this could
+be picked up cold — implemented directly against it, no re-design.
+
+**Backend:** one new module, `app/tenants/api.py` (no tenant HTTP API
+existed at all before this) — `GET`/`PUT /tenants/settings`, a single
+`TenantSettingsResponse` model reused both directions (deliberate, not a
+shortcut: `closing_action`/`closing_link`/`behavior_config` are the
+entire editable surface, nothing to exclude the way create/update pairs
+elsewhere need to). No hand-rolled validation — every field already
+carries its constraint at the type level from `behavior_config.py`
+(`Literal`/`ge`/`le`/`max_length`), so a bad body 422s from Pydantic
+alone. `Tenant.closing_action` is plain `str` at the DB layer (validity
+enforced by code, not the type system, same as ever) — `cast(ClosingAction,
+...)` narrows it for the typed response, the one place this pass touched
+mypy.
+
+**Frontend:** a second section on the existing `Settings.tsx` (not a new
+route) — "AI behavior & business settings" below the pre-existing safety
+trigger phrases. Full-object load/edit/save, one Save button for the
+whole form, no autosave/optimistic UI, no success toast (confirmed no
+page in this app has one). Covers every `TenantBehaviorConfig` area
+(greeting, off-topic, knowledge query, complaint, lead handling,
+escalation cover, book-or-checkout, five per-channel overrides, general
+context) plus the bundled `closing_action`/`closing_link`. Two genuinely
+new UI primitives this app had zero precedent for going in: an editable
+checkbox (the one pre-existing checkbox was disabled/read-only) and an
+`<input type="range">` slider (`knowledge_query.not_found_max_distance`,
+gated behind an "only answer when confident" checkbox — unchecked sends
+`null`, today's exact inert default) — new `.form__field--checkbox` and
+`input[type="range"]` rules in `App.css`, the range styled via
+`accent-color: var(--accent)` alone rather than per-browser
+`::-webkit-slider-thumb`/`::-moz-range-*` rules. New `settings.tenantSettings.*`
+i18n block in both `en.json`/`tr.json`, Turkish written to match the
+file's existing tone, not left as placeholders.
+
+**Verified live**, not just via 11 new backend tests
+(`test_tenants_api.py`: 401/404/defaults-filled-on-empty-and-partial-dict/
+persists-all-three-fields/422-on-bad-`closing_action`/422-on-out-of-bounds-
+`not_found_max_distance`/422-on-bad-channel-override-literal) and a clean
+`npm run build`/`npm run lint`: drove the real UI (Playwright, headless
+Chrome for Testing, same setup `.claude/skills/run/SKILL.md` documents)
+against the already-seeded Aurora Aesthetics Clinic tenant. Confirmed
+`GET` prefills real seeded values, not blanks or defaults (formal tone,
+the 0.5 confidence slider, the clinic's own `general_context` sentence).
+Edited one of each control type in a single pass — the `closing_action`
+dropdown (to `book_or_checkout`, revealing the conditional `closing_link`
+field), the confidence slider (0.5→0.3), a Telegram channel-tone
+override, and unchecked `hot_lead_requires_purchase_intent` — saved with
+no error, then did a hard page reload and re-read every field from a
+fresh `GET`: all five persisted exactly. Then proved the saved change
+drives real pipeline behavior, same standard §3.7 used for Vertex: sent
+a hot-scored, deliberately non-`purchase_intent` knowledge question
+("time-sensitive... board-certified surgeons with direct rhinoplasty
+revision experience?") through the real Test Console API — came back
+`decision: book_or_checkout` (both the widened hot-lead gate *and* the
+newly-saved `closing_action` firing together, not the tenant's original
+`escalate_to_human` default). Restored Aurora's original showcase config
+via a final `PUT` afterward so this verification pass didn't leave the
+documented §5.1 demo tenant in a different state than
+`seed_showcase_tenants.py` set it up in. Zero page/console errors
+throughout.
 
 ### Recommended sequencing
 Superseded by §5's "Updated sequencing given 5.1–5.3" below — kept this

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import type { FormEvent } from "react";
 import { useTranslation } from "react-i18next";
 
-import { apiDelete, apiGet, apiPost, ApiError } from "../api/client";
+import { apiDelete, apiGet, apiPost, apiPut, ApiError } from "../api/client";
 import { useAuth } from "../auth/useAuth";
 import { TrashIcon } from "../components/icons";
 
@@ -22,6 +22,141 @@ const SYSTEM_DEFAULT_CATEGORY_KEYS = [
   "outcomeGuarantee",
 ] as const;
 
+// Mirrors backend/app/tenants/behavior_config.py exactly -- one combined
+// model reused for both the GET response and the PUT request body (see
+// the plan this was built from: closing_action/closing_link/behavior_config
+// are the entire editable surface, nothing to exclude either direction).
+type BusinessTone = "friendly_business" | "formal_business";
+type ClosingAction = "keep_chatting" | "escalate_to_human" | "book_or_checkout";
+
+interface BehaviorAreaBase {
+  additional_context: string | null;
+}
+
+interface GreetingConfig extends BehaviorAreaBase {
+  tone: BusinessTone;
+  invite_followup_question: boolean;
+}
+
+interface OffTopicConfig extends BehaviorAreaBase {
+  tone: BusinessTone;
+}
+
+interface KnowledgeQueryConfig extends BehaviorAreaBase {
+  tone: BusinessTone;
+  not_found_max_distance: number | null;
+}
+
+interface ComplaintConfig extends BehaviorAreaBase {
+  empathetic_acknowledgment: boolean;
+}
+
+interface LeadHandlingConfig extends BehaviorAreaBase {
+  closing_action_override: ClosingAction | null;
+  hot_lead_requires_purchase_intent: boolean;
+}
+
+interface EscalationCoverConfig extends BehaviorAreaBase {
+  tone: BusinessTone;
+}
+
+interface BookOrCheckoutConfig extends BehaviorAreaBase {
+  cta_style: "natural_mention" | "direct_cta";
+}
+
+interface ChannelToneConfig {
+  formality: "casual_chat" | "formal_email";
+  include_greeting: boolean;
+  include_sign_off: boolean;
+  length_guidance: "brief" | "as_needed";
+}
+
+interface TenantBehaviorConfig {
+  schema_version: number;
+  greeting: GreetingConfig;
+  off_topic: OffTopicConfig;
+  knowledge_query: KnowledgeQueryConfig;
+  complaint: ComplaintConfig;
+  lead_handling: LeadHandlingConfig;
+  escalation_cover: EscalationCoverConfig;
+  book_or_checkout: BookOrCheckoutConfig;
+  channel_overrides: Record<string, ChannelToneConfig>;
+  general_context: string | null;
+}
+
+interface TenantSettings {
+  closing_action: ClosingAction;
+  closing_link: string | null;
+  behavior_config: TenantBehaviorConfig;
+}
+
+type BehaviorAreaKey =
+  | "greeting"
+  | "off_topic"
+  | "knowledge_query"
+  | "complaint"
+  | "lead_handling"
+  | "escalation_cover"
+  | "book_or_checkout";
+
+// Not exported from ChannelRail.tsx today, so duplicated here -- same five
+// platform keys, same order, matching that file's own CHANNELS list.
+const CHANNEL_TYPES = ["telegram", "whatsapp", "facebook", "instagram", "email"] as const;
+
+const DEFAULT_CHANNEL_OVERRIDE: ChannelToneConfig = {
+  formality: "casual_chat",
+  include_greeting: false,
+  include_sign_off: false,
+  length_guidance: "brief",
+};
+
+function ToneSelect({
+  value,
+  onChange,
+  label,
+}: {
+  value: BusinessTone;
+  onChange: (value: BusinessTone) => void;
+  label: string;
+}) {
+  const { t } = useTranslation();
+  return (
+    <label className="form__field">
+      {label}
+      <select value={value} onChange={(e) => onChange(e.target.value as BusinessTone)}>
+        <option value="friendly_business">
+          {t("settings.tenantSettings.toneOptions.friendlyBusiness")}
+        </option>
+        <option value="formal_business">
+          {t("settings.tenantSettings.toneOptions.formalBusiness")}
+        </option>
+      </select>
+    </label>
+  );
+}
+
+function AdditionalContextField({
+  value,
+  onChange,
+  label,
+}: {
+  value: string | null;
+  onChange: (value: string | null) => void;
+  label: string;
+}) {
+  return (
+    <label className="form__field">
+      {label}
+      <input
+        type="text"
+        maxLength={500}
+        value={value ?? ""}
+        onChange={(e) => onChange(e.target.value || null)}
+      />
+    </label>
+  );
+}
+
 export default function Settings() {
   const { t } = useTranslation();
   const { token, logout } = useAuth();
@@ -32,6 +167,115 @@ export default function Settings() {
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  const [settings, setSettings] = useState<TenantSettings | null>(null);
+  const [settingsError, setSettingsError] = useState<string | null>(null);
+  const [savingSettings, setSavingSettings] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+
+  const loadSettings = useCallback(async () => {
+    setSettingsError(null);
+    try {
+      const result = await apiGet<TenantSettings>("/tenants/settings", token);
+      setSettings(result);
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        logout();
+        return;
+      }
+      setSettingsError(t("settings.tenantSettings.loadError"));
+    }
+  }, [token, logout, t]);
+
+  useEffect(() => {
+    void loadSettings();
+  }, [loadSettings]);
+
+  async function handleSaveSettings(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!settings) return;
+    setSaveError(null);
+    setSavingSettings(true);
+    try {
+      const updated = await apiPut<TenantSettings>("/tenants/settings", settings, token);
+      setSettings(updated);
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        logout();
+        return;
+      }
+      setSaveError(err instanceof ApiError ? err.message : t("settings.tenantSettings.saveError"));
+    } finally {
+      setSavingSettings(false);
+    }
+  }
+
+  function updateClosingAction(value: ClosingAction) {
+    setSettings((current) => (current ? { ...current, closing_action: value } : current));
+  }
+
+  function updateClosingLink(value: string) {
+    setSettings((current) => (current ? { ...current, closing_link: value || null } : current));
+  }
+
+  function updateGeneralContext(value: string | null) {
+    setSettings((current) =>
+      current
+        ? { ...current, behavior_config: { ...current.behavior_config, general_context: value } }
+        : current,
+    );
+  }
+
+  function updateArea<K extends BehaviorAreaKey>(
+    area: K,
+    patch: Partial<TenantBehaviorConfig[K]>,
+  ) {
+    setSettings((current) =>
+      current
+        ? {
+            ...current,
+            behavior_config: {
+              ...current.behavior_config,
+              [area]: { ...current.behavior_config[area], ...patch },
+            },
+          }
+        : current,
+    );
+  }
+
+  function toggleChannelOverride(channel: string, enabled: boolean) {
+    setSettings((current) => {
+      if (!current) return current;
+      const overrides = { ...current.behavior_config.channel_overrides };
+      if (enabled) {
+        overrides[channel] = overrides[channel] ?? DEFAULT_CHANNEL_OVERRIDE;
+      } else {
+        delete overrides[channel];
+      }
+      return {
+        ...current,
+        behavior_config: { ...current.behavior_config, channel_overrides: overrides },
+      };
+    });
+  }
+
+  function updateChannelOverride(channel: string, patch: Partial<ChannelToneConfig>) {
+    setSettings((current) => {
+      if (!current) return current;
+      const existing = current.behavior_config.channel_overrides[channel];
+      if (!existing) return current;
+      return {
+        ...current,
+        behavior_config: {
+          ...current.behavior_config,
+          channel_overrides: {
+            ...current.behavior_config.channel_overrides,
+            [channel]: { ...existing, ...patch },
+          },
+        },
+      };
+    });
+  }
 
   const load = useCallback(async () => {
     setError(null);
@@ -169,6 +413,372 @@ export default function Settings() {
           </p>
         )}
       </form>
+
+      <h2>{t("settings.tenantSettings.title")}</h2>
+      {settingsError && (
+        <p className="error-message" role="alert">
+          {settingsError}
+        </p>
+      )}
+      {settings === null && !settingsError && <p>{t("settings.tenantSettings.loading")}</p>}
+      {settings !== null && (
+        <form className="form tenant-settings" onSubmit={(event) => void handleSaveSettings(event)}>
+          <div className="tenant-settings__section">
+            <h3>{t("settings.tenantSettings.closingBehavior.title")}</h3>
+            <label className="form__field">
+              {t("settings.tenantSettings.closingBehavior.closingAction")}
+              <select
+                value={settings.closing_action}
+                onChange={(e) => updateClosingAction(e.target.value as ClosingAction)}
+              >
+                <option value="keep_chatting">
+                  {t("settings.tenantSettings.closingBehavior.closingActionOptions.keepChatting")}
+                </option>
+                <option value="escalate_to_human">
+                  {t(
+                    "settings.tenantSettings.closingBehavior.closingActionOptions.escalateToHuman",
+                  )}
+                </option>
+                <option value="book_or_checkout">
+                  {t(
+                    "settings.tenantSettings.closingBehavior.closingActionOptions.bookOrCheckout",
+                  )}
+                </option>
+              </select>
+            </label>
+            {settings.closing_action === "book_or_checkout" && (
+              <label className="form__field">
+                {t("settings.tenantSettings.closingBehavior.closingLink")}
+                <input
+                  type="url"
+                  value={settings.closing_link ?? ""}
+                  onChange={(e) => updateClosingLink(e.target.value)}
+                />
+              </label>
+            )}
+          </div>
+
+          <div className="tenant-settings__section">
+            <h3>{t("settings.tenantSettings.greeting.title")}</h3>
+            <ToneSelect
+              value={settings.behavior_config.greeting.tone}
+              onChange={(tone) => updateArea("greeting", { tone })}
+              label={t("settings.tenantSettings.tone")}
+            />
+            <label className="form__field form__field--checkbox">
+              <input
+                type="checkbox"
+                checked={settings.behavior_config.greeting.invite_followup_question}
+                onChange={(e) =>
+                  updateArea("greeting", { invite_followup_question: e.target.checked })
+                }
+              />
+              {t("settings.tenantSettings.greeting.inviteFollowup")}
+            </label>
+            <AdditionalContextField
+              value={settings.behavior_config.greeting.additional_context}
+              onChange={(additional_context) => updateArea("greeting", { additional_context })}
+              label={t("settings.tenantSettings.greeting.additionalContext")}
+            />
+          </div>
+
+          <div className="tenant-settings__section">
+            <h3>{t("settings.tenantSettings.offTopic.title")}</h3>
+            <ToneSelect
+              value={settings.behavior_config.off_topic.tone}
+              onChange={(tone) => updateArea("off_topic", { tone })}
+              label={t("settings.tenantSettings.tone")}
+            />
+            <AdditionalContextField
+              value={settings.behavior_config.off_topic.additional_context}
+              onChange={(additional_context) => updateArea("off_topic", { additional_context })}
+              label={t("settings.tenantSettings.offTopic.additionalContext")}
+            />
+          </div>
+
+          <div className="tenant-settings__section">
+            <h3>{t("settings.tenantSettings.knowledgeQuery.title")}</h3>
+            <ToneSelect
+              value={settings.behavior_config.knowledge_query.tone}
+              onChange={(tone) => updateArea("knowledge_query", { tone })}
+              label={t("settings.tenantSettings.tone")}
+            />
+            <label className="form__field form__field--checkbox">
+              <input
+                type="checkbox"
+                checked={settings.behavior_config.knowledge_query.not_found_max_distance !== null}
+                onChange={(e) =>
+                  updateArea("knowledge_query", {
+                    not_found_max_distance: e.target.checked ? 1.0 : null,
+                  })
+                }
+              />
+              {t("settings.tenantSettings.knowledgeQuery.limitToConfident")}
+            </label>
+            {settings.behavior_config.knowledge_query.not_found_max_distance !== null && (
+              <label className="form__field">
+                {t("settings.tenantSettings.knowledgeQuery.notFoundMaxDistance", {
+                  value: settings.behavior_config.knowledge_query.not_found_max_distance.toFixed(
+                    1,
+                  ),
+                })}
+                <input
+                  type="range"
+                  min={0}
+                  max={2}
+                  step={0.1}
+                  value={settings.behavior_config.knowledge_query.not_found_max_distance}
+                  onChange={(e) =>
+                    updateArea("knowledge_query", {
+                      not_found_max_distance: Number(e.target.value),
+                    })
+                  }
+                />
+              </label>
+            )}
+            <AdditionalContextField
+              value={settings.behavior_config.knowledge_query.additional_context}
+              onChange={(additional_context) =>
+                updateArea("knowledge_query", { additional_context })
+              }
+              label={t("settings.tenantSettings.knowledgeQuery.additionalContext")}
+            />
+          </div>
+
+          <div className="tenant-settings__section">
+            <h3>{t("settings.tenantSettings.complaint.title")}</h3>
+            <label className="form__field form__field--checkbox">
+              <input
+                type="checkbox"
+                checked={settings.behavior_config.complaint.empathetic_acknowledgment}
+                onChange={(e) =>
+                  updateArea("complaint", { empathetic_acknowledgment: e.target.checked })
+                }
+              />
+              {t("settings.tenantSettings.complaint.empatheticAcknowledgment")}
+            </label>
+            <AdditionalContextField
+              value={settings.behavior_config.complaint.additional_context}
+              onChange={(additional_context) => updateArea("complaint", { additional_context })}
+              label={t("settings.tenantSettings.complaint.additionalContext")}
+            />
+          </div>
+
+          <div className="tenant-settings__section">
+            <h3>{t("settings.tenantSettings.leadHandling.title")}</h3>
+            <label className="form__field">
+              {t("settings.tenantSettings.leadHandling.closingActionOverride")}
+              <select
+                value={settings.behavior_config.lead_handling.closing_action_override ?? ""}
+                onChange={(e) =>
+                  updateArea("lead_handling", {
+                    closing_action_override: (e.target.value || null) as ClosingAction | null,
+                  })
+                }
+              >
+                <option value="">
+                  {t(
+                    "settings.tenantSettings.leadHandling.closingActionOverrideOptions.useClosingBehaviorAbove",
+                  )}
+                </option>
+                <option value="keep_chatting">
+                  {t(
+                    "settings.tenantSettings.leadHandling.closingActionOverrideOptions.keepChatting",
+                  )}
+                </option>
+                <option value="escalate_to_human">
+                  {t(
+                    "settings.tenantSettings.leadHandling.closingActionOverrideOptions.escalateToHuman",
+                  )}
+                </option>
+                <option value="book_or_checkout">
+                  {t(
+                    "settings.tenantSettings.leadHandling.closingActionOverrideOptions.bookOrCheckout",
+                  )}
+                </option>
+              </select>
+            </label>
+            <label className="form__field form__field--checkbox">
+              <input
+                type="checkbox"
+                checked={settings.behavior_config.lead_handling.hot_lead_requires_purchase_intent}
+                onChange={(e) =>
+                  updateArea("lead_handling", {
+                    hot_lead_requires_purchase_intent: e.target.checked,
+                  })
+                }
+              />
+              {t("settings.tenantSettings.leadHandling.hotLeadRequiresPurchaseIntent")}
+            </label>
+            <AdditionalContextField
+              value={settings.behavior_config.lead_handling.additional_context}
+              onChange={(additional_context) =>
+                updateArea("lead_handling", { additional_context })
+              }
+              label={t("settings.tenantSettings.leadHandling.additionalContext")}
+            />
+          </div>
+
+          <div className="tenant-settings__section">
+            <h3>{t("settings.tenantSettings.escalationCover.title")}</h3>
+            <ToneSelect
+              value={settings.behavior_config.escalation_cover.tone}
+              onChange={(tone) => updateArea("escalation_cover", { tone })}
+              label={t("settings.tenantSettings.tone")}
+            />
+            <AdditionalContextField
+              value={settings.behavior_config.escalation_cover.additional_context}
+              onChange={(additional_context) =>
+                updateArea("escalation_cover", { additional_context })
+              }
+              label={t("settings.tenantSettings.escalationCover.additionalContext")}
+            />
+          </div>
+
+          <div className="tenant-settings__section">
+            <h3>{t("settings.tenantSettings.bookOrCheckout.title")}</h3>
+            <label className="form__field">
+              {t("settings.tenantSettings.bookOrCheckout.ctaStyle")}
+              <select
+                value={settings.behavior_config.book_or_checkout.cta_style}
+                onChange={(e) =>
+                  updateArea("book_or_checkout", {
+                    cta_style: e.target.value as BookOrCheckoutConfig["cta_style"],
+                  })
+                }
+              >
+                <option value="natural_mention">
+                  {t("settings.tenantSettings.bookOrCheckout.ctaStyleOptions.naturalMention")}
+                </option>
+                <option value="direct_cta">
+                  {t("settings.tenantSettings.bookOrCheckout.ctaStyleOptions.directCta")}
+                </option>
+              </select>
+            </label>
+            <AdditionalContextField
+              value={settings.behavior_config.book_or_checkout.additional_context}
+              onChange={(additional_context) =>
+                updateArea("book_or_checkout", { additional_context })
+              }
+              label={t("settings.tenantSettings.bookOrCheckout.additionalContext")}
+            />
+          </div>
+
+          <div className="tenant-settings__section">
+            <h3>{t("settings.tenantSettings.channelOverrides.title")}</h3>
+            {CHANNEL_TYPES.map((channel) => {
+              const override = settings.behavior_config.channel_overrides[channel];
+              return (
+                <div key={channel} className="tenant-settings__channel">
+                  <label className="form__field form__field--checkbox">
+                    <input
+                      type="checkbox"
+                      checked={override !== undefined}
+                      onChange={(e) => toggleChannelOverride(channel, e.target.checked)}
+                    />
+                    {t("settings.tenantSettings.channelOverrides.overrideChannel", {
+                      channel: t(`channelRail.${channel}`),
+                    })}
+                  </label>
+                  {override && (
+                    <div className="tenant-settings__channel-fields">
+                      <label className="form__field">
+                        {t("settings.tenantSettings.channelOverrides.formality")}
+                        <select
+                          value={override.formality}
+                          onChange={(e) =>
+                            updateChannelOverride(channel, {
+                              formality: e.target.value as ChannelToneConfig["formality"],
+                            })
+                          }
+                        >
+                          <option value="casual_chat">
+                            {t(
+                              "settings.tenantSettings.channelOverrides.formalityOptions.casualChat",
+                            )}
+                          </option>
+                          <option value="formal_email">
+                            {t(
+                              "settings.tenantSettings.channelOverrides.formalityOptions.formalEmail",
+                            )}
+                          </option>
+                        </select>
+                      </label>
+                      <label className="form__field form__field--checkbox">
+                        <input
+                          type="checkbox"
+                          checked={override.include_greeting}
+                          onChange={(e) =>
+                            updateChannelOverride(channel, { include_greeting: e.target.checked })
+                          }
+                        />
+                        {t("settings.tenantSettings.channelOverrides.includeGreeting")}
+                      </label>
+                      <label className="form__field form__field--checkbox">
+                        <input
+                          type="checkbox"
+                          checked={override.include_sign_off}
+                          onChange={(e) =>
+                            updateChannelOverride(channel, { include_sign_off: e.target.checked })
+                          }
+                        />
+                        {t("settings.tenantSettings.channelOverrides.includeSignOff")}
+                      </label>
+                      <label className="form__field">
+                        {t("settings.tenantSettings.channelOverrides.lengthGuidance")}
+                        <select
+                          value={override.length_guidance}
+                          onChange={(e) =>
+                            updateChannelOverride(channel, {
+                              length_guidance: e.target
+                                .value as ChannelToneConfig["length_guidance"],
+                            })
+                          }
+                        >
+                          <option value="brief">
+                            {t(
+                              "settings.tenantSettings.channelOverrides.lengthGuidanceOptions.brief",
+                            )}
+                          </option>
+                          <option value="as_needed">
+                            {t(
+                              "settings.tenantSettings.channelOverrides.lengthGuidanceOptions.asNeeded",
+                            )}
+                          </option>
+                        </select>
+                      </label>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="tenant-settings__section">
+            <h3>{t("settings.tenantSettings.generalContext.title")}</h3>
+            <label className="form__field">
+              {t("settings.tenantSettings.generalContext.label")}
+              <input
+                type="text"
+                maxLength={500}
+                value={settings.behavior_config.general_context ?? ""}
+                onChange={(e) => updateGeneralContext(e.target.value || null)}
+              />
+            </label>
+          </div>
+
+          <button type="submit" className="button button--primary" disabled={savingSettings}>
+            {savingSettings
+              ? t("settings.tenantSettings.saving")
+              : t("settings.tenantSettings.save")}
+          </button>
+          {saveError && (
+            <p className="error-message" role="alert">
+              {saveError}
+            </p>
+          )}
+        </form>
+      )}
     </section>
   );
 }
