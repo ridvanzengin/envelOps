@@ -9,7 +9,12 @@ import { createContext } from "react";
 // Exclusive, not multi-select (direct instruction): clicking a chip
 // selects only that filter, cancelling out whatever was active before --
 // not a Set of independently-toggled chips ANDed/ORed together.
-export type ConversationFilterKey = "escalated" | "hot_lead" | "purchase_intent";
+export type ConversationFilterKey =
+  | "escalated"
+  | "unescalated"
+  | "hot_lead"
+  | "purchase_intent"
+  | "complaint";
 
 // Latest pipeline_traces row for a message/conversation (docs/ROADMAP.md
 // §3.3/§3.4) -- `decision` is only ever populated per-message

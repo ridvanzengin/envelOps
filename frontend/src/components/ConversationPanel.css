@@ -91,10 +91,9 @@
    -- one chip per "important tag" worth quickly filtering by. Each chip's
    color is the single source of truth for that tag's meaning everywhere
    else it appears (the matching per-row badge above), not a separate,
-   possibly-drifting color choice. Multi-select, OR-combined -- toggling
-   more than one chip broadens the list rather than narrowing it further,
-   same as a typical label-filter UI (Gmail, etc.), not an AND filter that
-   would rarely match anything with only 2-3 tags to combine. */
+   possibly-drifting color choice. Exclusive, not multi-select (direct
+   instruction) -- selecting a chip shows ONLY that one's matches,
+   cancelling out whichever chip was active before. */
 .conversation-panel__filters {
   display: flex;
   flex-wrap: wrap;
@@ -123,6 +122,16 @@
   color: var(--danger);
 }
 
+/* Green/--success -- reused from decision-book_or_checkout's unrelated
+   meaning elsewhere (that badge never appears in this rail's rows, only
+   in Test Console's per-message view, so there's no on-screen clash),
+   picked deliberately here for its own sense: "nothing needs attention." */
+.conversation-panel__filter--unescalated {
+  border-color: var(--success);
+  background: var(--success-bg);
+  color: var(--success);
+}
+
 .conversation-panel__filter--hot_lead {
   border-color: var(--warning);
   background: var(--warning-bg);
@@ -133,6 +142,12 @@
   border-color: var(--accent-border);
   background: var(--accent-bg);
   color: var(--accent-h);
+}
+
+.conversation-panel__filter--complaint {
+  border-color: var(--info);
+  background: var(--info-bg);
+  color: var(--info);
 }
 
 .conversation-panel__filter--active {
@@ -389,6 +404,17 @@
   background: var(--success-bg);
   color: var(--success);
   border-color: var(--success);
+}
+
+/* Complaint gets its own color (info/violet) -- distinct from hot
+   (amber), escalated (red), and purchase intent (teal), and not reused
+   from success/green (which already means something unrelated:
+   decision-book_or_checkout above). Coherent with the "Complaint" filter
+   chip below, same token. */
+.diagnostics-badge--intent-complaint_or_problem {
+  background: var(--info-bg);
+  color: var(--info);
+  border-color: var(--info);
 }
 
 /* Conversation-rail-only badge (docs/ROADMAP.md UI polish pass): replaces

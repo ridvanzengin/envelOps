@@ -14,8 +14,9 @@ import "./ConversationPanel.css";
 // `match` decides both which conversations a chip filters to AND (via
 // escalationByConversationId, the one predicate that isn't a plain field
 // read) whether a given conversation counts for that chip's badge count.
-// Order here is render order: escalated first (highest-priority signal),
-// same position the old single filter button occupied.
+// Order here is render order: the escalation-state pair first (highest-
+// priority signal, same position the old single filter button occupied),
+// then the intent/score-based tags.
 const FILTER_DEFINITIONS: {
   key: ConversationFilterKey;
   labelKey: string;
@@ -27,6 +28,11 @@ const FILTER_DEFINITIONS: {
     match: (conversation, escalatedIds) => escalatedIds.has(conversation.id),
   },
   {
+    key: "unescalated",
+    labelKey: "conversationPanel.filterUnescalated",
+    match: (conversation, escalatedIds) => !escalatedIds.has(conversation.id),
+  },
+  {
     key: "hot_lead",
     labelKey: "conversationPanel.filterHotLead",
     match: (conversation) => conversation.lead_score === "hot",
@@ -35,6 +41,11 @@ const FILTER_DEFINITIONS: {
     key: "purchase_intent",
     labelKey: "diagnostics.intent.purchase_intent",
     match: (conversation) => conversation.detected_intent === "purchase_intent",
+  },
+  {
+    key: "complaint",
+    labelKey: "diagnostics.intent.complaint_or_problem",
+    match: (conversation) => conversation.detected_intent === "complaint_or_problem",
   },
 ];
 

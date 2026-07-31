@@ -73,6 +73,7 @@
     "threadLoading": "Loading messages…",
     "threadLoadError": "Couldn't load this conversation's messages. Try again.",
     "filterEscalated": "Escalated",
+    "filterUnescalated": "Not escalated",
     "filterHotLead": "Hot lead",
     "pagePrev": "Prev",
     "pageNext": "Next",
