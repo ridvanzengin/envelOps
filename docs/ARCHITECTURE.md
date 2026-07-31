@@ -335,6 +335,13 @@ ability, so nothing changed there. The frontend `react-i18next` setup
 (§10) is untouched and still works — it was always independent of pipeline
 language handling, not affected by this cut.
 
+**Follow-up (same day):** `escalation/safety_gate.py`'s Turkish pattern
+lists (contraindication/symptom/certainty/efficacy cues) were also
+removed — system defaults are English-only now, matching the rest of the
+pipeline. Tenant-added trigger phrases (REQUIREMENTS §6) are unaffected,
+since that's a plain substring match with no language dependency to begin
+with.
+
 Original description, for the record:
 
 Phase 1 requirement (REQUIREMENTS §11), driven by the pilot business

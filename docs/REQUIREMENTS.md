@@ -280,11 +280,20 @@ resolves what had been an open, recurring bug category (language-
 consistency issues found live more than once) by removing the mechanism
 that caused them, not by fixing them in place.
 
-**Not cut**: `escalation/safety_gate.py`'s own Turkish safety-term
-detection patterns (unrelated concern — catching dangerous phrases
-regardless of language, not reply-language-matching) and the frontend's
-`react-i18next` UI chrome (English/Turkish dashboard switcher, inert and
-isolated, not the source of any problem). Neither needed to change.
+**Follow-up, same day: `escalation/safety_gate.py`'s own Turkish
+safety-term detection patterns were also removed**, reversing this
+section's original "not cut" call. That call was made on the reasoning
+that pattern-matching dangerous phrases is a different concern from
+reply-language-matching — still true in principle, but on direct
+instruction the project is now English-only end to end, not "English-only
+except one still-bilingual safety module." System defaults are
+English-only patterns now (`_CONTRAINDICATION_PATTERNS`/`_SYMPTOM_PATTERNS`/
+`_CERTAINTY_CUES`/`_EFFICACY_CUES`); tenant-added trigger phrases
+(plain substring match, any language) are unaffected — a business owner
+can still add a non-English phrase, that mechanism was never
+language-specific. The frontend's `react-i18next` UI chrome (English/
+Turkish dashboard switcher, inert and isolated, not the source of any
+problem) is still untouched.
 
 Original requirement text kept below for the record, not because it's
 still in effect:

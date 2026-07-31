@@ -44,45 +44,6 @@ class SafetyFloorEnglishTests(unittest.TestCase):
         self.assertIn("contraindication", trigger.reason)
 
 
-class SafetyFloorTurkishTests(unittest.TestCase):
-    def test_no_trigger_on_ordinary_question(self) -> None:
-        self.assertIsNone(check_platform_safety_floor("Çalışma saatleriniz nedir?"))
-
-    def test_no_false_positive_on_bottle_language(self) -> None:
-        # "şişe" (bottle) must not match the "şiş" (swollen) patterns — this
-        # is a honey seller, bottles come up constantly.
-        self.assertIsNone(check_platform_safety_floor("Bu şişe kaç ml?"))
-        self.assertIsNone(check_platform_safety_floor("İki şişe bal almak istiyorum"))
-
-    def test_no_false_positive_on_shipping_guarantee(self) -> None:
-        self.assertIsNone(
-            check_platform_safety_floor("Kargo tesliminde garanti veriyor musunuz?")
-        )
-        self.assertIsNone(check_platform_safety_floor("Ürünün garantisi var mı?"))
-
-    def test_triggers_on_contraindication_language(self) -> None:
-        trigger = check_platform_safety_floor(
-            "Bunu ilacım ile birlikte kullanabilir miyim?"
-        )
-        self.assertIsNotNone(trigger)
-        self.assertEqual(trigger.layer, "platform_floor")
-
-    def test_triggers_on_symptom_language(self) -> None:
-        trigger = check_platform_safety_floor("Elim şişti ve çok acı veriyor")
-        self.assertIsNotNone(trigger)
-
-    def test_triggers_on_outcome_guarantee_request(self) -> None:
-        trigger = check_platform_safety_floor(
-            "Bu bal işe yarayacağını garanti eder misiniz?"
-        )
-        self.assertIsNotNone(trigger)
-
-    def test_reason_names_the_category(self) -> None:
-        trigger = check_platform_safety_floor("Alerjik bir reaksiyon geçiriyorum")
-        assert trigger is not None
-        self.assertIn("contraindication", trigger.reason)
-
-
 class TenantTriggerPhraseTests(unittest.TestCase):
     def test_no_trigger_when_no_phrases_configured(self) -> None:
         self.assertIsNone(check_tenant_trigger_phrases("mad honey is dangerous", []))
@@ -99,12 +60,6 @@ class TenantTriggerPhraseTests(unittest.TestCase):
         self.assertIsNotNone(trigger)
         self.assertEqual(trigger.layer, "platform_floor")
         self.assertIn("mad honey", trigger.reason)
-
-    def test_triggers_on_turkish_tenant_phrase(self) -> None:
-        trigger = check_tenant_trigger_phrases(
-            "Bu deli bal mı, tehlikeli olduğunu duydum", ["deli bal"]
-        )
-        self.assertIsNotNone(trigger)
 
     def test_blank_phrases_are_ignored(self) -> None:
         self.assertIsNone(check_tenant_trigger_phrases("anything at all", ["   ", ""]))

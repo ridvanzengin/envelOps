@@ -198,6 +198,24 @@ class TestUnderstandIntent:
         prompt = mock_gen.call_args.args[0]
         assert "Earlier in this conversation" not in prompt
 
+    def test_prompt_distinguishes_existing_order_changes_from_new_purchases(self) -> None:
+        # docs/ROADMAP.md calibration finding: "swap an article of order
+        # #12345" (an existing-order request) was classified as
+        # purchase_intent, which routed it to book_or_checkout and sent a
+        # fresh checkout link instead of grounding it against the
+        # tenant's actual order-change policy. knowledge_question's
+        # definition now explicitly carves out modify/cancel/exchange
+        # requests on an order the customer already placed, and
+        # purchase_intent is explicitly scoped to a NEW purchase.
+        state = _make_state("Can you swap an article of order #12345?")
+        with patch(
+            "app.pipeline.graph.generate_text", return_value="knowledge_question"
+        ) as mock_gen:
+            understand_intent(state)
+        prompt = mock_gen.call_args.args[0]
+        assert "modify, cancel, exchange, or" in prompt
+        assert "something NEW" in prompt
+
 
 class TestSearchKnowledge:
     async def test_populates_retrieved_chunks_from_repository(self) -> None:

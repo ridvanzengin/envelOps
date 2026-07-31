@@ -90,14 +90,17 @@ forward — this pass doesn't cover anything added after it.
   whatever language the model defaults to (English), regardless of input
   language. This was a real, recurring bug source (language-consistency
   issues found live more than once) and stopped being needed once the
-  real Turkish-speaking pilot was deprioritized. **Not touched by this
-  cut**: `escalation/safety_gate.py`'s own Turkish safety-term detection
-  patterns (e.g. "şişe" vs "şiş", "garanti") — those catch dangerous
-  phrases regardless of language, a different concern from reply-language-
-  matching, and still provide real defensive value. Frontend i18n
-  (`react-i18next`, `en.json`/`tr.json`) is also untouched — inert,
-  isolated, wasn't the source of the problem, not worth the churn to rip
-  out.
+  real Turkish-speaking pilot was deprioritized. **Follow-up, same day:
+  `escalation/safety_gate.py`'s own Turkish safety-term detection
+  patterns were also removed** — originally kept as "a different concern
+  from reply-language-matching," but on direct instruction the project is
+  now English-only end to end, not English-only-except-one-still-bilingual-
+  safety-module. Tenant-added trigger phrases (plain substring match) are
+  unaffected — a business owner can still add a non-English phrase, that
+  mechanism was never language-specific to begin with. Frontend i18n
+  (`react-i18next`, `en.json`/`tr.json`) is untouched — inert, isolated,
+  wasn't the source of the problem, not worth the churn to rip out, and
+  explicitly out of scope for this backend-only cleanup.
 - LLM/embedding provider is Gemini (free tier), both through
   `app.core.llm` (`generate_text` / `embed_text` / `generate_with_tools`,
   the last one added 2026-07-31 for real tool-calling) — pipeline nodes
@@ -179,9 +182,10 @@ all three share this one Dockerfile.
   (Instagram, the first tenant with tool-calling enabled).
 - Synthetic conversation validation: `docker compose up -d db` + real
   `ENVELOPS_GEMINI_API_KEY`, then `python3 -m
-  scripts.run_synthetic_conversations` from `backend/` — takes ~6 minutes
-  (16 messages, 20s apart to stay under the 15 req/min free-tier cap, see
-  `core/llm.py`). Leaves real rows in the DB tagged "Synthetic Test — Honey
+  scripts.run_synthetic_conversations` from `backend/` — takes ~3 minutes
+  (8 messages, English only since the Turkish cut — see below — 20s apart
+  to stay under the 15 req/min free-tier cap, see `core/llm.py`). Leaves
+  real rows in the DB tagged "Synthetic Test — Honey
   Co" for inspection; doesn't clean up after itself. Originally
   REQUIREMENTS §12 stage 1's pilot-validation gate; that framing no
   longer applies now the pilot is deprioritized, but the script itself is
@@ -316,11 +320,11 @@ here took two real, non-obvious findings — both already fixed in
   `knowledge_chunks.embedding` column rather than the model's 3072 default).
 
 Test coverage so far: `escalation/safety_gate.py` (Layer 1 safety floor,
-Turkish + English patterns, with regression tests for real false positives
-found in the honey-seller domain — "şişe" (bottle) vs. "şiş" (swollen),
-"garanti"/"guarantee" needing an efficacy word alongside it so shipping/
-warranty language doesn't trip it; also covers the tenant-added
-trigger-phrase layer, additive-only, plain substring match), `auth/
+English-only patterns since the Turkish removal above, with a regression
+test for a real false positive found in the honey-seller domain —
+"guarantee" needing an efficacy word alongside it so shipping/warranty
+language doesn't trip it; also covers the tenant-added trigger-phrase
+layer, additive-only, plain substring match, language-agnostic), `auth/
 security.py` (PBKDF2 password hashing), `knowledge/chunking.py`
 (chunk-with-overlap for embedding).
 

@@ -20,15 +20,17 @@ ones; Turkish/bilingual pipeline support is cut. §2's priorities below
 predate this pivot and are now stale in places — §6 has the current
 picture.
 
-**PRs #23–#36 are all merged into `main`. PR #37 (§6's Turkish removal,
+**PRs #23–#37 are all merged into `main`.** PR #37 (§6's Turkish removal,
 real tool-calling + fake connectors, 4 simulated channels, the Settings
-Tool-calling tab, and this doc housekeeping) is open, not yet merged** —
-`feature/simulated-integrations-tool-calling`, 5 commits. Check
-`gh pr view 37 --json state` before assuming its status by the time this
-is read again, this line goes stale fast (learned the hard way in a
+Tool-calling tab, and doc housekeeping) merged 2026-07-31. Check
+`gh pr view <N> --json state` before assuming any PR's status by the time
+this is read again, this line goes stale fast (learned the hard way in a
 prior session: pushing more commits to an already-merged PR's branch does
 NOT bring them into `main` — always verify with `gh pr view`, don't
-assume a `git push` succeeding means the changes are live).
+assume a `git push` succeeding means the changes are live; also learned
+the hard way a second time — this exact line sat saying "open, not yet
+merged" for a while after the PR had actually merged, until caught and
+fixed in the same follow-up session as §7 below).
 
 **The §5.1 safety-floor finding (outcome-guarantee check missing
 safety/risk-absence language) is explicitly postponed to a later
@@ -1369,11 +1371,14 @@ functions. Stripped every "reply in the same language" prompt instruction
 out of `app/pipeline/graph.py` (`_generate_cover_reply`, `keep_chatting`,
 `book_or_checkout`) and `app/pipeline/behavior.py`
 (`render_knowledge_query_instruction`), and dropped the Turkish entries
-from `_DISCLAIMER_CONTENT_MARKERS`. **Not touched**: `escalation/
+from `_DISCLAIMER_CONTENT_MARKERS`. **Not touched at the time**: `escalation/
 safety_gate.py`'s own Turkish safety-term detection patterns — a
 different concern (catching dangerous phrases regardless of language),
 still real defensive value. Full backend suite (237 tests at the time)
-passed unmodified — nothing asserted the removed strings.
+passed unmodified — nothing asserted the removed strings. **Reversed in a
+same-session follow-up — see §7 below**: on direct instruction, those
+patterns were removed too, since the project is English-only end to end
+now, not English-only-except-one-still-bilingual-safety-module.
 
 ### Milestone 1 — Real tool-calling with fake connectors (done)
 
@@ -1558,12 +1563,13 @@ restored it. New backend test (`test_patches_tool_calling`) covering
 independence from other areas. 283 backend tests total, ruff/mypy/
 `npm run build`/`npm run lint` all clean.
 
-### Status: PR #37 open
+### Status: PR #37 merged
 
-Everything above is on `feature/simulated-integrations-tool-calling`,
-5 commits, pushed as **PR #37**, not yet merged. Docs housekeeping (this
-section, plus corrections across CLAUDE.md, REQUIREMENTS.md,
-ARCHITECTURE.md) is its own commit on the same branch/PR.
+Everything above landed on `feature/simulated-integrations-tool-calling`,
+pushed as **PR #37**, merged into `main` 2026-07-31. Docs housekeeping
+(this section, plus corrections across CLAUDE.md, REQUIREMENTS.md,
+ARCHITECTURE.md) was its own commit on the same branch/PR. §7 below is a
+same-day follow-up session, on top of the merge, not part of PR #37 itself.
 
 **§2's "Immediate priorities" above are now stale as of this pivot**:
 item 1 (the disclaimer-path language-consistency bug) is moot — resolved
@@ -1573,3 +1579,107 @@ blocker") no longer applies in its original framing — there's no real
 pilot to unblock, and Instagram is now a simulated channel (Milestone 2),
 not a real-integration gap. Superseded by this section, not deleted from
 §2, so the reasoning that got us here stays visible.
+
+## 7. Same-day follow-up: full Turkish removal + two calibration-finding fixes (2026-07-31)
+
+A follow-up session on top of the merged PR #37, not part of it. Three
+pieces of work, all by direct instruction:
+
+### 7.1 `escalation/safety_gate.py`'s Turkish patterns removed too
+
+Milestone 0 above deliberately left `safety_gate.py`'s Turkish
+contraindication/symptom/certainty/efficacy patterns in place, reasoning
+that pattern-matching dangerous phrases is a different concern from
+reply-language-matching. Reversed today, on direct instruction: the
+project is English-only end to end now, not
+"English-only-except-one-still-bilingual-safety-module." All Turkish
+regex alternatives removed from the four pattern lists in
+`safety_gate.py` (the module docstring's İ/I-casing caveat and the
+"ürün garantisi" false-positive discussion went with them, since both
+were Turkish-specific). `tests/test_safety_gate.py`'s
+`SafetyFloorTurkishTests` class and the one Turkish tenant-trigger-phrase
+test were removed — tenant-added trigger phrases themselves are
+untouched (plain substring match, never language-specific to begin
+with, so a business owner can still add a non-English phrase if they
+want to).
+
+Also scrubbed: the Turkish message variants in
+`scripts/run_synthetic_conversations.py`'s `MESSAGES` list (was 16
+messages, 8 English + 8 Turkish; now 8, English only) and its docstring;
+REQUIREMENTS §11's "Not cut" callout (rewritten — it's cut now); a
+same-day addendum in ARCHITECTURE §7. CLAUDE.md's Working-conventions
+bullet and test-coverage line updated to match. Deliberately **not**
+touched, per direct instruction to keep this backend-only: the frontend's
+`react-i18next` UI chrome (`en.json`/`tr.json`, the dashboard's own
+language switcher) — inert, isolated, was never the source of any
+pipeline problem.
+
+Left alone as unrelated: `scripts/seed_showcase_tenants.py`'s Aurora
+Aesthetics Clinic `general_context` line ("operating under Turkish
+health-tourism regulations") — that's a factual detail about a fictional
+business's setting, not language-support code, no different from any
+other real-world detail a demo tenant's flavor text might mention.
+
+### 7.2 Two real calibration findings from Milestone 4, fixed
+
+Both were flagged-not-fixed at the time Milestone 4 landed (see above).
+Both are **prompt-only fixes, unit-tested but not yet re-verified live**
+against a real Gemini call — unlike most other entries in this document,
+which insist on live verification before calling something done. Worth
+being explicit about that gap: the originating findings came from a real
+calibration run (Voltage Gadgets, 28 Bitext-sampled DMs), but re-running
+that same calibration costs real time/quota on the free tier, and wasn't
+done in this follow-up session. Treat these as "addressed, pending
+re-confirmation on the next real calibration or Test Console pass," not
+"proven fixed."
+
+1. **Hallucinated `email support@shop.com` workflow for order-modify/
+   cancel requests.** Root cause: `render_knowledge_query_instruction`
+   (`app/pipeline/behavior.py`) framed its three-way CLARIFY/ANSWERED/
+   NOT_FOUND decision around "questions," and its NOT_FOUND instruction
+   ("say you don't have that information... rather than guessing or
+   inferring an answer that merely sounds plausible") wasn't explicit
+   enough to stop the model inventing a specific-sounding but ungrounded
+   next step for what's really an action *request* (cancel/modify/
+   exchange), not an information question — so it never matched the
+   NOT_FOUND case, went out as ANSWERED, and the existing
+   `_looks_like_not_found_disclaimer` content-based fallback
+   (`app/pipeline/graph.py`) couldn't catch it either, since that only
+   recognizes the disclaimer's own wording, not a fabricated-but-
+   confident answer. Fixed by broadening the instruction to explicitly
+   cover "requests to DO something" alongside questions, and adding an
+   explicit anti-fabrication line: "Never invent a next step, workflow,
+   contact email, phone number, or policy that isn't stated in the
+   knowledge below... a confident but made-up answer is worse than
+   admitting you don't know." 2 new tests in
+   `test_pipeline_behavior.py`'s `TestRenderKnowledgeQueryInstruction`.
+
+2. **"swap an article of order #12345" misrouted into `book_or_checkout`,
+   sending a fresh checkout link for what's actually an existing-order
+   change.** Root cause: `understand_intent`'s label definitions
+   (`app/pipeline/graph.py`) had no concept of "modify/cancel/exchange an
+   order the customer already placed" — `purchase_intent` ("ready or
+   trying to buy/book right now") was the closest-sounding match, so a
+   hot-scored order-change request qualified for the same hot-lead gate
+   as a real new sale. Same fix shape as the pre-existing
+   hypothetical-vs-actual `knowledge_question`/`complaint_or_problem`
+   split (§12 stage 1, already in this prompt): spelled out the boundary
+   rather than adding a new label (REQUIREMENTS §3.7 already decided
+   against changing the fixed 5-label taxonomy). `knowledge_question`
+   now explicitly covers "wanting to modify, cancel, exchange, or track
+   an order the customer ALREADY placed"; `purchase_intent` is now
+   explicitly scoped to something NEW. Once correctly classified as
+   `knowledge_question`, `decide_next_step`'s hot-lead gate no longer
+   matches by default (`hot_lead_requires_purchase_intent=True`,
+   Voltage Gadgets' actual config, doesn't fire for a non-purchase-intent
+   label), so it falls through to `keep_chatting` and gets grounded
+   against the tenant's real order-change policy instead — for Voltage
+   Gadgets specifically, "Orders can be modified within 30 minutes of
+   placing them... only cancelled if not yet shipped," already in its
+   knowledge base, previously unreachable because routing never got that
+   far. 1 new test in `test_pipeline_graph.py`'s `TestUnderstandIntent`
+   asserting the prompt sent to the model contains both boundary
+   clarifications.
+
+Full backend suite (278 tests — down from 283: -8 removed Turkish tests,
++3 new ones above), ruff, and mypy all clean.
