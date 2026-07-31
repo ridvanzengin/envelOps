@@ -331,15 +331,18 @@
   border-color: var(--danger);
 }
 
-/* Settings page: AI behavior (tabbed, wider) beside Safety trigger
-   phrases (static, narrower) -- two independent concerns, not one long
-   scroll. Capped max-width so the pair doesn't stretch edge-to-edge on
-   a wide monitor; single column below 900px since a cramped 2-up
-   doesn't help there. */
+/* Settings page: tab navigation (narrower, left) beside the active tab's
+   own card (wider, right) -- Safety trigger phrases used to be a
+   permanently-visible column of its own; it's just another tab now
+   (docs/ROADMAP.md UI polish pass), so the right column shows whichever
+   tab is selected instead of always showing Safety. Capped max-width so
+   the pair doesn't stretch edge-to-edge on a wide monitor; single column
+   below 900px since a cramped 2-up doesn't help there (nav still renders
+   as its own 2-column grid within that single column, not 1). */
 .settings-columns {
   display: grid;
-  grid-template-columns: 3fr 2fr;
-  gap: 40px;
+  grid-template-columns: 240px 1fr;
+  gap: 32px;
   align-items: start;
   max-width: 1180px;
 }
@@ -350,35 +353,83 @@
   }
 }
 
+/* Nav as a compact 2-column grid of buttons, not the old single-row
+   wrapping strip -- 12 tabs (11 behavior areas + Safety) don't fit one
+   readable row, and a plain single-column vertical list would run
+   noticeably taller than the content card beside it. */
 .tabs {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
   gap: 4px;
-  border-bottom: 1px solid var(--border);
-  margin-bottom: 20px;
+  align-content: start;
 }
 
 .tabs__tab {
-  padding: 8px 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
   border: none;
-  border-bottom: 2px solid transparent;
-  margin-bottom: -1px;
+  border-radius: 6px;
   background: transparent;
   color: var(--text);
   font: inherit;
   font-size: 13px;
   font-weight: 500;
+  text-align: left;
   cursor: pointer;
-  white-space: nowrap;
+}
+
+.tabs__tab-icon {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
 }
 
 .tabs__tab:hover {
+  background: var(--bg-subtle);
   color: var(--text-h);
 }
 
 .tabs__tab--active {
-  color: var(--accent);
-  border-bottom-color: var(--accent);
+  background: var(--accent-bg);
+  color: var(--accent-h);
+}
+
+/* The active tab's content, in a card matching every other settings
+   area's own header pattern: a small icon tile, a bold title, and a
+   one-line description, then the tab's actual fields/list below. */
+.settings-card {
+  padding: 24px;
+}
+
+.settings-card__header {
+  display: flex;
+  gap: 14px;
+  margin-bottom: 20px;
+}
+
+.settings-card__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  background: var(--accent-bg);
+  color: var(--accent-h);
+  flex-shrink: 0;
+}
+
+.settings-card__title {
+  margin: 0 0 4px;
+  font-size: 15px;
+}
+
+.settings-card__description {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text);
 }
 
 /* Fields inside one tab panel -- two-up when there's room, instead of

@@ -1,10 +1,24 @@
 import { useCallback, useEffect, useState } from "react";
-import type { FormEvent } from "react";
+import type { ComponentType, FormEvent, SVGProps } from "react";
 import { useTranslation } from "react-i18next";
 
 import { apiDelete, apiGet, apiPatch, apiPost, ApiError } from "../api/client";
 import { useAuth } from "../auth/useAuth";
-import { TrashIcon } from "../components/icons";
+import {
+  AlertTriangleIcon,
+  ArrowUpCircleIcon,
+  CreditCardIcon,
+  FileTextIcon,
+  FlagIcon,
+  FlaskIcon,
+  GlobeIcon,
+  HelpCircleIcon,
+  KnowledgeIcon,
+  ShieldIcon,
+  SmileIcon,
+  TargetIcon,
+  TrashIcon,
+} from "../components/icons";
 import { CHANNEL_TYPES } from "../lib/channels";
 
 interface TriggerPhrase {
@@ -106,8 +120,12 @@ type BehaviorAreaKey =
   | "book_or_checkout"
   | "tool_calling";
 
-// One entry per tab (left column) -- each saves independently, PATCHing
-// only its own slice of TenantSettings. Order here is the tab order.
+// One entry per tab -- each of the first 11 saves independently, PATCHing
+// only its own slice of TenantSettings (buildTabPatch below); "safety" is
+// the odd one out (moved in from its own always-visible column, docs/
+// ROADMAP.md UI polish pass) -- it has its own separate add/delete
+// endpoints (handleSubmit/handleDelete below), not a PATCH slice, so it's
+// excluded from buildTabPatch's switch entirely. Order here is tab order.
 type TabKey =
   | "closing"
   | "greeting"
@@ -119,7 +137,8 @@ type TabKey =
   | "bookOrCheckout"
   | "toolCalling"
   | "channels"
-  | "generalContext";
+  | "generalContext"
+  | "safety";
 
 const TAB_ORDER: TabKey[] = [
   "closing",
@@ -133,6 +152,7 @@ const TAB_ORDER: TabKey[] = [
   "toolCalling",
   "channels",
   "generalContext",
+  "safety",
 ];
 
 const TAB_TITLE_KEYS: Record<TabKey, string> = {
@@ -147,6 +167,40 @@ const TAB_TITLE_KEYS: Record<TabKey, string> = {
   toolCalling: "settings.tenantSettings.toolCalling.title",
   channels: "settings.tenantSettings.channelOverrides.title",
   generalContext: "settings.tenantSettings.generalContext.title",
+  safety: "settings.safetyTriggersTitle",
+};
+
+// Card header description shown under each tab's title (docs/ROADMAP.md
+// UI polish pass) -- new copy, one per tab, no prior equivalent existed
+// since tab content previously had no card/header at all.
+const TAB_DESCRIPTION_KEYS: Record<TabKey, string> = {
+  closing: "settings.tenantSettings.closingBehavior.description",
+  greeting: "settings.tenantSettings.greeting.description",
+  offTopic: "settings.tenantSettings.offTopic.description",
+  knowledgeQuery: "settings.tenantSettings.knowledgeQuery.description",
+  complaint: "settings.tenantSettings.complaint.description",
+  leadHandling: "settings.tenantSettings.leadHandling.description",
+  escalationCover: "settings.tenantSettings.escalationCover.description",
+  bookOrCheckout: "settings.tenantSettings.bookOrCheckout.description",
+  toolCalling: "settings.tenantSettings.toolCalling.description",
+  channels: "settings.tenantSettings.channelOverrides.description",
+  generalContext: "settings.tenantSettings.generalContext.description",
+  safety: "settings.safetyDescription",
+};
+
+const TAB_ICONS: Record<TabKey, ComponentType<SVGProps<SVGSVGElement>>> = {
+  closing: FlagIcon,
+  greeting: SmileIcon,
+  offTopic: HelpCircleIcon,
+  knowledgeQuery: KnowledgeIcon,
+  complaint: AlertTriangleIcon,
+  leadHandling: TargetIcon,
+  escalationCover: ArrowUpCircleIcon,
+  bookOrCheckout: CreditCardIcon,
+  toolCalling: FlaskIcon,
+  channels: GlobeIcon,
+  generalContext: FileTextIcon,
+  safety: ShieldIcon,
 };
 
 // Exactly what PATCH /tenants/settings accepts for a given tab -- always
@@ -177,6 +231,14 @@ function buildTabPatch(tab: TabKey, settings: TenantSettings): Record<string, un
       return { channel_overrides: settings.behavior_config.channel_overrides };
     case "generalContext":
       return { general_context: settings.behavior_config.general_context };
+    case "safety":
+      // Never actually reachable -- the safety tab renders its own
+      // add-phrase form (handleSubmit) instead of the tenant-settings
+      // form this function backs, so handleSaveTab/buildTabPatch are
+      // never invoked with tab="safety" in practice. Only here to keep
+      // this switch exhaustive over TabKey; an empty patch is a safe,
+      // inert fallback if that assumption is ever wrong.
+      return {};
   }
 }
 
@@ -427,6 +489,8 @@ export default function Settings() {
     }
   }
 
+  const ActiveTabIcon = TAB_ICONS[activeTab];
+
   return (
     <section className="page">
       <div className="page__header">
@@ -435,36 +499,123 @@ export default function Settings() {
       <p className="page__description">{t("pages.settings")}</p>
 
       <div className="settings-columns">
-        <div>
-          <h2>{t("settings.tenantSettings.title")}</h2>
-          {settingsError && (
-            <p className="error-message" role="alert">
-              {settingsError}
-            </p>
-          )}
-          {settings === null && !settingsError && <p>{t("settings.tenantSettings.loading")}</p>}
-          {settings !== null && (
-            <>
-              <div className="tabs" role="tablist">
-                {TAB_ORDER.map((tab) => (
-                  <button
-                    key={tab}
-                    type="button"
-                    role="tab"
-                    aria-selected={activeTab === tab}
-                    className={`tabs__tab${activeTab === tab ? " tabs__tab--active" : ""}`}
-                    onClick={() => setActiveTab(tab)}
-                  >
-                    {t(TAB_TITLE_KEYS[tab])}
-                  </button>
-                ))}
-              </div>
-
-              <form
-                className="form tenant-settings"
-                onSubmit={(event) => void handleSaveTab(activeTab, event)}
+        <div className="tabs" role="tablist">
+          {TAB_ORDER.map((tab) => {
+            const TabIcon = TAB_ICONS[tab];
+            return (
+              <button
+                key={tab}
+                type="button"
+                role="tab"
+                aria-selected={activeTab === tab}
+                className={`tabs__tab${activeTab === tab ? " tabs__tab--active" : ""}`}
+                onClick={() => setActiveTab(tab)}
               >
-                {activeTab === "closing" && (
+                <TabIcon className="tabs__tab-icon" />
+                {t(TAB_TITLE_KEYS[tab])}
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="card settings-card">
+          <div className="settings-card__header">
+            <span className="settings-card__icon">
+              <ActiveTabIcon />
+            </span>
+            <div>
+              <h2 className="settings-card__title">{t(TAB_TITLE_KEYS[activeTab])}</h2>
+              <p className="settings-card__description">
+                {t(TAB_DESCRIPTION_KEYS[activeTab])}
+              </p>
+            </div>
+          </div>
+
+          <div className="settings-card__body">
+            {activeTab === "safety" ? (
+              <>
+                <h3>{t("settings.systemDefaultsTitle")}</h3>
+                <ul className="list">
+                  {SYSTEM_DEFAULT_CATEGORY_KEYS.map((key) => (
+                    <li key={key} className="list__item">
+                      <label>
+                        <input type="checkbox" checked disabled />
+                        {t(`settings.systemDefaultCategories.${key}`)}
+                      </label>
+                    </li>
+                  ))}
+                </ul>
+
+                <h3>{t("settings.tenantPhrasesTitle")}</h3>
+                {error && (
+                  <p className="error-message" role="alert">
+                    {error}
+                  </p>
+                )}
+                {phrases === null && !error && <p>{t("settings.loading")}</p>}
+                {phrases !== null && phrases.length === 0 && (
+                  <div className="empty-state">{t("settings.empty")}</div>
+                )}
+                {phrases !== null && phrases.length > 0 && (
+                  <ul className="list">
+                    {phrases.map((phrase) => (
+                      <li key={phrase.id} className="list__item list__item--with-action">
+                        <span>{phrase.phrase}</span>
+                        <button
+                          type="button"
+                          className="button button--danger"
+                          disabled={deletingId === phrase.id}
+                          onClick={() => void handleDelete(phrase.id)}
+                          aria-label={t("settings.delete")}
+                          title={t("settings.delete")}
+                        >
+                          <TrashIcon />
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+
+                <form className="form" onSubmit={(event) => void handleSubmit(event)}>
+                  <label className="form__field">
+                    {t("settings.newPhrase")}
+                    <input
+                      type="text"
+                      value={newPhrase}
+                      onChange={(e) => setNewPhrase(e.target.value)}
+                      required
+                    />
+                  </label>
+                  <button
+                    type="submit"
+                    className="button button--primary button--fit"
+                    disabled={submitting}
+                  >
+                    {submitting ? t("settings.adding") : t("settings.add")}
+                  </button>
+                  {formError && (
+                    <p className="error-message" role="alert">
+                      {formError}
+                    </p>
+                  )}
+                </form>
+              </>
+            ) : (
+              <>
+                {settingsError && (
+                  <p className="error-message" role="alert">
+                    {settingsError}
+                  </p>
+                )}
+                {settings === null && !settingsError && (
+                  <p>{t("settings.tenantSettings.loading")}</p>
+                )}
+                {settings !== null && (
+                  <form
+                    className="form tenant-settings"
+                    onSubmit={(event) => void handleSaveTab(activeTab, event)}
+                  >
+                    {activeTab === "closing" && (
                   <div className="tenant-settings__fields">
                     <label className="form__field">
                       {t("settings.tenantSettings.closingBehavior.closingAction")}
@@ -896,82 +1047,10 @@ export default function Settings() {
                   </p>
                 )}
               </form>
-            </>
-          )}
-        </div>
-
-        <div>
-          <h2>{t("settings.safetyTriggersTitle")}</h2>
-
-          <h3>{t("settings.systemDefaultsTitle")}</h3>
-          <div className="card">
-            <ul className="list">
-              {SYSTEM_DEFAULT_CATEGORY_KEYS.map((key) => (
-                <li key={key} className="list__item">
-                  <label>
-                    <input type="checkbox" checked disabled />
-                    {t(`settings.systemDefaultCategories.${key}`)}
-                  </label>
-                </li>
-              ))}
-            </ul>
-          </div>
-
-          <h3>{t("settings.tenantPhrasesTitle")}</h3>
-          {error && (
-            <p className="error-message" role="alert">
-              {error}
-            </p>
-          )}
-          {phrases === null && !error && <p>{t("settings.loading")}</p>}
-          {phrases !== null && phrases.length === 0 && (
-            <div className="empty-state">{t("settings.empty")}</div>
-          )}
-          {phrases !== null && phrases.length > 0 && (
-            <div className="card">
-              <ul className="list">
-                {phrases.map((phrase) => (
-                  <li key={phrase.id} className="list__item list__item--with-action">
-                    <span>{phrase.phrase}</span>
-                    <button
-                      type="button"
-                      className="button button--danger"
-                      disabled={deletingId === phrase.id}
-                      onClick={() => void handleDelete(phrase.id)}
-                      aria-label={t("settings.delete")}
-                      title={t("settings.delete")}
-                    >
-                      <TrashIcon />
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-
-          <form className="form" onSubmit={(event) => void handleSubmit(event)}>
-            <label className="form__field">
-              {t("settings.newPhrase")}
-              <input
-                type="text"
-                value={newPhrase}
-                onChange={(e) => setNewPhrase(e.target.value)}
-                required
-              />
-            </label>
-            <button
-              type="submit"
-              className="button button--primary button--fit"
-              disabled={submitting}
-            >
-              {submitting ? t("settings.adding") : t("settings.add")}
-            </button>
-            {formError && (
-              <p className="error-message" role="alert">
-                {formError}
-              </p>
+                )}
+              </>
             )}
-          </form>
+          </div>
         </div>
       </div>
     </section>

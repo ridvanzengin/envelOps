@@ -8,7 +8,7 @@
   "pages": {
     "knowledge": "Bilgi kaynağı ekle (URL/PDF/manuel), listele ve yenile.",
     "testConsole": "Yanıtların platforma göre nasıl farklılaştığını karşılaştırmak için herhangi bir platformda gerçek pipeline üzerinden test mesajı gönderin.",
-    "settings": "Güvenlik tetikleyici ifadeleri (sistem varsayılanları kilitli, kendi ifadelerinizi aşağıya ekleyin) ve yapay zeka davranışı/işletme ayarları. Kanal bağlantı durumu henüz burada gösterilmiyor.",
+    "settings": "Yapay zeka davranışı, işletme ayarları ve güvenlik tetikleyici ifadeleri, sekmelere göre düzenlenmiştir. Kanal bağlantı durumu henüz burada gösterilmiyor.",
     "dashboard": "Bugünkü potansiyel müşteriler, bugünkü yükseltmeler, yanıt süreleri."
   },
   "theme": {
@@ -134,6 +134,7 @@
   },
   "settings": {
     "safetyTriggersTitle": "Güvenlik tetikleyici ifadeleri",
+    "safetyDescription": "Sistem varsayılanları, konuşmaları güvenli tutmak için her zaman etkindir.",
     "systemDefaultsTitle": "Sistem varsayılanları (kilitli)",
     "systemDefaultCategories": {
       "contraindication": "Kontrendikasyon dili (örn. ilaç etkileşimleri, alerjiler)",
@@ -152,7 +153,6 @@
     "deleteConfirm": "Bu tetikleyici ifade silinsin mi? Bu işlem geri alınamaz.",
     "deleteError": "Bu ifade silinemedi. Tekrar deneyin.",
     "tenantSettings": {
-      "title": "Yapay zeka davranışı ve işletme ayarları",
       "loading": "Ayarlar yükleniyor…",
       "loadError": "Ayarlar yüklenemedi. Tekrar deneyin.",
       "save": "Kaydet",
@@ -165,6 +165,7 @@
       },
       "closingBehavior": {
         "title": "Kapanış davranışı",
+        "description": "Bir potansiyel müşteri kapanışa hazır olduğunda ne olması gerektiğini seçin.",
         "closingAction": "Bir potansiyel müşteri kapanışa hazır olduğunda",
         "closingActionOptions": {
           "keepChatting": "Sohbete devam et",
@@ -175,26 +176,31 @@
       },
       "greeting": {
         "title": "Karşılama",
+        "description": "Yapay zekanın bir konuşmanın başında müşteriyi nasıl karşılayacağının tonunu belirleyin.",
         "inviteFollowup": "Karşılamadan sonra bir takip sorusu sor",
         "additionalContext": "Bir müşteriyi karşılarken yapay zekanın bilmesi gereken herhangi bir şey"
       },
       "offTopic": {
         "title": "Konu dışı mesajlar",
+        "description": "Bir mesaj belirli bir soru, şikayet veya satın alma ilgisiyle uyuşmadığında yapay zekanın nasıl yanıt vereceğine karar verin.",
         "additionalContext": "Bir mesaj konu dışı olduğunda yapay zekanın bilmesi gereken herhangi bir şey"
       },
       "knowledgeQuery": {
         "title": "Bilgi soruları",
+        "description": "Yapay zekanın bilgi tabanınızı kullanarak soruları ne kadar emin olduğunda yanıtlayacağını kontrol edin.",
         "limitToConfident": "Yalnızca gerçek bir eşleşmeden eminken yanıtla",
         "notFoundMaxDistance": "Güven eşiği ({{value}}) — düşük değer daha katı",
         "additionalContext": "Soruları yanıtlarken yapay zekanın bilmesi gereken herhangi bir şey"
       },
       "complaint": {
         "title": "Şikayetler",
+        "description": "Yapay zekanın bir sorunu anlatan müşteriyi nasıl karşılayacağını seçin.",
         "empatheticAcknowledgment": "Önce şikayeti empatiyle karşıla",
         "additionalContext": "Bir şikayeti ele alırken yapay zekanın bilmesi gereken herhangi bir şey"
       },
       "leadHandling": {
         "title": "Potansiyel müşteri yönetimi",
+        "description": "Neyin sıcak, kapanışa hazır bir potansiyel müşteri sayılacağına karar verin.",
         "closingActionOverride": "Sıcak potansiyel müşteriler için kapanış davranışını geçersiz kıl",
         "closingActionOverrideOptions": {
           "useClosingBehaviorAbove": "Yukarıdaki kapanış davranışını kullan",
@@ -207,10 +213,12 @@
       },
       "escalationCover": {
         "title": "Yükseltme kapak mesajı",
+        "description": "Sorusu bir insana yükseltilirken müşterinin gördüğü mesajın tonunu belirleyin.",
         "additionalContext": "Bir yükseltmeyi kapatırken yapay zekanın bilmesi gereken herhangi bir şey"
       },
       "bookOrCheckout": {
         "title": "Rezervasyon / ödeme",
+        "description": "Yapay zekanın rezervasyon veya ödeme bağlantınızı nasıl sunacağını kontrol edin.",
         "ctaStyle": "Eylem çağrısı stili",
         "ctaStyleOptions": {
           "naturalMention": "Doğal şekilde bahset",
@@ -220,6 +228,7 @@
       },
       "toolCalling": {
         "title": "Araç çağırma",
+        "description": "Yapay zekanın simüle edilmiş demo verisiyle sipariş durumunu veya stoğu kontrol etmesine izin verin.",
         "simulatedDataNotice": "Simüle edilmiş demo verisi kullanır, gerçek bir mağazaya bağlı değildir -- bağlanacak bir şey yok.",
         "orderStatusLookup": "Yapay zekanın sorulduğunda sipariş durumunu kontrol etmesine izin ver",
         "inventoryCheck": "Yapay zekanın sorulduğunda ürün stoğunu kontrol etmesine izin ver",
@@ -227,6 +236,7 @@
       },
       "channelOverrides": {
         "title": "Platforma özel ton",
+        "description": "Bireysel mesajlaşma platformları için varsayılan tonu geçersiz kılın.",
         "overrideChannel": "{{channel}} için tonu geçersiz kıl",
         "formality": "Resmiyet",
         "formalityOptions": {
@@ -243,6 +253,7 @@
       },
       "generalContext": {
         "title": "Genel işletme bağlamı",
+        "description": "Yapay zekaya işletmeniz hakkında her zaman aklında tutması gereken temel bilgiler verin.",
         "label": "Yapay zekanın her zaman aklında tutması gereken herhangi bir şey"
       }
     }
