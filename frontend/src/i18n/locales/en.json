@@ -133,7 +133,7 @@
     "editError": "Couldn't save this source. Try again."
   },
   "settings": {
-    "safetyTriggersTitle": "Safety trigger phrases",
+    "safetyTriggersTitle": "Safety Triggers",
     "safetyDescription": "System defaults are always enabled to keep conversations safe.",
     "systemDefaultsTitle": "System defaults (locked)",
     "systemDefaultCategories": {
@@ -212,7 +212,7 @@
         "additionalContext": "Anything the AI should know about qualifying leads"
       },
       "escalationCover": {
-        "title": "Escalation cover message",
+        "title": "Escalation",
         "description": "Set the tone for the message a customer sees while their question is escalated to a human.",
         "additionalContext": "Anything the AI should know when covering for an escalation"
       },
@@ -252,7 +252,7 @@
         }
       },
       "generalContext": {
-        "title": "General business context",
+        "title": "Business Context",
         "description": "Give the AI background facts about your business to keep in mind everywhere.",
         "label": "Anything the AI should always keep in mind"
       }

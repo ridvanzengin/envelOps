@@ -133,7 +133,7 @@
     "editError": "Bu kaynak kaydedilemedi. Tekrar deneyin."
   },
   "settings": {
-    "safetyTriggersTitle": "Güvenlik tetikleyici ifadeleri",
+    "safetyTriggersTitle": "Güvenlik Tetikleyicileri",
     "safetyDescription": "Sistem varsayılanları, konuşmaları güvenli tutmak için her zaman etkindir.",
     "systemDefaultsTitle": "Sistem varsayılanları (kilitli)",
     "systemDefaultCategories": {
@@ -212,7 +212,7 @@
         "additionalContext": "Potansiyel müşterileri değerlendirirken yapay zekanın bilmesi gereken herhangi bir şey"
       },
       "escalationCover": {
-        "title": "Yükseltme kapak mesajı",
+        "title": "Yükseltme",
         "description": "Sorusu bir insana yükseltilirken müşterinin gördüğü mesajın tonunu belirleyin.",
         "additionalContext": "Bir yükseltmeyi kapatırken yapay zekanın bilmesi gereken herhangi bir şey"
       },
@@ -252,7 +252,7 @@
         }
       },
       "generalContext": {
-        "title": "Genel işletme bağlamı",
+        "title": "İşletme Bağlamı",
         "description": "Yapay zekaya işletmeniz hakkında her zaman aklında tutması gereken temel bilgiler verin.",
         "label": "Yapay zekanın her zaman aklında tutması gereken herhangi bir şey"
       }
