@@ -13,7 +13,9 @@ export function DiagnosticsBadges({ diagnostics }: { diagnostics: MessageDiagnos
   return (
     <div className="diagnostics-badges">
       {diagnostics.detected_intent && (
-        <span className="diagnostics-badge">
+        <span
+          className={`diagnostics-badge diagnostics-badge--intent-${diagnostics.detected_intent}`}
+        >
           {t(`diagnostics.intent.${diagnostics.detected_intent}`, diagnostics.detected_intent)}
         </span>
       )}

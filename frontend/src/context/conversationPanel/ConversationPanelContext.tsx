@@ -6,7 +6,7 @@ import { apiGet, apiPost, ApiError } from "../../api/client";
 import { useAuth } from "../../auth/useAuth";
 import { debounce } from "../../utils/debounce";
 import { ConversationPanelContext } from "./context";
-import type { Conversation, Escalation, Message } from "./context";
+import type { Conversation, ConversationFilterKey, Escalation, Message } from "./context";
 
 interface _LiveUpdateEvent {
   type?: string;
@@ -38,7 +38,13 @@ export function ConversationPanelProvider({ children }: { children: ReactNode })
   // the old standalone Escalation queue page did).
   const [escalations, setEscalations] = useState<Escalation[]>([]);
 
-  const [escalatedOnly, setEscalatedOnly] = useState(false);
+  // Exclusive, not a Set -- clicking a chip cancels out whatever was
+  // active before, rather than broadening the list to an OR of several
+  // (direct instruction, reversing the multi-select first pass).
+  const [activeFilter, setActiveFilter] = useState<ConversationFilterKey | null>(null);
+  const toggleFilter = useCallback((key: ConversationFilterKey) => {
+    setActiveFilter((current) => (current === key ? null : key));
+  }, []);
 
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[] | null>(null);
@@ -123,10 +129,15 @@ export function ConversationPanelProvider({ children }: { children: ReactNode })
       setActiveChannelType(channelType);
       // Always lands on the list, never a remembered thread -- clicking a
       // channel icon means "show me this channel's conversations," not
-      // "resume where I left off."
+      // "resume where I left off." Same reasoning extends to the rail
+      // filter chips: a filter active on one platform (e.g. "Hot lead")
+      // silently carrying over and hiding rows on the *next* platform
+      // you open would look like a bug, not a feature -- each platform
+      // starts unfiltered.
       setSelectedConversationId(null);
       setMessages(null);
       setThreadError(null);
+      setActiveFilter(null);
       void loadConversations(channelType);
       void loadEscalations();
     },
@@ -325,8 +336,8 @@ export function ConversationPanelProvider({ children }: { children: ReactNode })
       escalationByConversationId,
       escalationById,
       pendingEscalationCountByChannelType,
-      escalatedOnly,
-      setEscalatedOnly,
+      activeFilter,
+      toggleFilter,
       selectedConversationId,
       selectConversation,
       backToList,
@@ -346,7 +357,8 @@ export function ConversationPanelProvider({ children }: { children: ReactNode })
       escalationByConversationId,
       escalationById,
       pendingEscalationCountByChannelType,
-      escalatedOnly,
+      activeFilter,
+      toggleFilter,
       selectedConversationId,
       selectConversation,
       backToList,

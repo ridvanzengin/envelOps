@@ -19,9 +19,6 @@
     "language": "Dil",
     "theme": "Tema"
   },
-  "common": {
-    "testBadge": "Test"
-  },
   "channelRail": {
     "telegram": "Telegram",
     "whatsapp": "WhatsApp",
@@ -36,7 +33,8 @@
     "platform": "Platform",
     "newSession": "Yeni oturum",
     "newSessionHint": "Bu platformda, öncekilerden ayrı takip edilen yeni bir test konuşması başlatın",
-    "sessionLabel": "Oturum: {{sessionId}}",
+    "sessionName": "Oturum adı",
+    "sessionNamePlaceholder": "Bu test oturumuna bir ad verin…",
     "loading": "Yükleniyor…",
     "empty": "Henüz mesaj yok — bu platformda AI'ın nasıl yanıt verdiğini görmek için bir mesaj gönderin.",
     "loadError": "Bu platformun test konuşması yüklenemedi. Tekrar deneyin.",
@@ -75,6 +73,10 @@
     "threadLoading": "Mesajlar yükleniyor…",
     "threadLoadError": "Bu konuşmanın mesajları yüklenemedi. Tekrar deneyin.",
     "filterEscalated": "Yükseltilmiş",
+    "filterHotLead": "Sıcak müşteri adayı",
+    "pagePrev": "Önceki",
+    "pageNext": "Sonraki",
+    "pageIndicator": "Sayfa {{current}} / {{total}}",
     "replyPlaceholder": "Bir yanıt yazın…",
     "replyDisabledHint": "Yanıt gönderme henüz kullanılamıyor",
     "internalNoteSender": "Dahili not"

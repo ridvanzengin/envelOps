@@ -19,9 +19,6 @@
     "language": "Language",
     "theme": "Theme"
   },
-  "common": {
-    "testBadge": "Test"
-  },
   "channelRail": {
     "telegram": "Telegram",
     "whatsapp": "WhatsApp",
@@ -36,7 +33,8 @@
     "platform": "Platform",
     "newSession": "New session",
     "newSessionHint": "Start a fresh test conversation on this platform, tracked separately from previous ones",
-    "sessionLabel": "Session: {{sessionId}}",
+    "sessionName": "Session name",
+    "sessionNamePlaceholder": "Name this test session…",
     "loading": "Loading…",
     "empty": "No messages yet — send one to see how the AI replies on this platform.",
     "loadError": "Couldn't load this platform's test conversation. Try again.",
@@ -75,6 +73,10 @@
     "threadLoading": "Loading messages…",
     "threadLoadError": "Couldn't load this conversation's messages. Try again.",
     "filterEscalated": "Escalated",
+    "filterHotLead": "Hot lead",
+    "pagePrev": "Prev",
+    "pageNext": "Next",
+    "pageIndicator": "Page {{current}} of {{total}}",
     "replyPlaceholder": "Type a reply…",
     "replyDisabledHint": "Sending replies isn't available yet",
     "internalNoteSender": "Internal note"

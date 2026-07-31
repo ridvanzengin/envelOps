@@ -2,23 +2,39 @@
   display: flex;
   align-items: flex-end;
   gap: 12px;
-  margin-bottom: 6px;
+  margin-bottom: 16px;
+}
+
+.test-console__platform,
+.test-console__session-name {
+  margin-bottom: 0;
 }
 
 .test-console__platform {
-  max-width: 280px;
-  margin-bottom: 0;
+  max-width: 220px;
+}
+
+.test-console__session-name {
+  flex: 1;
+  max-width: 320px;
+}
+
+/* Explicit height on all three toolbar controls -- a native <select>'s
+   intrinsic rendering doesn't reliably match a <button>/<input> of the
+   same padding/border/font-size across browsers (OS-drawn dropdown
+   chrome adds its own sizing), so matching padding alone left the
+   platform dropdown and the New Session button visibly different
+   heights. Pinning all three to the same height is more robust than
+   trying to reverse-engineer padding that happens to line up. */
+.test-console__platform select,
+.test-console__session-name input,
+.test-console__new-session {
+  height: 36px;
+  box-sizing: border-box;
 }
 
 .test-console__new-session {
   flex-shrink: 0;
-}
-
-.test-console__session-label {
-  color: var(--text);
-  font-size: 12px;
-  font-family: var(--mono, monospace);
-  margin-bottom: 16px;
 }
 
 .test-console__thread-card {
