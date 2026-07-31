@@ -41,11 +41,11 @@
   background: var(--border);
 }
 
-.channel-rail__icon--telegram {
+.channel-rail__icon--real {
   color: var(--text-h);
 }
 
-.channel-rail__icon--telegram:hover {
+.channel-rail__icon--real:hover {
   border-color: var(--accent-border);
   color: var(--accent-h);
 }

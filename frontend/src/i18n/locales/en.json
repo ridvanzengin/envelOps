@@ -28,7 +28,8 @@
     "facebook": "Facebook",
     "instagram": "Instagram",
     "email": "Email",
-    "testOnly": "Test only — not connected yet",
+    "realIntegration": "Real integration",
+    "simulatedIntegration": "Simulated integration",
     "menu": "Account menu"
   },
   "testConsole": {
@@ -213,6 +214,13 @@
           "directCta": "Direct call-to-action"
         },
         "additionalContext": "Anything the AI should know when sending the link"
+      },
+      "toolCalling": {
+        "title": "Tool calling",
+        "simulatedDataNotice": "Uses simulated demo data, not a real connected store -- there's nothing to connect.",
+        "orderStatusLookup": "Let the AI look up an order's status when asked",
+        "inventoryCheck": "Let the AI check product inventory when asked",
+        "additionalContext": "Anything the AI should know before looking something up"
       },
       "channelOverrides": {
         "title": "Platform-specific tone",

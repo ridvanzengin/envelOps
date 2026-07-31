@@ -7,9 +7,8 @@ import { useAuth } from "../auth/useAuth";
 import { MessageThread } from "../components/MessageThread";
 import { RefreshIcon } from "../components/icons";
 import type { Message } from "../context/conversationPanel/context";
+import { CHANNEL_TYPES as PLATFORMS } from "../lib/channels";
 import "./TestConsole.css";
-
-const PLATFORMS = ["telegram", "whatsapp", "instagram", "facebook", "email"] as const;
 
 interface TestConversationResponse {
   conversation_id: string | null;

@@ -28,7 +28,8 @@
     "facebook": "Facebook",
     "instagram": "Instagram",
     "email": "E-posta",
-    "testOnly": "Sadece test — henüz bağlı değil",
+    "realIntegration": "Gerçek entegrasyon",
+    "simulatedIntegration": "Simüle entegrasyon",
     "menu": "Hesap menüsü"
   },
   "testConsole": {
@@ -213,6 +214,13 @@
           "directCta": "Doğrudan eylem çağrısı"
         },
         "additionalContext": "Bağlantıyı gönderirken yapay zekanın bilmesi gereken herhangi bir şey"
+      },
+      "toolCalling": {
+        "title": "Araç çağırma",
+        "simulatedDataNotice": "Simüle edilmiş demo verisi kullanır, gerçek bir mağazaya bağlı değildir -- bağlanacak bir şey yok.",
+        "orderStatusLookup": "Yapay zekanın sorulduğunda sipariş durumunu kontrol etmesine izin ver",
+        "inventoryCheck": "Yapay zekanın sorulduğunda ürün stoğunu kontrol etmesine izin ver",
+        "additionalContext": "Bir şeyi ararken yapay zekanın bilmesi gereken herhangi bir şey"
       },
       "channelOverrides": {
         "title": "Platforma özel ton",

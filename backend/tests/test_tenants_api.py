@@ -158,6 +158,31 @@ class TestPatchTenantSettings:
         assert body["closing_link"] == "https://example.com/original"
         assert tenant.behavior_config["knowledge_query"]["not_found_max_distance"] == 0.5
 
+    async def test_patches_tool_calling(self) -> None:
+        tenant_id = uuid.uuid4()
+        token = create_access_token(user_id=uuid.uuid4(), tenant_id=tenant_id, role="owner")
+        tenant = _fake_tenant(
+            tenant_id, behavior_config={"greeting": {"tone": "formal_business"}}
+        )
+        with patch("app.tenants.api.TenantRepository") as mock_repo_cls:
+            mock_repo_cls.return_value.get = AsyncMock(return_value=tenant)
+            response = await _patch_settings(
+                {
+                    "tool_calling": {
+                        "order_status_lookup_enabled": True,
+                        "inventory_check_enabled": False,
+                    }
+                },
+                token,
+            )
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["behavior_config"]["tool_calling"]["order_status_lookup_enabled"] is True
+        assert body["behavior_config"]["tool_calling"]["inventory_check_enabled"] is False
+        # Independence: an area not part of this patch is untouched.
+        assert body["behavior_config"]["greeting"]["tone"] == "formal_business"
+
     async def test_patches_channel_overrides_as_one_whole_dict(self) -> None:
         tenant_id = uuid.uuid4()
         token = create_access_token(user_id=uuid.uuid4(), tenant_id=tenant_id, role="owner")

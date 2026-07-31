@@ -17,6 +17,7 @@ from app.tenants.behavior_config import (
     LeadHandlingConfig,
     OffTopicConfig,
     TenantBehaviorConfig,
+    ToolCallingConfig,
     load_tenant_behavior_config,
 )
 from app.tenants.models import Tenant
@@ -37,6 +38,7 @@ _BEHAVIOR_AREA_FIELDS = (
     "lead_handling",
     "escalation_cover",
     "book_or_checkout",
+    "tool_calling",
 )
 
 
@@ -64,6 +66,7 @@ class TenantSettingsPatch(BaseModel):
     lead_handling: LeadHandlingConfig | None = None
     escalation_cover: EscalationCoverConfig | None = None
     book_or_checkout: BookOrCheckoutConfig | None = None
+    tool_calling: ToolCallingConfig | None = None
     channel_overrides: dict[str, ChannelToneConfig] | None = None
     general_context: str | None = None
 

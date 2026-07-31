@@ -5,6 +5,7 @@ import { useTranslation } from "react-i18next";
 import { apiDelete, apiGet, apiPatch, apiPost, ApiError } from "../api/client";
 import { useAuth } from "../auth/useAuth";
 import { TrashIcon } from "../components/icons";
+import { CHANNEL_TYPES } from "../lib/channels";
 
 interface TriggerPhrase {
   id: string;
@@ -63,6 +64,11 @@ interface BookOrCheckoutConfig extends BehaviorAreaBase {
   cta_style: "natural_mention" | "direct_cta";
 }
 
+interface ToolCallingConfig extends BehaviorAreaBase {
+  order_status_lookup_enabled: boolean;
+  inventory_check_enabled: boolean;
+}
+
 interface ChannelToneConfig {
   formality: "casual_chat" | "formal_email";
   include_greeting: boolean;
@@ -79,6 +85,7 @@ interface TenantBehaviorConfig {
   lead_handling: LeadHandlingConfig;
   escalation_cover: EscalationCoverConfig;
   book_or_checkout: BookOrCheckoutConfig;
+  tool_calling: ToolCallingConfig;
   channel_overrides: Record<string, ChannelToneConfig>;
   general_context: string | null;
 }
@@ -96,7 +103,8 @@ type BehaviorAreaKey =
   | "complaint"
   | "lead_handling"
   | "escalation_cover"
-  | "book_or_checkout";
+  | "book_or_checkout"
+  | "tool_calling";
 
 // One entry per tab (left column) -- each saves independently, PATCHing
 // only its own slice of TenantSettings. Order here is the tab order.
@@ -109,6 +117,7 @@ type TabKey =
   | "leadHandling"
   | "escalationCover"
   | "bookOrCheckout"
+  | "toolCalling"
   | "channels"
   | "generalContext";
 
@@ -121,6 +130,7 @@ const TAB_ORDER: TabKey[] = [
   "leadHandling",
   "escalationCover",
   "bookOrCheckout",
+  "toolCalling",
   "channels",
   "generalContext",
 ];
@@ -134,6 +144,7 @@ const TAB_TITLE_KEYS: Record<TabKey, string> = {
   leadHandling: "settings.tenantSettings.leadHandling.title",
   escalationCover: "settings.tenantSettings.escalationCover.title",
   bookOrCheckout: "settings.tenantSettings.bookOrCheckout.title",
+  toolCalling: "settings.tenantSettings.toolCalling.title",
   channels: "settings.tenantSettings.channelOverrides.title",
   generalContext: "settings.tenantSettings.generalContext.title",
 };
@@ -160,16 +171,14 @@ function buildTabPatch(tab: TabKey, settings: TenantSettings): Record<string, un
       return { escalation_cover: settings.behavior_config.escalation_cover };
     case "bookOrCheckout":
       return { book_or_checkout: settings.behavior_config.book_or_checkout };
+    case "toolCalling":
+      return { tool_calling: settings.behavior_config.tool_calling };
     case "channels":
       return { channel_overrides: settings.behavior_config.channel_overrides };
     case "generalContext":
       return { general_context: settings.behavior_config.general_context };
   }
 }
-
-// Not exported from ChannelRail.tsx today, so duplicated here -- same five
-// platform keys, same order, matching that file's own CHANNELS list.
-const CHANNEL_TYPES = ["telegram", "whatsapp", "facebook", "instagram", "email"] as const;
 
 const DEFAULT_CHANNEL_OVERRIDE: ChannelToneConfig = {
   formality: "casual_chat",
@@ -715,6 +724,47 @@ export default function Settings() {
                         updateArea("book_or_checkout", { additional_context })
                       }
                       label={t("settings.tenantSettings.bookOrCheckout.additionalContext")}
+                    />
+                  </div>
+                )}
+
+                {activeTab === "toolCalling" && (
+                  <div className="tenant-settings__fields">
+                    <p className="tenant-settings__fields--full form__hint">
+                      {t("settings.tenantSettings.toolCalling.simulatedDataNotice")}
+                    </p>
+                    <label className="form__field form__field--checkbox">
+                      <input
+                        type="checkbox"
+                        checked={
+                          settings.behavior_config.tool_calling.order_status_lookup_enabled
+                        }
+                        onChange={(e) =>
+                          updateArea("tool_calling", {
+                            order_status_lookup_enabled: e.target.checked,
+                          })
+                        }
+                      />
+                      {t("settings.tenantSettings.toolCalling.orderStatusLookup")}
+                    </label>
+                    <label className="form__field form__field--checkbox">
+                      <input
+                        type="checkbox"
+                        checked={settings.behavior_config.tool_calling.inventory_check_enabled}
+                        onChange={(e) =>
+                          updateArea("tool_calling", {
+                            inventory_check_enabled: e.target.checked,
+                          })
+                        }
+                      />
+                      {t("settings.tenantSettings.toolCalling.inventoryCheck")}
+                    </label>
+                    <AdditionalContextField
+                      value={settings.behavior_config.tool_calling.additional_context}
+                      onChange={(additional_context) =>
+                        updateArea("tool_calling", { additional_context })
+                      }
+                      label={t("settings.tenantSettings.toolCalling.additionalContext")}
                     />
                   </div>
                 )}
