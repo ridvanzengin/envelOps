@@ -20,18 +20,15 @@ ones; Turkish/bilingual pipeline support is cut. §2's priorities below
 predate this pivot and are now stale in places — §6 has the current
 picture.
 
-**PRs #23–#36 are all merged into `main`** (Test Console through §3.8's
-tenant settings API + UI — see §3.1–§3.8 below for what each one
-shipped). **§6's work (Turkish removal, real tool-calling + fake
-connectors, 4 simulated channels, the Settings Tool-calling tab) is
-implemented and verified but not yet committed** — sitting on
-`feature/simulated-integrations-tool-calling`, no PR opened yet. Check
-`gh pr view <n> --json state` / `git status` before assuming a given
-PR's or branch's status by the time this is read again, this line goes
-stale fast (learned the hard way in a prior session: pushing more commits
-to an already-merged PR's branch does NOT bring them into `main` — always
-verify with `gh pr view`, don't assume a `git push` succeeding means
-the changes are live).
+**PRs #23–#36 are all merged into `main`. PR #37 (§6's Turkish removal,
+real tool-calling + fake connectors, 4 simulated channels, the Settings
+Tool-calling tab, and this doc housekeeping) is open, not yet merged** —
+`feature/simulated-integrations-tool-calling`, 5 commits. Check
+`gh pr view 37 --json state` before assuming its status by the time this
+is read again, this line goes stale fast (learned the hard way in a
+prior session: pushing more commits to an already-merged PR's branch does
+NOT bring them into `main` — always verify with `gh pr view`, don't
+assume a `git push` succeeding means the changes are live).
 
 **The §5.1 safety-floor finding (outcome-guarantee check missing
 safety/risk-absence language) is explicitly postponed to a later
@@ -1561,14 +1558,12 @@ restored it. New backend test (`test_patches_tool_calling`) covering
 independence from other areas. 283 backend tests total, ruff/mypy/
 `npm run build`/`npm run lint` all clean.
 
-### Status: implemented, verified, not yet committed
+### Status: PR #37 open
 
 Everything above is on `feature/simulated-integrations-tool-calling`,
-uncommitted as of this write-up — the last merged PR is still #36 (§3.8).
-Docs housekeeping (this section, plus corrections across CLAUDE.md,
-REQUIREMENTS.md, ARCHITECTURE.md) done in the same session, same branch.
-Per the standing PR workflow, commit + open a PR is the natural next step
-once the user asks for it — not done automatically.
+5 commits, pushed as **PR #37**, not yet merged. Docs housekeeping (this
+section, plus corrections across CLAUDE.md, REQUIREMENTS.md,
+ARCHITECTURE.md) is its own commit on the same branch/PR.
 
 **§2's "Immediate priorities" above are now stale as of this pivot**:
 item 1 (the disclaimer-path language-consistency bug) is moot — resolved
