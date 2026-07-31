@@ -269,7 +269,8 @@ them. Concretely: a node that only sets a flag (e.g. "skip everything,
 nothing to decide this time") and routes straight to `END` will still
 return the *previous* run's `draft_text`/`decision` in the result dict,
 since nothing in the new run overwrote them. Found building
-`check_pending_escalation` (docs/ROADMAP.md §3.1) — a second message on
+`check_pending_escalation` (docs/ROADMAP.md's 2026-07-29 changelog entry
+on the escalation-cover-message work) — a second message on
 an already-escalated conversation re-sent the *first* message's cover
 reply verbatim, because the caller trusted `result.get("draft_text")`
 without knowing it could be stale. Fixed by having the short-circuiting
