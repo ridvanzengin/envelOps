@@ -1,10 +1,26 @@
 # EnvelOps
 
-AI-assisted DM-to-lead pipeline for small/mid-size businesses (health tourism
-clinics, e-commerce sellers, service businesses). Inbound DMs across channels
-go through a fixed pipeline: understand intent → ground in the business's own
-knowledge → score the lead → decide next step → auto-send (gated by a hard
-safety check) or escalate to a human.
+A demonstration of AI assistant behavior orchestration, safety gating, and
+per-tenant configuration. Inbound DMs across channels go through a fixed
+pipeline: understand intent → ground in the business's own knowledge (plus
+real Gemini tool-calling for live-data-style questions) → score the lead →
+decide next step → auto-send (gated by a hard safety check) or escalate to
+a human.
+
+**Originally scoped to ship to a real small-business pilot (a friend's
+honey business); that pilot is now deprioritized (decided 2026-07-31).**
+This is now a solo portfolio project — see `docs/ROADMAP.md` for the full
+scope-cut decision and reasoning. Concretely, as of that decision:
+- Only **Telegram** is a real channel integration. Instagram/WhatsApp/
+  Facebook/Email are **simulated** (`app/channels/simulated_client.py`) —
+  same real pipeline, a webhook-shaped entry point, no real platform ever
+  contacted.
+- Order-status/inventory lookup use **real** Gemini tool-calling (the model
+  genuinely decides whether to call a tool) backed by **fake**,
+  deterministic connectors (`app/commerce/`), not a real Shopify/
+  WooCommerce integration.
+- **Turkish/bilingual pipeline support has been cut** — see the Working
+  conventions section below.
 
 **Full design docs live in [`docs/`](docs/) — read them before making
 product or architecture decisions, don't rely on this file for that:**
@@ -67,20 +83,33 @@ forward — this pass doesn't cover anything added after it.
 - No draft-and-approve queue in Phase 1. The pipeline auto-sends; the only
   pause point is the safety-check escalation gate. Don't reintroduce a
   general approval queue without checking `docs/ARCHITECTURE.md` §5 first.
-- Turkish + English are both Phase 1, not "English now, i18n later" — the
-  pilot tenant's customers DM in Turkish. Generation/intent prompts should
-  detect-and-match the incoming message's language, not assume English; any
-  embedding provider choice needs real cross-lingual retrieval, not just
-  Turkish support. See `docs/ARCHITECTURE.md` §7.
+- **Turkish/bilingual pipeline support is cut, not deferred** (decided
+  2026-07-31 — REQUIREMENTS §11, ARCHITECTURE §7 both marked cut).
+  Generation/intent prompts no longer instruct the model to detect-and-
+  match the incoming message's language; replies are effectively always
+  whatever language the model defaults to (English), regardless of input
+  language. This was a real, recurring bug source (language-consistency
+  issues found live more than once) and stopped being needed once the
+  real Turkish-speaking pilot was deprioritized. **Not touched by this
+  cut**: `escalation/safety_gate.py`'s own Turkish safety-term detection
+  patterns (e.g. "şişe" vs "şiş", "garanti") — those catch dangerous
+  phrases regardless of language, a different concern from reply-language-
+  matching, and still provide real defensive value. Frontend i18n
+  (`react-i18next`, `en.json`/`tr.json`) is also untouched — inert,
+  isolated, wasn't the source of the problem, not worth the churn to rip
+  out.
 - LLM/embedding provider is Gemini (free tier), both through
-  `app.core.llm` (`generate_text` / `embed_text`) — pipeline nodes and
-  knowledge ingestion should call that module, not the `google-genai` SDK
-  directly, so swapping providers later stays contained. Two caveats to
-  keep in mind, not yet resolved: free-tier rate limits against a pipeline
-  that makes up to 3 LLM calls per inbound message, and free-tier
-  data-usage terms should be checked before routing real customer
-  conversations through it (REQUIREMENTS §12 stage 2), not just synthetic
-  testing (stage 1).
+  `app.core.llm` (`generate_text` / `embed_text` / `generate_with_tools`,
+  the last one added 2026-07-31 for real tool-calling) — pipeline nodes
+  and knowledge ingestion should call that module, not the `google-genai`
+  SDK directly, so swapping providers later stays contained. Free-tier
+  rate limits are a real, unresolved constraint against a pipeline that
+  makes up to 4 sequential LLM calls per inbound message needing grounding
+  (`understand_intent` → `score_lead` → `call_tools`'s
+  `generate_with_tools`, only when the tenant has a fake tool enabled →
+  `keep_chatting`) — not yet a problem since there's no real customer
+  traffic (the pilot that would have generated it is deprioritized), but
+  worth remembering if that ever changes.
 
 ## Commands
 
@@ -132,18 +161,38 @@ all three share this one Dockerfile.
   up to and including the actual `sendMessage` call is verified for real
   (including a genuine delivery failure with a fake token, handled
   gracefully), but no real bot token has been used end-to-end yet.
-- Synthetic conversation validation (REQUIREMENTS §12 stage 1): `docker
-  compose up -d db` + real `ENVELOPS_GEMINI_API_KEY`, then `python3 -m
+- Registering a simulated channel (Instagram/WhatsApp/Facebook/Email —
+  decided 2026-07-31, see `docs/ROADMAP.md`): `cd backend && source
+  .venv/bin/activate && python3 -m scripts.register_simulated_channel
+  --tenant-id <uuid> --channel-type instagram|whatsapp|facebook|email`.
+  No real API calls — there's nothing real to call — just creates a
+  `Channel` row (`is_test=False`, no `bot_token`) and prints the webhook
+  path + secret header value for sending test payloads directly (see the
+  script's own docstring for a worked `curl` example).
+- One-tenant-at-a-time calibration seeding (the current primary way new
+  tenant configs get exercised — decided 2026-07-31): `cd backend &&
+  source .venv/bin/activate && python3 -m scripts.seed_calibration_tenant`
+  — seeds whatever `TenantSpec`s are in `CALIBRATION_TENANTS` (skips ones
+  already seeded, matched by login email) and runs ~28 real Bitext-sampled
+  customer-support DMs through the real pipeline per new tenant. Two
+  tenants exist so far: Wildroot Apparel Co (Telegram) and Voltage Gadgets
+  (Instagram, the first tenant with tool-calling enabled).
+- Synthetic conversation validation: `docker compose up -d db` + real
+  `ENVELOPS_GEMINI_API_KEY`, then `python3 -m
   scripts.run_synthetic_conversations` from `backend/` — takes ~6 minutes
   (16 messages, 20s apart to stay under the 15 req/min free-tier cap, see
   `core/llm.py`). Leaves real rows in the DB tagged "Synthetic Test — Honey
-  Co" for inspection; doesn't clean up after itself. First full run found
-  two real quality gaps (language-inconsistent intent classification, a
-  Turkish-only pricing hallucination) — both fixed and re-verified via a
-  second full run (prompt-only fixes in `app/pipeline/graph.py`'s
-  `understand_intent`/`keep_chatting`). A related but distinct language-
-  consistency bug in `keep_chatting`'s disclaimer path was later found via
-  Test Console usage and is still open — see `docs/ROADMAP.md` §2.
+  Co" for inspection; doesn't clean up after itself. Originally
+  REQUIREMENTS §12 stage 1's pilot-validation gate; that framing no
+  longer applies now the pilot is deprioritized, but the script itself is
+  still a real, usable smoke test. First full run found two real quality
+  gaps (language-inconsistent intent classification, a Turkish-only
+  pricing hallucination) — both fixed and re-verified via a second full
+  run at the time (prompt-only fixes in `app/pipeline/graph.py`'s
+  `understand_intent`/`keep_chatting`). A related language-consistency bug
+  in `keep_chatting`'s disclaimer path was later found via Test Console
+  usage; **resolved by the Turkish cut above, not by a targeted fix** —
+  there's no more language-matching instruction left to be inconsistent.
 - Lint: `ruff check app/ tests/ scripts/` — Format-on-save equivalent:
   `ruff format` (not yet run repo-wide, safe to use)
 - Type-check: `mypy app/ scripts/`
@@ -278,11 +327,14 @@ security.py` (PBKDF2 password hashing), `knowledge/chunking.py`
 ### Frontend (`frontend/`)
 
 Vite + React + TypeScript, `node_modules` already installed. Includes
-`react-router-dom` (routing between the five §10 screens) and
-`react-i18next` + `i18next-browser-languagedetector` (English/Turkish, per
-§7) — both wired up already: `App.tsx` has the nav/routes, `src/i18n/`
-has the locale files and config, each page under `src/pages/` is a
-translated placeholder, not yet the real screen content.
+`react-router-dom` (routing between screens) and `react-i18next` +
+`i18next-browser-languagedetector` (English/Turkish UI chrome — this is
+just the dashboard's own language switcher, unrelated to the pipeline's
+now-cut reply-language-matching above) — both wired up, `App.tsx` has the
+nav/routes, `src/i18n/` has the locale files and config. Every page under
+`src/pages/` is real, built-out screen content now (Dashboard, Knowledge
+sources, Test console, Settings, the conversation rail/panel), not the
+early-Phase-1 translated placeholders this line used to describe.
 
 - `npm run dev` — dev server (verified boots and serves)
 - `npm run build` — type-check (`tsc -b`) + production build (verified
