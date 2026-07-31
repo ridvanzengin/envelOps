@@ -1,0 +1,381 @@
+/* Stat tiles row -- Sources/Chunks/Storage/Last sync, computed client-side
+   from the already-loaded source list (no dedicated stats endpoint). */
+.knowledge-sources__stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 16px;
+  margin: 20px 0;
+}
+
+.knowledge-sources__stat {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 16px;
+}
+
+.knowledge-sources__stat-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  flex-shrink: 0;
+}
+
+.knowledge-sources__stat-icon--accent {
+  background: var(--accent-bg);
+  color: var(--accent-h);
+}
+
+.knowledge-sources__stat-icon--info {
+  background: var(--info-bg);
+  color: var(--info);
+}
+
+.knowledge-sources__stat-icon--success {
+  background: var(--success-bg);
+  color: var(--success);
+}
+
+.knowledge-sources__stat-icon--warning {
+  background: var(--warning-bg);
+  color: var(--warning);
+}
+
+.knowledge-sources__stat-label {
+  font-size: 12px;
+  color: var(--text);
+}
+
+.knowledge-sources__stat-value {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--text-h);
+  line-height: 1.3;
+}
+
+.knowledge-sources__stat-sublabel {
+  font-size: 11px;
+  color: var(--text);
+}
+
+/* Add-source and library-header panels share the same icon-less card
+   title/description pattern (a lighter version of Settings' own
+   .settings-card__header -- no icon tile here, this page's icons are
+   already spent on the stat tiles and type pills). */
+.knowledge-sources__panel {
+  padding: 20px;
+  margin: 20px 0;
+}
+
+.knowledge-sources__panel-title {
+  margin: 0 0 4px;
+  font-size: 15px;
+}
+
+.knowledge-sources__panel-description {
+  margin: 0 0 16px;
+  font-size: 13px;
+  color: var(--text);
+}
+
+.knowledge-sources__type-tabs {
+  margin-bottom: 16px;
+}
+
+.knowledge-sources__add-form {
+  gap: 12px;
+}
+
+.knowledge-sources__add-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.knowledge-sources__estimate {
+  font-size: 12px;
+  color: var(--text);
+}
+
+.knowledge-sources__library-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin: 28px 0 12px;
+}
+
+.knowledge-sources__library-header .knowledge-sources__panel-description {
+  margin-bottom: 0;
+}
+
+.knowledge-sources__library-toolbar {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.knowledge-sources__search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-subtle);
+  color: var(--text);
+}
+
+.knowledge-sources__search input {
+  border: none;
+  background: none;
+  color: var(--text-h);
+  font: inherit;
+  font-size: 13px;
+  padding: 8px 0;
+  min-width: 200px;
+}
+
+.knowledge-sources__search input:focus {
+  outline: none;
+}
+
+/* Row list -- replaces the old <table>: each source is its own card, not
+   a table row, so a variable-height expanded panel (chunk previews) sits
+   naturally beneath it instead of needing a colSpan trick. */
+.knowledge-sources__list {
+  list-style: none;
+  margin: 0 0 16px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.knowledge-sources__row {
+  padding: 14px 16px;
+}
+
+.knowledge-sources__row-main {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.knowledge-sources__type-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  flex-shrink: 0;
+}
+
+.knowledge-sources__type-icon--accent {
+  background: var(--accent-bg);
+  color: var(--accent-h);
+}
+
+.knowledge-sources__type-icon--success {
+  background: var(--success-bg);
+  color: var(--success);
+}
+
+.knowledge-sources__type-icon--danger {
+  background: var(--danger-bg);
+  color: var(--danger);
+}
+
+.knowledge-sources__row-title {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.knowledge-sources__row-title strong {
+  color: var(--text-h);
+  font-size: 14px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.knowledge-sources__row-title span {
+  font-size: 12px;
+  color: var(--text);
+}
+
+.knowledge-sources__row-stat {
+  flex-shrink: 0;
+  text-align: center;
+  min-width: 64px;
+}
+
+.knowledge-sources__row-stat div {
+  color: var(--text-h);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.knowledge-sources__row-stat span {
+  font-size: 11px;
+  color: var(--text);
+}
+
+/* Every source is "Ready" the moment it's in the list -- ingestion is
+   synchronous (the POST/PUT/refresh call doesn't return until chunks are
+   embedded and committed), so there's no real intermediate "processing"
+   state to represent here, unlike an async-ingestion pipeline. */
+.knowledge-sources__ready-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--success);
+  background: var(--success-bg);
+  flex-shrink: 0;
+}
+
+.knowledge-sources__ready-badge::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: currentColor;
+}
+
+.knowledge-sources__expanded {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+
+.knowledge-sources__chunks-title {
+  margin: 0 0 10px;
+  font-size: 13px;
+  color: var(--text-h);
+}
+
+.knowledge-sources__chunks {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.knowledge-sources__chunk {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-subtle);
+}
+
+.knowledge-sources__chunk-label {
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text);
+  padding-top: 1px;
+}
+
+.knowledge-sources__chunk-text {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  color: var(--text-h);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.knowledge-sources__chunk-copy {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: none;
+  background: none;
+  color: var(--text);
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.knowledge-sources__chunk-copy:hover {
+  background: var(--bg);
+  color: var(--text-h);
+}
+
+.knowledge-sources__view-all {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  margin-top: 8px;
+  padding: 8px;
+  border: none;
+  background: none;
+  color: var(--accent-h);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.knowledge-sources__view-all:hover {
+  text-decoration: underline;
+}
+
+.knowledge-sources__edit-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.knowledge-sources__pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.knowledge-sources__pagination-summary {
+  font-size: 12px;
+  color: var(--text);
+}
+
+.knowledge-sources__pagination-pages {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+@media (max-width: 720px) {
+  .knowledge-sources__row-main {
+    flex-wrap: wrap;
+  }
+
+  .knowledge-sources__row-stat {
+    text-align: left;
+  }
+}
