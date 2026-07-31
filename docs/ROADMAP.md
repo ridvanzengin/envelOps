@@ -14,15 +14,19 @@
 ## 1. Status as of 2026-07-31
 
 **Portfolio scope pivot — read §6 first, it changes how to read everything
-below.** The real pilot is deprioritized; real integrations beyond
-Telegram (channels and commerce alike) are cut in favor of simulated
-ones; Turkish/bilingual pipeline support is cut. §2's priorities below
-predate this pivot and are now stale in places — §6 has the current
-picture.
+below; §7 is a same-day follow-up on top of it.** The real pilot is
+deprioritized; real integrations beyond Telegram (channels and commerce
+alike) are cut in favor of simulated ones; Turkish/bilingual pipeline
+support is cut, fully now (§7.1 closed the one part §6 originally left
+in place). §2's priorities below predate this pivot and are now stale in
+places — §6/§7 have the current picture.
 
-**PRs #23–#37 are all merged into `main`.** PR #37 (§6's Turkish removal,
+**PRs #23–#38 are all merged into `main`.** PR #37 (§6's Turkish removal,
 real tool-calling + fake connectors, 4 simulated channels, the Settings
-Tool-calling tab, and doc housekeeping) merged 2026-07-31. Check
+Tool-calling tab, and doc housekeeping) merged 2026-07-31. PR #38 (§7's
+full Turkish removal + the two calibration-finding fixes) also merged
+2026-07-31, same day, as a fresh branch off `main` rather than reusing
+PR #37's already-merged branch. Check
 `gh pr view <N> --json state` before assuming any PR's status by the time
 this is read again, this line goes stale fast (learned the hard way in a
 prior session: pushing more commits to an already-merged PR's branch does
@@ -1623,15 +1627,7 @@ other real-world detail a demo tenant's flavor text might mention.
 ### 7.2 Two real calibration findings from Milestone 4, fixed
 
 Both were flagged-not-fixed at the time Milestone 4 landed (see above).
-Both are **prompt-only fixes, unit-tested but not yet re-verified live**
-against a real Gemini call — unlike most other entries in this document,
-which insist on live verification before calling something done. Worth
-being explicit about that gap: the originating findings came from a real
-calibration run (Voltage Gadgets, 28 Bitext-sampled DMs), but re-running
-that same calibration costs real time/quota on the free tier, and wasn't
-done in this follow-up session. Treat these as "addressed, pending
-re-confirmation on the next real calibration or Test Console pass," not
-"proven fixed."
+Both are prompt-only fixes.
 
 1. **Hallucinated `email support@shop.com` workflow for order-modify/
    cancel requests.** Root cause: `render_knowledge_query_instruction`
@@ -1683,3 +1679,39 @@ re-confirmation on the next real calibration or Test Console pass," not
 
 Full backend suite (278 tests — down from 283: -8 removed Turkish tests,
 +3 new ones above), ruff, and mypy all clean.
+
+**Verified live, same day, immediately after merge** — not just
+unit-tested: rather than a full 28-message calibration rerun (real
+time/quota cost, and unnecessary — only 4 of the 28 originally sampled
+messages actually exercised either bug), the exact 4 originally-failing
+messages were pulled back out of the DB (`calib-voltage-gadgets-
+cancel_order-7`/`-8`, `calib-voltage-gadgets-change_order-3`/`-4`) and
+resent fresh through Test Console against the same live Voltage Gadgets
+tenant, real Gemini calls, after restarting the `backend`/`worker`
+containers to pick up the fix (bind-mounted code, no `--reload`, so a
+restart — not a rebuild — was required):
+
+- "canceling purchase #12345" — was a fabricated email-support workflow;
+  now correctly escalates (`decision: escalate_to_human`, reason
+  `knowledge base has no answer for: ...`), no invented contact info.
+- "I want assistance to cancel order #12345" — was the same fabricated
+  workflow; now correctly grounded: "Orders can be cancelled if they
+  haven't shipped yet, as long as they're past the 30-minute
+  modification window."
+- "can I update order #12345?" — same fabrication before; now correctly
+  grounded on the real 30-minute modify-window fact.
+- "swap an article of order #12345" — was misrouted into
+  `book_or_checkout` with a fresh checkout link; now `detected_intent:
+  knowledge_question` (not `purchase_intent`), `decision: keep_chatting`
+  (not `book_or_checkout`), correctly grounded reply citing the same
+  real modify/cancel policy — no checkout link sent for an
+  existing-order request.
+
+Both fixes hold against real model output, not just the unit tests'
+prompt-content assertions. One expected variance worth naming, not a
+bug: the two cancellation messages landed on different outcomes
+(escalate vs. grounded-answer) despite very similar phrasing — ordinary
+retrieval/generation variance across two separate real calls, and both
+outcomes are correct (the knowledge base's cancellation fact is
+retrievable and answerable; a model choosing to escalate on that same
+fact anyway is conservative, not wrong).
