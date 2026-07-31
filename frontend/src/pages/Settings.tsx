@@ -20,6 +20,7 @@ import {
   TrashIcon,
 } from "../components/icons";
 import { CHANNEL_TYPES } from "../lib/channels";
+import { handleTextareaEnterKey } from "../utils/submitOnEnter";
 
 interface TriggerPhrase {
   id: string;
@@ -148,8 +149,8 @@ type TabKey =
 // accounted for); grouped left = conversation-facing tone/behavior
 // areas, right = business mechanics + safety.
 const LEFT_TAB_ORDER: TabKey[] = [
-  "closing",
   "greeting",
+  "closing",
   "offTopic",
   "knowledgeQuery",
   "complaint",
@@ -296,11 +297,12 @@ function AdditionalContextField({
   return (
     <label className="form__field tenant-settings__fields--full">
       {label}
-      <input
-        type="text"
+      <textarea
         maxLength={500}
         value={value ?? ""}
         onChange={(e) => onChange(e.target.value || null)}
+        onKeyDown={(e) => handleTextareaEnterKey(e, (v) => onChange(v || null))}
+        rows={1}
       />
     </label>
   );
@@ -1041,11 +1043,14 @@ export default function Settings() {
                   <div className="tenant-settings__fields">
                     <label className="form__field tenant-settings__fields--full">
                       {t("settings.tenantSettings.generalContext.label")}
-                      <input
-                        type="text"
+                      <textarea
                         maxLength={500}
                         value={settings.behavior_config.general_context ?? ""}
                         onChange={(e) => updateGeneralContext(e.target.value || null)}
+                        onKeyDown={(e) =>
+                          handleTextareaEnterKey(e, (v) => updateGeneralContext(v || null))
+                        }
+                        rows={1}
                       />
                     </label>
                   </div>

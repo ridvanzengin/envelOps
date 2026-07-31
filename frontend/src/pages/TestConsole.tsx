@@ -8,6 +8,7 @@ import { MessageThread } from "../components/MessageThread";
 import { RefreshIcon } from "../components/icons";
 import type { Message } from "../context/conversationPanel/context";
 import { CHANNEL_TYPES as PLATFORMS } from "../lib/channels";
+import { handleTextareaEnterKey } from "../utils/submitOnEnter";
 import "./TestConsole.css";
 
 interface TestConversationResponse {
@@ -218,13 +219,14 @@ export default function TestConsole() {
       </div>
 
       <form className="test-console__input-row" onSubmit={(event) => void handleSend(event)}>
-        <input
-          type="text"
+        <textarea
           className="test-console__input"
           value={inputText}
           onChange={(event) => setInputText(event.target.value)}
+          onKeyDown={(event) => handleTextareaEnterKey(event, setInputText)}
           placeholder={t("testConsole.inputPlaceholder")}
           disabled={sending}
+          rows={1}
         />
         <button
           type="submit"

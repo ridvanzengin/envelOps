@@ -66,12 +66,20 @@
 
 .test-console__input-row {
   display: flex;
+  align-items: flex-end;
   gap: 8px;
 }
 
+/* <textarea> now (was a single-line <input>) -- Cmd/Ctrl+Enter inserts a
+   real newline (utils/submitOnEnter.ts), plain Enter still sends, same
+   as the input it replaced. min-height matches that input's old single-
+   line height so this doesn't look taller by default; resize: vertical
+   (not the browser default `both`) so dragging can't widen it into
+   the Send button next to it. */
 .test-console__input {
   flex: 1;
   min-width: 0;
+  min-height: 38px;
   padding: 8px 10px;
   border: 1px solid var(--border);
   border-radius: 6px;
@@ -79,6 +87,8 @@
   color: var(--text-h);
   font: inherit;
   font-size: 14px;
+  line-height: 1.4;
+  resize: vertical;
 }
 
 .test-console__input:focus {

@@ -124,6 +124,17 @@
   font-size: 14px;
 }
 
+/* Cmd/Ctrl+Enter for a real newline, plain Enter still saves the tab
+   (utils/submitOnEnter.ts) -- these used to be single-line <input>s.
+   min-height matches that input's old height so a 1-row textarea
+   doesn't look taller by default; resize: vertical only, so dragging
+   can't widen a field past its column. */
+.form__field textarea {
+  min-height: 38px;
+  line-height: 1.4;
+  resize: vertical;
+}
+
 .form__field input:focus,
 .form__field select:focus,
 .form__field textarea:focus {
