@@ -21,7 +21,10 @@ support is cut, fully now (§7.1 closed the one part §6 originally left
 in place). §2's priorities below predate this pivot and are now stale in
 places — §6/§7 have the current picture.
 
-**PRs #23–#38 are all merged into `main`.** PR #37 (§6's Turkish removal,
+**PRs #23–#43 are all merged into `main`.** §8 below covers #39–#43
+(safety-floor fix, UI polish, PDF support, knowledge sources redesign) —
+check `gh pr view <N> --json state` before trusting this by the time it's
+read again regardless. PR #37 (§6's Turkish removal,
 real tool-calling + fake connectors, 4 simulated channels, the Settings
 Tool-calling tab, and doc housekeeping) merged 2026-07-31. PR #38 (§7's
 full Turkish removal + the two calibration-finding fixes) also merged
@@ -1750,3 +1753,42 @@ triggers, a `safe`+`promise` variant also triggers, and two false-
 positive checks confirm bare risk/safety language without a certainty
 word still doesn't trigger. Full backend suite (281 tests — +4 from
 above), ruff, and mypy all clean.
+
+## 8. UI polish + PDF support + knowledge sources redesign (2026-07-31, later same day)
+
+Four more merged PRs, frontend-heavy, each independently branched off
+`main` (not stacked): #40 (safety-floor fix, already covered in §7.3
+above), #41, #42, #43. Brief pointers, not full write-ups — see each
+PR's own description on GitHub for the live-verification detail.
+
+- **#41 — UI polish**: conversation rail badges/filters (Escalated/
+  Not-escalated/Hot-lead/Purchase-intent/Complaint, exclusive-select,
+  colors shared between filter chip and matching row badge) + client-
+  side pagination; Settings redesign (Safety trigger phrases became a
+  tab instead of a static column; 12 tabs split into two independent
+  groups of 6 shown side by side, each its own nav + card, full page
+  width); Test Console toolbar height-matching + editable session name;
+  every free-text field (Test Console message box, Settings' additional-
+  context fields) converted from `<input>` to resizable `<textarea>`
+  with Cmd/Ctrl/Shift+Enter for a newline, plain Enter still submits
+  (`utils/submitOnEnter.ts`).
+- **#42 — PDF knowledge source support**: closes the one deliberately-
+  deferred source type (`docs/ARCHITECTURE.md` §6). New `pypdf`/
+  `python-multipart` deps, `POST /knowledge/sources/pdf` (separate
+  multipart endpoint), PUT now also accepts pdf for editing.
+- **#43 — Knowledge sources page redesign**: full visual/UX overhaul
+  from a reference image (stat tiles, pill-style type selector with a
+  live "estimated chunks" count that mirrors the backend's real
+  `chunk_text()` formula, search/type-filter, card-based rows with a
+  kebab menu, per-chunk preview + copy, pagination, "Refresh all").
+  Deliberately excluded from the reference: a "Markdown" source type
+  (not real backend capability) and a dedicated title field (would need
+  a migration — titles are derived from `source_uri`/a content snippet
+  instead).
+
+All four verified live via Playwright against the real running stack,
+not just built/linted — see each PR description for specifics. Nothing
+left mid-flight from this session; next-session candidates are whatever
+was already open before it (§4's carried-over items, §5.2/§5.3 if the
+portfolio-scope pivot in §6 ever gets revisited) plus, if wanted,
+building out the "Markdown" source type PR #43 deliberately skipped.
