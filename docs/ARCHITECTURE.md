@@ -133,9 +133,9 @@ themselves:
    step 2 if the lead replies)
 
 State object carried through the run: `tenant_id`, `conversation_id`,
-`incoming_text`, `channel_type`, `conversation_history` (docs/ROADMAP.md
-§2 — prior messages in the conversation, populated by the graph's own
-`load_history` node, not by any caller), `tenant_behavior_config` (raw
+`incoming_text`, `channel_type`, `conversation_history` (prior messages
+in the conversation, populated by the graph's own `load_history` node,
+not by any caller), `tenant_behavior_config` (raw
 dict, §6), `detected_intent`, `retrieved_chunks`, `tool_call_results`
 (2026-07-31 — one formatted fact string per successful fake tool call,
 same shape/spirit as `retrieved_chunks`), `lead_score`, `decision`,
@@ -150,9 +150,9 @@ unused for a while) gets one row per inbound message (`detected_intent`/
 `lead_score`/`decision` only, not the full state) — both the real
 Telegram path (`pipeline/tasks.py`) and Test Console
 (`app/test_console/api.py`) write it now, via the same
-`PipelineTraceRepository.record_result` helper; see `docs/ROADMAP.md`
-§3.3/§3.4. The future observability dashboard can still largely be built
-by widening this same mechanism rather than inventing new logging.
+`PipelineTraceRepository.record_result` helper. The future observability
+dashboard can still largely be built by widening this same mechanism
+rather than inventing new logging.
 
 `channel_type` drives reply tone/structure in step 6's `keep_chatting`/
 `book_or_checkout` branches, and is now genuinely **tenant-configurable**
@@ -253,8 +253,8 @@ using stdlib `html.parser`, not a new parsing library. Deliberately not
 attempted: schema.org FAQPage structured Q&A parsing (§5's "parsed as
 clean Q&A pairs where available" — text-only fallback is what's built).
 Refresh only makes sense for `url` sources (400 for `manual`). `PUT`
-(added 2026-07-29, docs/ROADMAP.md §5.5) is refresh's manual-only mirror
-— replaces a source's chunks with newly-chunked/re-embedded
+(added 2026-07-29) is refresh's manual-only mirror — replaces a source's
+chunks with newly-chunked/re-embedded
 user-submitted text; 400s for `url` sources for the same reason refresh
 400s for `manual` ones, so editing a url source's fetched content by hand
 can't be silently clobbered by the next refresh. `GET` now also returns
@@ -342,27 +342,12 @@ pipeline. Tenant-added trigger phrases (REQUIREMENTS §6) are unaffected,
 since that's a plain substring match with no language dependency to begin
 with.
 
-Original description, for the record:
-
-Phase 1 requirement (REQUIREMENTS §11), driven by the pilot business
-(REQUIREMENTS §12) being Turkish. Three separate concerns, not one:
-
-- **Generation (pipeline steps 2 and beyond, §4)**: no separate translation
-  step or language field the pipeline branches on — the intent-understanding
-  and reply-generation prompts instruct the model to detect and reply in the
-  incoming message's language. This rides on the base LLM's existing
-  multilingual ability, not a bespoke component. Verified live for
-  `understand_intent`/`score_lead`/`keep_chatting` — Turkish in, Turkish out,
-  English in, English out, correct in both directions.
-- **Embeddings (§6)**: same-language retrieval (English query against
-  English-embedded chunks) is verified live. Cross-lingual retrieval quality
-  specifically (a Turkish query against English-embedded chunks, or vice
-  versa) has **not** been tested yet — worth checking before trusting it,
-  not an assumption to leave unchecked just because a provider is picked.
-- **Frontend (§10)**: a standard React i18n setup (e.g. `react-i18next`),
-  independent of the two items above — this is the dashboard's own language
-  switch for the business owner, unrelated to what language the pipeline
-  detects in a customer's DM.
+Original design (summary, not in effect): reply-generation prompts
+instructed the model to detect and match the incoming message's language
+(verified working both directions before the cut); embedding-level
+cross-lingual retrieval quality was never actually tested; the frontend's
+`react-i18next` setup (§10) was, and still is, entirely independent of
+both.
 
 ## 8. Channel ingestion & background jobs
 
@@ -559,11 +544,13 @@ isn't repeated here.
   (`GET /conversations?channel_type=...`), then a conversation's full
   thread (`GET /conversations/{id}/messages`) with direction-based bubble
   alignment. A conversation whose channel is `is_test` shows a small Test
-  badge next to its status. The thread view is **read-only** — it shows a
-  reply input + send button, but both render permanently disabled, since
-  there's no backend capability yet for a human to send a message outside
-  the pipeline (see the pause-mode item in §11); it's a placeholder for
-  that future affordance, not a working one.
+  badge next to its status. The thread view is **read-only** by design,
+  not by omission (2026-07-31, `docs/ROADMAP.md`) — it shows a reply input
+  + send button, both permanently disabled: a human sending a message
+  outside the pipeline (the "human-paused conversations" mode once
+  considered for this) was cut as a real-business-ops concern this
+  project isn't demonstrating, not deferred as a placeholder waiting on
+  backend work.
 - **Escalations (folded into the same rail/panel, not a standalone page)**
   — the old dedicated Escalation queue page and nav item are gone.
   `GET /escalations` is instead fetched once at the app-shell level and
@@ -644,37 +631,34 @@ now owns tracking "what's next," so it doesn't drift out of sync with a
 second copy here. Kept brief in this document because these are
 architectural gaps, not day-to-day status:
 
-- **Human-paused conversations** (pause AI replies, reply directly without
-  triggering an escalation) — a second conversation-level pause mode
-  alongside the existing safety-floor escalation (§5), needing a
-  `Conversation` mode field, pause/resume + human-send endpoints, and a
-  `process_incoming_message` check to skip the AI while paused. Until this
-  lands, the conversation panel's thread view stays read-only.
-- ~~`book_or_checkout` beyond a static link — a real Shopify/WooCommerce/
-  Calendly connector~~ — **cut, not an open item anymore (2026-07-31)**,
-  see §6/§12. `book_or_checkout` still always sends the same tenant-
-  configured static `Tenant.closing_link`; a real connector auto-
-  generating one per order isn't planned.
-- Channel failure behavior beyond the health-check stub.
 - Full observability dashboard (builder's trace view vs. owner's
-  operational view).
-- Data retention/deletion policy specifics.
-- Whether/when general draft-and-approve gets added back (REQUIREMENTS §4).
+  operational view) — the one item actually still open.
+
+**Cut, not open items anymore (2026-07-31)**, see `docs/ROADMAP.md`:
+~~`book_or_checkout` beyond a static link~~ (a real Shopify/WooCommerce/
+Calendly connector — `book_or_checkout` still always sends the same
+tenant-configured static `Tenant.closing_link`); ~~human-paused
+conversations~~ (the conversation panel's thread view stays read-only by
+design now, §10, not as a placeholder for this); ~~channel failure
+behavior beyond the health-check stub~~; ~~data retention/deletion policy
+specifics~~; ~~whether/when general draft-and-approve gets added back~~
+(REQUIREMENTS §4) — all real-business-ops concerns judged out of scope
+for what this portfolio project demonstrates, same logic as §12's cuts
+below.
 
 ## 12. Explicitly deferred to later phases
 
-Template gallery, graph-augmented retrieval, embedding/lead-scoring
-fine-tuning, multi-user roles beyond "owner," AI-assisted configuration,
-the visual flow builder. See `REQUIREMENTS.md` §10, §13 for the full
-reasoning on each.
+Graph-augmented retrieval, embedding/lead-scoring fine-tuning,
+multi-user roles beyond "owner," the visual flow builder. See
+`REQUIREMENTS.md` §10, §13 for the full reasoning on each.
 
-**No longer in this list, moved to Cut (2026-07-31, REQUIREMENTS §10)**:
-real live-data/platform-API connectors (Shopify/WooCommerce/etc.) and
-real channel integrations beyond Telegram. Both got a **simulated**
-version instead (§6, §8) — not "not yet built," but "deliberately fake,
-not planned to become real." Don't move these back to this list without
-re-litigating that decision; "deferred" and "simulated-instead" are
-different things, see REQUIREMENTS §10 for why the distinction matters.
+**Cut, not deferred (2026-07-31, REQUIREMENTS §10)** — don't move these
+back to this list without re-litigating the decision: real live-data/
+platform-API connectors (Shopify/WooCommerce/etc.) and real channel
+integrations beyond Telegram, both replaced by a **simulated** version
+instead (§6, §8); the starter template gallery and AI-assisted
+configuration, both predicated on the multi-vertical tenant breadth the
+2026-07-31 portfolio-scope pivot walked back from.
 
 ---
 

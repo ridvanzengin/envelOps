@@ -91,16 +91,21 @@ mode, not a configurable extra — it's the trust mechanism that makes an AI
 handling real customer conversations acceptable to a small-business owner who
 has no reason yet to trust it unsupervised.
 
-Implications to design for, even if not built immediately:
+**Status (2026-07-31): superseded, not just "not built immediately."**
+ARCHITECTURE §5 cut general draft-and-approve from Phase 1 in favor of
+auto-send gated only by the safety-floor escalation — a real-business-ops
+trust mechanism this portfolio project has no real customers to need.
+Whether it comes back, along with the graduation path and timeout/
+notification mechanics below, is cancelled rather than open — see
+`docs/ROADMAP.md`. Original implications kept for the record:
 - A **graduation path**: after enough approved-without-edits drafts in a
   low-risk category (e.g. simple FAQ answers), that category could eventually
   move to auto-send, while anything higher-stakes (health questions, price
-  negotiation, complaints) always stays human-gated. The hook for this should
-  exist in the data model from the start (track approved-as-is vs. edited vs.
-  rejected per category) even though the "graduate to auto-send" feature itself
-  is not being built now.
-- Draft-approval timeout/notification mechanics are a real open question — see
-  §9 (Roadmap — undecided, non-blocking).
+  negotiation, complaints) always stays human-gated. The hook for this would
+  need to exist in the data model from the start (track approved-as-is vs.
+  edited vs. rejected per category).
+- Draft-approval timeout/notification mechanics — what happens if nobody
+  approves a draft in time.
 
 ## 5. Knowledge sources
 
@@ -208,24 +213,20 @@ not a foundational rework.
 
 ## 9. Roadmap — undecided design details (non-blocking)
 
-These are real, acknowledged gaps — not silently dropped, not required before
-starting the build:
+The one real, acknowledged gap still open — not silently dropped, not
+required before starting the build:
 
-- **Channel failure behavior**: what happens when a channel disconnects —
-  silent stop vs. detected fallback to a "queue for human" mode. Flagged
-  as needing a proper fix, not yet designed. Only really applies to
-  Telegram now (2026-07-31) — the other four channels are simulated
-  (ARCHITECTURE §8) and have no real external connection to fail.
 - **Observability dashboard, for two distinct audiences**: the builder's view
   (execution traces — why the AI answered this way) and the business owner's
   view (response time, draft-approval rate, leads gone cold). Likely two
   different views, not one dashboard serving both — not yet designed.
-- **Draft-approval timeout/notification mechanics**: what happens if nobody
-  approves a draft in time — does the lead go cold, does it escalate itself
-  after N minutes, how is the approver notified. Not yet designed.
-- **Data retention/deletion policy specifics**: how long conversations are kept,
-  how a business owner deletes a customer's data on request. A stated policy
-  is needed even before it's a built feature.
+
+**Cut from this list (2026-07-31), not just deferred** — see §10 and
+`docs/ROADMAP.md`: channel failure behavior beyond the health-check stub,
+draft-approval timeout/notification mechanics, and data retention/
+deletion policy specifics. All three were "matters for a real business
+with real customers" gaps that don't add to what this portfolio project
+demonstrates.
 
 ## 10. Cut vs. deferred to later phases
 
@@ -251,14 +252,22 @@ Phase 1 — see §11 for where each one lands.
   Facebook/Email, 2026-07-31) — cut in favor of simulated webhook-shaped
   entry points (same real pipeline, no real platform contacted); see
   ARCHITECTURE §8.
+- **Human-paused conversations**, **channel failure behavior** beyond the
+  health-check stub, **data retention/deletion policy specifics**, and
+  **draft-and-approve's return** (including its timeout/notification
+  mechanics, §4/§9) — all cut 2026-07-31, same pivot as the row below:
+  real-business-ops concerns judged out of scope for what this portfolio
+  project demonstrates, see `docs/ROADMAP.md`.
+- **Starter template gallery** and **AI-assisted configuration**
+  (2026-07-31, see `docs/ROADMAP.md`) — both were "deferred, will be
+  built later" as originally written below; cut instead once the
+  portfolio-scope pivot capped tenant/vertical breadth at ~2 calibration
+  tenants — both were predicated on exactly the multi-vertical breadth
+  that pivot walked back from, so there's no longer a battle-tested
+  scenario set to build either on top of.
 
 **Deferred — will be built, just not in Phase 1:**
 
-- **Starter template gallery** (pre-built configurations for common business
-  types, chosen at onboarding) — a real, important requirement. Ship with one
-  minimal default configuration for Phase 1; see §11 for sequencing.
-- **AI-assisted configuration** (an assistant that helps a business owner set
-  up their own flow) — a later version, not cut.
 - **Graph-augmented retrieval** — still a real, intended capability for domains
   where facts are relationally connected (e.g. medication × procedure
   interactions in health-related businesses), decided automatically by the
@@ -295,29 +304,11 @@ language-specific. The frontend's `react-i18next` UI chrome (English/
 Turkish dashboard switcher, inert and isolated, not the source of any
 problem) is still untouched.
 
-Original requirement text kept below for the record, not because it's
-still in effect:
-
-- **LLM generation**: detect the language of the incoming message and reply
-  in the same language (Turkish in, Turkish out; English in, English out).
-  Applies to both intent understanding (§3 step 2) and reply generation — a
-  modern general-purpose LLM handles Turkish well enough for this without a
-  separate translation step.
-- **Knowledge base**: sources are entered in whichever language the business
-  owner uses (realistically Turkish, for this pilot) and must still be
-  retrievable when a customer asks in the other language. This needs an
-  embedding model with real cross-lingual performance, not just "supports
-  Turkish" — matching a Turkish query against Turkish-embedded chunks is the
-  easy case; matching an English query against Turkish chunks (or vice
-  versa) is the one that actually needs checking when picking the embedding
-  provider.
-- **UI**: the dashboard/inbox/etc. (ARCHITECTURE.md §10) needs its own i18n,
-  independent of the LLM's language handling — a Turkish business owner
-  using the dashboard and a customer DMing in English are two separate
-  language surfaces, not one.
-- **Not required for Phase 1**: languages beyond these two, or a language
-  picker exposed to end customers — the pipeline detects and matches, it
-  doesn't ask.
+Original requirement (summary, not in effect): detect the incoming
+message's language and reply in kind (LLM generation), retrieve knowledge
+across languages (needs real cross-lingual embedding performance, never
+verified before the cut), and give the dashboard its own independent i18n
+(UI-only, unaffected by the cut — still in place, see ARCHITECTURE §10).
 
 ## 12. Pilot & validation plan — **superseded (2026-07-31)**
 
@@ -335,25 +326,14 @@ correctness, grounding quality, safety-floor behavior) without the
 step-2-specific "real customers, real consequences" framing below, since
 there's no real pilot to protect.
 
-Original two-stage plan kept below for the record:
-
-1. **Synthetic messages** — exercise the full pipeline (§3) end to end,
-   including the safety gate (§6), against fabricated DM conversations
-   covering the Product/e-commerce row of §2 (order questions, shipping,
-   returns, price sensitivity) and the safety-floor edge cases (outcome-
-   guarantee and symptom-language triggers) even though honey isn't a
-   health-related business — the floor should still hold for anyone who
-   phrases a question that way.
-2. **Real pilot** — once synthetic testing holds up, connect to the actual
-   honey business's real Instagram DMs and webstore as the first real
-   tenant. Not a second round of synthetic testing with different data —
-   real customers, real orders, real consequences if a reply is wrong.
-
-This ordering isn't optional: auto-send is the Phase 1 default (ARCHITECTURE
-§5), so a real business's real customers see whatever the pipeline produces
-with no human checkpoint except the safety gate. Synthetic testing is what
-earns the right to point it at real DMs, not a formality to skip once the
-demo looks good.
+Original two-stage plan (summary, not in effect): stage 1 was synthetic
+DM conversations exercising the full pipeline and safety gate end to end;
+stage 2 was connecting the real honey business's Instagram DMs and
+webstore as the first real tenant, gated on stage 1 holding up first
+since auto-send (ARCHITECTURE §5) means a real business's customers see
+whatever the pipeline produces with no checkpoint but the safety gate.
+Stage 2 is what's superseded — stage 1's synthetic-testing discipline
+carries over directly into the calibration loop above.
 
 ## 13. Rough build sequencing (not architecture — just what depends on what)
 
@@ -365,8 +345,8 @@ demo looks good.
 3. Hybrid (graph-augmented) retrieval for relationally-complex business types
 4. Fine-tuning for retrieval and lead-scoring, if time allows
 5. Deferred items from §10, roughly in the order: dashboard/observability
-   design (§9) → channel-failure fix (§9) → template gallery → multi-user
-   roles → AI-assisted configuration
+   design (§9) → channel-failure fix (§9) → multi-user roles
+   (~~template gallery~~/~~AI-assisted configuration~~ cut 2026-07-31, §10)
 
 Validation gate on step 1 (before calling it done): originally the
 synthetic-then-real pilot sequence in §12; now just the synthetic stage
