@@ -69,6 +69,17 @@ async def _put(path: str, body: dict, token: str | None) -> httpx.Response:
         return await client.put(path, json=body, headers=headers)
 
 
+async def _post_file(
+    path: str, filename: str, content: bytes, content_type: str, token: str | None
+) -> httpx.Response:
+    headers = {"Authorization": f"Bearer {token}"} if token else {}
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        return await client.post(
+            path, headers=headers, files={"file": (filename, content, content_type)}
+        )
+
+
 class TestCreateKnowledgeSource:
     async def test_rejects_missing_token(self) -> None:
         response = await _post("/knowledge/sources", {"type": "manual", "content": "x"}, None)
@@ -164,6 +175,83 @@ class TestCreateKnowledgeSource:
                 "/knowledge/sources", {"type": "url", "url": "https://example.com"}, _token()
             )
         assert response.status_code == 400
+
+
+class TestCreatePdfKnowledgeSource:
+    async def test_rejects_missing_token(self) -> None:
+        response = await _post_file(
+            "/knowledge/sources/pdf", "doc.pdf", b"%PDF-1.4 fake", "application/pdf", None
+        )
+        assert response.status_code == 401
+
+    async def test_rejects_non_pdf_file(self) -> None:
+        response = await _post_file(
+            "/knowledge/sources/pdf", "doc.txt", b"just text", "text/plain", _token()
+        )
+        assert response.status_code == 400
+
+    async def test_rejects_oversized_file(self) -> None:
+        oversized = b"x" * (10 * 1024 * 1024 + 1)
+        response = await _post_file(
+            "/knowledge/sources/pdf", "big.pdf", oversized, "application/pdf", _token()
+        )
+        assert response.status_code == 400
+
+    async def test_rejects_unparseable_pdf(self) -> None:
+        with patch(
+            "app.knowledge.api.extract_pdf_text",
+            side_effect=ValueError("not a valid PDF: bad EOF marker"),
+        ):
+            response = await _post_file(
+                "/knowledge/sources/pdf",
+                "doc.pdf",
+                b"not really a pdf",
+                "application/pdf",
+                _token(),
+            )
+        assert response.status_code == 400
+
+    async def test_rejects_pdf_with_no_extractable_text(self) -> None:
+        with patch("app.knowledge.api.extract_pdf_text", return_value="   "):
+            response = await _post_file(
+                "/knowledge/sources/pdf", "blank.pdf", b"%PDF-1.4", "application/pdf", _token()
+            )
+        assert response.status_code == 400
+
+    async def test_extracts_chunks_and_embeds(self) -> None:
+        tenant_id = uuid.uuid4()
+        token = _token(tenant_id)
+        source = _fake_source(tenant_id, type="pdf", source_uri="brochure.pdf")
+        with (
+            patch("app.knowledge.api.KnowledgeSourceRepository") as mock_source_repo_cls,
+            patch("app.knowledge.api.KnowledgeChunkRepository") as mock_chunk_repo_cls,
+            patch("app.knowledge.api.embed_text", return_value=[0.1]),
+            patch(
+                "app.knowledge.api.extract_pdf_text",
+                return_value="Our return policy is 30 days.",
+            ),
+        ):
+            mock_source_repo_cls.return_value.add = AsyncMock(return_value=source)
+            mock_chunk_repo_cls.return_value.add = AsyncMock()
+            response = await _post_file(
+                "/knowledge/sources/pdf",
+                "brochure.pdf",
+                b"%PDF-1.4 fake bytes",
+                "application/pdf",
+                token,
+            )
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["type"] == "pdf"
+        assert body["source_uri"] == "brochure.pdf"
+        assert body["chunk_count"] == 1
+        stored_source = mock_source_repo_cls.return_value.add.call_args.args[0]
+        assert stored_source.type == "pdf"
+        assert stored_source.source_uri == "brochure.pdf"
+        assert stored_source.tenant_id == tenant_id
+        stored_chunk = mock_chunk_repo_cls.return_value.add.call_args.args[0]
+        assert stored_chunk.content == "Our return policy is 30 days."
 
 
 class TestListKnowledgeSources:
@@ -328,3 +416,27 @@ class TestUpdateKnowledgeSource:
         )
         stored_chunk = mock_chunk_repo_cls.return_value.add.call_args.args[0]
         assert stored_chunk.content == "Corrected shipping info."
+
+    async def test_pdf_source_can_also_be_edited(self) -> None:
+        # pdf joined manual on this endpoint's allow-list when pdf support
+        # was added -- once extracted, a pdf's text has no stored original
+        # to stay in sync with either, same "own text now" shape as manual.
+        tenant_id = uuid.uuid4()
+        token = _token(tenant_id)
+        source = _fake_source(tenant_id, type="pdf", source_uri="brochure.pdf")
+        with (
+            patch("app.knowledge.api.KnowledgeSourceRepository") as mock_source_repo_cls,
+            patch("app.knowledge.api.KnowledgeChunkRepository") as mock_chunk_repo_cls,
+            patch("app.knowledge.api.embed_text", return_value=[0.1]),
+        ):
+            mock_source_repo_cls.return_value.get = AsyncMock(return_value=source)
+            mock_chunk_repo_cls.return_value.delete_by_source = AsyncMock()
+            mock_chunk_repo_cls.return_value.add = AsyncMock()
+            response = await _put(
+                f"/knowledge/sources/{source.id}",
+                {"content": "Corrected from the brochure."},
+                token,
+            )
+
+        assert response.status_code == 200
+        assert response.json()["content"] == "Corrected from the brochure."
