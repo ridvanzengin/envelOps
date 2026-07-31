@@ -4,6 +4,8 @@ import { useTranslation } from "react-i18next";
 import { useAuth } from "../auth/useAuth";
 import { useConversationPanel } from "../context/conversationPanel/useConversationPanel";
 import { useTheme } from "../context/theme/useTheme";
+import { CHANNEL_TYPES, isRealChannel } from "../lib/channels";
+import type { ChannelType } from "../lib/channels";
 import {
   CheckIcon,
   ChevronIcon,
@@ -20,18 +22,18 @@ import {
 } from "./icons";
 import "./ChannelRail.css";
 
-// Only Telegram is a real, built channel (app/channels/ backend) -- the
-// rest have no real integration yet, but are still clickable: Test Console
-// (frontend TestConsole.tsx) lets a test conversation exist for any of
-// them, so they open the panel showing that channel's (always test-only)
-// conversations rather than rendering disabled.
-const CHANNELS = [
-  { key: "telegram", icon: TelegramIcon, real: true },
-  { key: "whatsapp", icon: WhatsAppIcon, real: false },
-  { key: "facebook", icon: FacebookIcon, real: false },
-  { key: "instagram", icon: InstagramIcon, real: false },
-  { key: "email", icon: EmailIcon, real: false },
-] as const;
+// Every channel is clickable regardless of real vs. simulated -- Test
+// Console (frontend TestConsole.tsx) and the simulated webhooks
+// (backend/app/channels/api.py) both let a conversation exist for any of
+// them, so they open the panel showing that channel's conversations
+// rather than rendering disabled.
+const CHANNEL_ICONS: Record<ChannelType, typeof TelegramIcon> = {
+  telegram: TelegramIcon,
+  whatsapp: WhatsAppIcon,
+  facebook: FacebookIcon,
+  instagram: InstagramIcon,
+  email: EmailIcon,
+};
 
 export function ChannelRail() {
   const { t, i18n } = useTranslation();
@@ -181,17 +183,21 @@ export function ChannelRail() {
 
       <div className="channel-rail__divider" />
 
-      {CHANNELS.map(({ key, icon: ChannelIcon, real }) => {
+      {CHANNEL_TYPES.map((key) => {
+        const ChannelIcon = CHANNEL_ICONS[key];
+        const real = isRealChannel(key);
         const isActive = isOpen && activeChannelType === key;
         const badgeCount = pendingEscalationCountByChannelType[key] ?? 0;
         const label = t(`channelRail.${key}`);
-        const title = real ? label : `${label} — ${t("channelRail.testOnly")}`;
+        const title = real
+          ? `${label} — ${t("channelRail.realIntegration")}`
+          : `${label} — ${t("channelRail.simulatedIntegration")}`;
         return (
           <button
             key={key}
             type="button"
             className={`channel-rail__icon${
-              real ? " channel-rail__icon--telegram" : ""
+              real ? " channel-rail__icon--real" : ""
             }${isActive ? " channel-rail__icon--active" : ""}`}
             title={title}
             aria-label={label}

@@ -5,7 +5,14 @@
 > for *what* is being built and *why*; this one is *how*, for Phase 1
 > specifically (§13 of the requirements doc: core pipeline, tenant-isolated
 > data model, auto-send with a hard safety gate, static knowledge, one
-> channel, Turkish/English language support).
+> real channel plus simulated ones).
+>
+> **STATUS UPDATE (2026-07-31):** Turkish/English pipeline language
+> support (originally listed here) is cut, not built — §7. Real live-data
+> connectors and real channels beyond Telegram are cut in favor of
+> simulated versions — §6, §8, §12. See REQUIREMENTS.md's own status
+> update at its top for the full reasoning (the real pilot this was all
+> scoped around is deprioritized).
 >
 > Phase 2+ (graph-augmented retrieval, fine-tuning, template gallery, roles,
 > the deferred items below) are intentionally not designed in detail here —
@@ -29,21 +36,29 @@
   service instead of a separate vector DB, since graph retrieval and the
   template gallery are both deferred. Migrating to a dedicated vector DB later
   is a contained change (swap the retrieval query), not a rewrite.
-- **LLM + embedding provider:** Gemini (`google-genai`), covering both
-  generation and embeddings through one API key — chosen for its free tier
-  (REQUIREMENTS §12's synthetic-testing phase needs a $0 starting point).
-  One real gotcha worth knowing before picking a model name: free-tier
-  quota is granted per model, not per key/project, and a specific model can
-  sit at a permanent zero on an otherwise-working account (a 429 that never
+- **LLM + embedding provider:** Gemini (`google-genai`), covering
+  generation, embeddings, and (as of 2026-07-31) real tool-calling through
+  one API key — `app.core.llm`'s `generate_text` / `embed_text` /
+  `generate_with_tools`. Chosen originally for its free tier (REQUIREMENTS
+  §12's synthetic-testing phase needed a $0 starting point). One real
+  gotcha worth knowing before picking a model name: free-tier quota is
+  granted per model, not per key/project, and a specific model can sit at
+  a permanent zero on an otherwise-working account (a 429 that never
   recovers, easy to mistake for a temporary rate limit) — see `CLAUDE.md`
   for the exact models that do/don't currently work on this account.
 - **Task queue:** Celery + Redis (message processing handoff, knowledge
   re-sync, follow-up delays, channel health checks)
-- **Messaging ingestion:** Beeper Desktop API (webhooks) as the primary
-  multi-channel bridge (WhatsApp/Instagram/Facebook Messenger/Telegram);
-  Telegram Bot API also wired as a lower-risk fallback channel. Known
-  limitation: Beeper's bridges are unofficial, not Meta's Business Cloud API —
-  acceptable for now, flagged for a production swap-out later.
+- **Messaging ingestion:** Telegram Bot API is the one real channel
+  (plain `httpx` against Telegram's Bot API, §8) — Beeper (the originally-
+  planned primary multi-channel bridge for WhatsApp/Instagram/Facebook
+  Messenger) was **never built**; Telegram turned out to be the more
+  useful first channel (no bridge infrastructure, just a bot token), and
+  Beeper's own unofficial-bridge limitation stopped mattering once the
+  decision below made it moot anyway. **Instagram/WhatsApp/Facebook/Email
+  are simulated, not real** (decided 2026-07-31, §8) — webhook-shaped
+  entry points into the same real pipeline, no real platform (Meta or
+  otherwise) ever contacted; building real integrations for these was
+  judged out of scope for what this project demonstrates.
 - **Frontend:** React
 - **Deployment:** Docker Compose — **one shared deployment, multiple tenants**
   (you host it), not one deployment per business. This is the reason tenant
@@ -87,10 +102,11 @@ approve on every message) but is **not part of Phase 1** — see §5.
 ## 4. Conversation pipeline
 
 Fixed 8-step sequence, run by LangGraph, same for every business (no visual
-builder in Phase 1 — see REQUIREMENTS §3). The graph's actual entry point
-is `load_history` (docs/ROADMAP.md §2, loads prior conversation messages)
-running just before step 2 — a prerequisite for the numbered steps below,
-not one of them itself:
+builder in Phase 1 — see REQUIREMENTS §3). The graph's actual node list is
+longer than 8 — `load_history`, `check_pending_escalation`,
+`load_tenant_config`, and (2026-07-31) `call_tools` are all prerequisite/
+interstitial nodes around the original numbered steps, not steps
+themselves:
 
 1. Incoming message (normalized from channel)
 2. Understand intent
@@ -98,8 +114,20 @@ not one of them itself:
    scoped, top-k chunks assembled into the generation prompt)
 4. Score the lead (hot/warm/cold — plain LLM call for now; fine-tuning is a
    later-phase quality improvement, not required to function)
-5. Decide next step (based on intent + score)
-6. Branch: keep chatting / escalate to human / book-or-checkout
+5. Decide next step (based on intent + score) — purely deterministic/
+   code-driven routing (safety-floor regex, hot-lead gating); the LLM is
+   never part of this decision, only ever invoked afterward to produce
+   prose for whichever branch was already picked
+6. Branch: keep chatting / escalate to human / book-or-checkout. On the
+   `keep_chatting` branch specifically, a `call_tools` node (2026-07-31)
+   runs first — real Gemini tool-calling (`app.core.llm.generate_with_tools`):
+   if the tenant has a fake connector enabled (`ToolCallingConfig`, §6) and
+   the model decides the message needs one, it calls a fake, deterministic
+   order-status/inventory connector (`app/commerce/`) and folds the result
+   into `keep_chatting`'s existing knowledge-context block, alongside
+   `retrieved_chunks` — same downstream STATUS-tag/escalation machinery
+   either way, no parallel reply path. Inert (zero extra Gemini calls) for
+   every tenant that hasn't opted in.
 7. Log lead & notify team
 8. Follow up after delay (Celery job scans quiet conversations, re-enters at
    step 2 if the lead replies)
@@ -107,10 +135,16 @@ not one of them itself:
 State object carried through the run: `tenant_id`, `conversation_id`,
 `incoming_text`, `channel_type`, `conversation_history` (docs/ROADMAP.md
 §2 — prior messages in the conversation, populated by the graph's own
-`load_history` node, not by any caller), `detected_intent`,
-`retrieved_chunks`, `lead_score`, `decision`, `draft_text`,
-`escalation_reason` (if any), `escalation_logged` (§5's double-log
-guard). This state is what gets checkpointed at the pause point (§5).
+`load_history` node, not by any caller), `tenant_behavior_config` (raw
+dict, §6), `detected_intent`, `retrieved_chunks`, `tool_call_results`
+(2026-07-31 — one formatted fact string per successful fake tool call,
+same shape/spirit as `retrieved_chunks`), `lead_score`, `decision`,
+`draft_text`, `escalation_reason` (if any), `escalation_logged` (§5's
+double-log guard). This state is what gets checkpointed at the pause
+point (§5) — every new field added to it has followed the same rule:
+plain primitives/dicts only, never a nested Pydantic model, since a
+nested model's behavior under LangGraph's own state serializer across a
+pause/resume boundary is untested risk not worth taking.
 `pipeline_traces` (defined alongside the rest of the data model but
 unused for a while) gets one row per inbound message (`detected_intent`/
 `lead_score`/`decision` only, not the full state) — both the real
@@ -120,16 +154,19 @@ Telegram path (`pipeline/tasks.py`) and Test Console
 §3.3/§3.4. The future observability dashboard can still largely be built
 by widening this same mechanism rather than inventing new logging.
 
-`channel_type` drives reply tone/structure in steps 6's `keep_chatting`/
-`book_or_checkout` branches (`app/pipeline/graph.py`'s
-`_CHANNEL_TONE_GUIDANCE`) — email gets a greeting, fuller sentences, and a
-sign-off; Telegram/WhatsApp/Instagram/Facebook stay short and casual, no
-greeting or sign-off. First-pass and generic, not tenant-configurable yet,
-same status as the intent-label/lead-score taxonomies above. Verified via
-the Test Console (§9, §10), not the synthetic harness — tone is a
-presentational property the harness's "does this look right to a human"
-standard doesn't really cover; the real check is sending the same question
-through multiple channels and comparing.
+`channel_type` drives reply tone/structure in step 6's `keep_chatting`/
+`book_or_checkout` branches, and is now genuinely **tenant-configurable**
+(not true when this paragraph was first written): `app/pipeline/behavior.py`'s
+`render_channel_tone` reads a per-tenant `channel_overrides` map
+(`TenantBehaviorConfig`, §6) with a system-default fallback
+(`_SYSTEM_DEFAULT_CHANNEL_TONE_TEXT` in the same file — email gets a
+greeting, fuller sentences, and a sign-off by default; Telegram/WhatsApp/
+Instagram/Facebook stay short and casual by default) when a tenant hasn't
+overridden it. Configurable via Settings' "Platform-specific tone" tab
+(§10). Verified via the Test Console (§9, §10), not the synthetic
+harness — tone is a presentational property the harness's "does this look
+right to a human" standard doesn't really cover; the real check is
+sending the same question through multiple channels and comparing.
 
 ## 5. Human-in-the-loop: safety gate only, not general approval
 
@@ -230,10 +267,16 @@ but ingesting one needs a real PDF-parsing library (pypdf or similar), a
 new dependency deliberately deferred to its own follow-up rather than
 bundled with the zero-new-dependency `manual`/`url` work above.
 
-**Live data** (inventory, pricing): explicitly not embedded. Deferred past
-Phase 1 in practice — Phase 1 ships static knowledge only; live-data
-connectors (platform API or manual CSV fallback) are a later addition, per
-REQUIREMENTS §5.
+**Live data** (inventory, pricing): explicitly not embedded — matches
+REQUIREMENTS §5's original reasoning either way. **A simulated version now
+exists (2026-07-31), a real platform connector still doesn't and isn't
+planned to.** Real Gemini tool-calling (`app.core.llm.generate_with_tools`,
+§4's `call_tools` node) backed by fake, deterministic connectors
+(`app/commerce/connectors.py` — hash-seeded, same input always the same
+fake output, no DB table, no real network call) for order-status and
+inventory lookups. REQUIREMENTS §5's "connect your store" real-platform
+path and manual-CSV fallback are both still exactly as undesigned as
+before.
 
 **Retrieval at reply-time:** embed the incoming question, pgvector cosine-
 similarity search scoped to tenant, top-k chunks into the generation prompt.
@@ -241,7 +284,58 @@ Vector-only — graph-augmented retrieval is designed (REQUIREMENTS §10) but
 not built until a relationally-complex business type is actually being
 onboarded.
 
-## 7. Language support (Turkish + English)
+**Per-tenant behavior configuration** (`app/tenants/behavior_config.py`'s
+`TenantBehaviorConfig`, built 2026-07-30 — undocumented here until this
+housekeeping pass): bounded, typed, versioned Pydantic schema controlling
+how the pipeline talks, not what it decides. One sub-model per area
+(`greeting`, `off_topic`, `knowledge_query`, `complaint`, `lead_handling`,
+`escalation_cover`, `book_or_checkout`, `tool_calling`) plus
+`channel_overrides` (per-platform tone) and a top-level `general_context`
+escape hatch. Two deliberate conventions load-bearing for elasticity:
+`extra="ignore"` (not Pydantic's default `"forbid"` — a stored config from
+an older/newer schema version deserializes without raising) and every
+value field is `Literal`-typed, not plain `str` (so the frontend can
+derive dropdown/radio options directly from the schema, no separate
+options list to keep in sync). Each area's own `additional_context` field
+is explicitly **data, never behavior** — a fact the model is told to be
+aware of, never composed into new decision logic — the same shape
+`escalation_trigger_phrases` (§5) already uses, and the actual reason
+free-text "AI personality" instructions were never considered: bounded
+fields avoid the competing-instructions failure class that motivated this
+design (found live, `keep_chatting` — see `docs/ROADMAP.md`).
+
+Stored as one `Tenant.behavior_config` JSON column, loaded once per
+pipeline run (`load_tenant_config` node) as a **raw dict**, not the typed
+model — same checkpointer-safety reasoning as the rest of `PipelineState`
+(§4). `app/pipeline/behavior.py` has one `render_*` function per area,
+turning the typed config into the actual prompt text `app/pipeline/graph.py`'s
+nodes send to the model; every one is held to a byte-identical-at-defaults
+bar (called with an all-defaults config, returns exactly what the
+hardcoded pre-refactor string produced), which is what let the existing
+test suite pass unmodified when this was introduced.
+
+**API + UI**: `GET`/`PATCH /tenants/settings` (`app/tenants/api.py`, added
+2026-07-30 — missing from §9 below until this pass) — `PATCH` takes one
+tab's own slice at a time (e.g. `{"greeting": {...}}`), never the whole
+object, so the Settings UI's per-tab independent-save behavior (§10) is
+real, not simulated client-side: saving one tab genuinely cannot touch
+another tab's unsaved edits, because the request never carries them.
+
+## 7. Language support (Turkish + English) — **CUT (2026-07-31)**
+
+This was built and working (see the original description kept below), but
+is now cut, not a live capability — REQUIREMENTS §11 has the full
+reasoning (written for a Turkish pilot business that's now deprioritized).
+The generation-side behavior described below (detect-and-match reply
+language) has been removed from the actual prompts in
+`app/pipeline/graph.py` — replies are now effectively always whatever
+language the model defaults to, regardless of input language. Embeddings/
+retrieval were never made language-aware beyond the base model's own
+ability, so nothing changed there. The frontend `react-i18next` setup
+(§10) is untouched and still works — it was always independent of pipeline
+language handling, not affected by this cut.
+
+Original description, for the record:
 
 Phase 1 requirement (REQUIREMENTS §11), driven by the pilot business
 (REQUIREMENTS §12) being Turkish. Three separate concerns, not one:
@@ -263,50 +357,71 @@ Phase 1 requirement (REQUIREMENTS §11), driven by the pilot business
   switch for the business owner, unrelated to what language the pipeline
   detects in a customer's DM.
 
-Not designed yet: whether `detected_intent`/pipeline state needs an explicit
-`detected_language` field (for logging/observability) or the prompt handles
-it implicitly without one — a Phase 1 implementation detail, not a
-Phase 1 scope question.
-
 ## 8. Channel ingestion & background jobs
 
-**Telegram is built** (`POST /channels/telegram/{channel_id}/webhook`,
+**Telegram is the one real channel** (`POST /channels/telegram/{channel_id}/webhook`,
 plain `httpx` against Telegram's Bot API — deliberately not the
 `python-telegram-bot` SDK, whose polling/dispatcher machinery is for a
 different, long-running-process pattern than one-shot webhook receive/
 respond): validate the `X-Telegram-Bot-Api-Secret-Token` header (fails
 closed if the channel has no secret configured, not just on a mismatch) →
-normalize into `messages` (look up or create the conversation by external
-contact id, `app/conversations/repository.py`'s `get_by_external_contact`)
-→ hand off to a Celery task (kept out of the webhook handler itself, so
-Telegram gets a fast response) → that task runs the pipeline and sends the
-reply back via `sendMessage`. `scripts/register_telegram_channel.py`
-creates the `Channel` row and calls `setWebhook` — no API/UI for this yet
-(channel connection isn't part of the API surface until real auth exists).
-**Beeper is not built** — Telegram turned out to be the more useful first
-channel to actually implement (no bridge infrastructure, just a bot
+`_ingest_inbound_message` (shared helper, below) → hand off to a Celery
+task (kept out of the webhook handler itself, so Telegram gets a fast
+response) → that task runs the pipeline and sends the reply back via
+`sendMessage`. `scripts/register_telegram_channel.py` creates the
+`Channel` row and calls `setWebhook` — no API/UI for this yet (channel
+connection isn't part of the API surface until real auth exists).
+**Beeper was never built** — Telegram turned out to be the more useful
+first channel to actually implement (no bridge infrastructure, just a bot
 token), not just a "fallback."
 
-**Test Console channels** (`app/test_console/api.py`) — `Channel.is_test`
-flags a lazily-created, one-per-(tenant, type) channel with no real
-webhook/API behind it, for any of the five rail channel types (Telegram/
-WhatsApp/Instagram/Facebook/Email). Lets the pipeline's channel-aware
-reply tone (§4) and the safety gate (§5) be exercised end-to-end, on
-channels that don't have a real integration yet, before building one.
-`GET /test/conversations`/`POST /test/conversations/messages` (§9) call
-`run_pipeline` directly and synchronously — no Celery hand-off, since a
-human is watching and there's no webhook needing a fast response. A test
-conversation's `is_test` (via its channel) is what the frontend's Test
-badge and `GET /conversations`'s/`GET /escalations`'s `channel_type`/
-`is_test` fields key off (§9, §10).
+**Instagram/WhatsApp/Facebook/Email are simulated, not real (2026-07-31)**
+— `POST /channels/{instagram,whatsapp,facebook,email}/{channel_id}/webhook`
+(`app/channels/api.py`), each parsing a payload shape plausible for that
+platform (`app/channels/simulated_client.py` — deliberately flattened,
+not full fidelity to Meta's real envelope) then calling the same
+`_ingest_inbound_message` helper Telegram uses, so it's genuinely the same
+pipeline/persistence path, not a parallel one. Auth is one uniform
+EnvelOps-owned header (`X-EnvelOps-Simulated-Webhook-Secret`) checked
+against `Channel.webhook_secret`, not each platform's real signing
+scheme — building real per-platform signature verification for fake
+integrations would be exactly the over-engineering this simulation
+avoids. `scripts/register_simulated_channel.py` creates the `Channel` row
+(`is_test=False`, `bot_token=None`) — no real API calls, since there's
+nothing real to register with. **Outbound send needs zero special-casing
+for these**: `pipeline/tasks.py`'s existing `if channel.bot_token:` guard
+(below) already no-ops for any channel without one, while still
+persisting the outbound `Message` row — a simulated channel's reply is
+fully visible in the UI, it just never attempts a real network call.
+`_ingest_inbound_message` (shared by all five channels, real and
+simulated alike): find-or-create the `Conversation` (by external contact
+id, `app/conversations/repository.py`'s `get_by_external_contact`) →
+persist the inbound `Message` → commit → publish the live-update SSE
+event → hand off to the `process_incoming_message` Celery task.
+
+**Test Console channels** (`app/test_console/api.py`) — a *third*,
+distinct mechanism from both of the above, not to be confused with the
+simulated channels: `Channel.is_test` flags a lazily-created, one-per-
+(tenant, type) channel with no webhook of any kind behind it, for any of
+the five rail channel types. `GET /test/conversations`/
+`POST /test/conversations/messages` (§9) call `run_pipeline` directly and
+synchronously (a human is watching, no webhook needing a fast response),
+and every conversation it produces carries `is_test=True` — shown with a
+visible "Test" badge in the UI (§10), unlike a simulated channel's
+conversations, which are `is_test=False` and read as genuine inbound DMs.
+Existed before the simulated channels did, and still serves a different
+purpose: quick manual exploration/debugging of the pipeline for any
+channel type, without needing a `Channel` row set up first.
 
 **Background jobs (Celery):**
 - `process_incoming_message` — **built.** Runs the pipeline for one
   message; on `__interrupt__` it commits without replying (the escalation
   was already logged by `decide_next_step` before the pause — see §5);
-  otherwise it logs the outbound message and sends it via Telegram,
-  catching and logging (not swallowing, not raising) a delivery failure so
-  a Telegram outage doesn't lose the Lead/Message rows already written.
+  otherwise it logs the outbound message and attempts a real send only
+  when `channel.bot_token` is set (Telegram today), catching and logging
+  (not swallowing, not raising) a delivery failure so an outage doesn't
+  lose the Lead/Message rows already written. Channel-agnostic otherwise —
+  simulated channels flow through the exact same task.
 - `knowledge_resync` — not built. Manual trigger now (`POST
   /knowledge/sources/{id}/refresh`, §6/§9), could become scheduled later.
 - `follow_up_check` — **built.** The only periodic job so far, run by
@@ -330,10 +445,20 @@ badge and `GET /conversations`'s/`GET /escalations`'s `channel_type`/
 ## 9. API surface (Phase 1)
 
 `/auth`, `/channels`, `/knowledge`, `/conversations`, `/leads`,
-`/escalations`, `/dashboard`, `/test` — one router per domain module,
-matching the `api.py` per module convention. `/test` (`app/test_console/
-api.py`) is the one exception with no `models.py`/`repository.py` of its
-own — reuses `Channel`/`Conversation`/`Message` as-is (§8).
+`/escalations`, `/dashboard`, `/test`, `/events`, `/tenants` — one router
+per domain module, matching the `api.py` per module convention. `/test`
+(`app/test_console/api.py`) and `/events` (`app/events/api.py`, SSE live
+updates) are both exceptions with no `models.py`/`repository.py` of their
+own — `/test` reuses `Channel`/`Conversation`/`Message` as-is (§8),
+`/events` has no DB table at all. `/channels` now has five real routes
+(one webhook per channel type, §8), not just Telegram's.
+
+**`/tenants`** (`app/tenants/api.py`, added 2026-07-30 — missing from
+this list until this housekeeping pass): `GET`/`PATCH /tenants/settings`,
+the API behind §6's per-tenant behavior configuration and the Settings
+UI's tabbed "AI behavior & business settings" section (§10). `PATCH`
+takes one tab's own slice at a time, not the whole object — see §6 for
+why that's structural, not cosmetic.
 
 `GET /conversations` takes an optional `channel_type` query param (one
 rail icon's worth of conversations at a time, ChannelRail/
@@ -384,7 +509,8 @@ list_with_chunk_counts`) and `GET /conversations/{id}/messages` (full
 thread, oldest first).
 
 Still empty routers, wired into `main.py` but with nothing behind them:
-`/channels` (besides the webhook, §8), `/leads`, `/dashboard`.
+`/channels` (besides its five webhooks, §8 — still no channel-management
+CRUD), `/leads`, `/dashboard`.
 
 ## 10. Frontend screens (Phase 1)
 
@@ -403,16 +529,25 @@ isn't repeated here.
   token kept in `localStorage`, gates the whole app (single owner role,
   §2 — one gate is enough, no per-route permission model needed yet). The
   language switcher deliberately lives outside this gate (`App.tsx`), not
-  inside the post-login nav — a Turkish-speaking owner needs it to read
-  the login screen itself, not just the app after logging in (§7).
+  inside the post-login nav — this is dashboard UI chrome (still English/
+  Turkish, unaffected by §7's pipeline-language cut), and was built when
+  the owner reading it in Turkish mattered; now just a working, harmless
+  affordance no longer load-bearing for a real pilot.
 - **Conversations (right-side rail + panel, not a routed page)** — real
   now, but no longer an "Inbox" nav item or route. A fixed icon rail on
   the right (`ChannelRail`, one icon per channel type: Telegram, WhatsApp,
   Facebook, Instagram, Email) is persistent across every authenticated
-  route. All five are clickable now (§8's Test Console channels are what
-  made this possible for the four without a real integration) — Telegram
-  is the only one with any real conversations, the other four only ever
-  show Test Console conversations. Clicking one opens a sliding panel
+  route. Every icon shows a **Real** or **Simulated** integration label
+  on hover (`isRealChannel`, `frontend/src/lib/channels.ts` — the one
+  shared source of truth for the channel-type list, consolidated
+  2026-07-31 from three previously-independent duplicated copies) — only
+  Telegram is real, the other four are simulated webhook-shaped entry
+  points (§8), not merely "Test Console only" the way this line used to
+  read. A simulated channel's real conversations (created via its own
+  webhook, `is_test=False`) show up exactly like Telegram's; Test
+  Console's own conversations (`is_test=True`, any channel type) are the
+  ones that get the small Test badge. Clicking a rail icon opens a
+  sliding panel
   (`ConversationPanel`) showing that channel's conversations as a list
   (`GET /conversations?channel_type=...`), then a conversation's full
   thread (`GET /conversations/{id}/messages`) with direction-based bubble
@@ -460,13 +595,28 @@ isn't repeated here.
   design). Manual rows additionally get a pencil button turning that same
   expanded area into an editable textarea (Save calls the new `PUT`);
   url rows stay view-only, matching the backend's url/manual split.
-- **Settings** — partially real: the safety trigger phrase list (§5) is
-  built — three static, translated category labels for the system
+- **Settings** — two columns (added 2026-07-30, after a first single-
+  column pass proved the wrong shape live): "Safety trigger phrases" (§5)
+  on the right — three static, translated category labels for the system
   defaults (disabled checkboxes, no edit/delete control, ever — there's
   nothing to fetch for them, they're not DB rows) plus a real
   list-add-and-delete form for the tenant's own additions (§9; delete
-  added 2026-07-29, §5's reasoning). Channel connection status is not
-  built — no `GET /channels` endpoint exists yet to show it.
+  added 2026-07-29, §5's reasoning) — and "AI behavior & business
+  settings" on the left, real and tabbed (`/tenants/settings`, §6/§9):
+  Closing, Greeting, Off-topic, Knowledge, Complaints, Leads, Escalation,
+  Booking, **Tool calling** (added 2026-07-31, alongside the tool-calling
+  feature itself — an on-purpose gap-close, this tab and its `PATCH`
+  support didn't exist when `ToolCallingConfig` itself first shipped),
+  Platform-specific tone, General. **Each tab saves independently** — its
+  own Save button, `PATCH`ing only that tab's own slice (§6) — not one
+  form-wide save; a real, deliberate design point (proven live: editing
+  one tab without saving it, then saving a different tab, does not carry
+  the first tab's unsaved edit along). The Tool calling tab carries an
+  explicit "uses simulated demo data, not a real connected store" notice
+  — there's no credentials/connection UI anywhere in Settings, since
+  there's nothing real to connect (§6). Channel connection status
+  (registering a new Telegram bot, or a simulated channel, from the UI)
+  is still not built — both remain script-only (§8).
 - **Dashboard** — still a placeholder; minimal for Phase 1 (leads today,
   escalations today, response times) once built. The full two-audience
   observability design is still an open item (see §11).
@@ -493,10 +643,11 @@ architectural gaps, not day-to-day status:
   `Conversation` mode field, pause/resume + human-send endpoints, and a
   `process_incoming_message` check to skip the AI while paused. Until this
   lands, the conversation panel's thread view stays read-only.
-- **`book_or_checkout` beyond a static link** — a real Shopify/WooCommerce/
-  Calendly *connector* (auto-generating a checkout/booking link per order)
-  instead of always sending the same tenant-configured static URL
-  (`Tenant.closing_link`). REQUIREMENTS §13 step 2, not step 1.
+- ~~`book_or_checkout` beyond a static link — a real Shopify/WooCommerce/
+  Calendly connector~~ — **cut, not an open item anymore (2026-07-31)**,
+  see §6/§12. `book_or_checkout` still always sends the same tenant-
+  configured static `Tenant.closing_link`; a real connector auto-
+  generating one per order isn't planned.
 - Channel failure behavior beyond the health-check stub.
 - Full observability dashboard (builder's trace view vs. owner's
   operational view).
@@ -506,9 +657,17 @@ architectural gaps, not day-to-day status:
 ## 12. Explicitly deferred to later phases
 
 Template gallery, graph-augmented retrieval, embedding/lead-scoring
-fine-tuning, multi-user roles beyond "owner," live-data/platform-API
-connectors, AI-assisted configuration, the visual flow builder. See
-`REQUIREMENTS.md` §10, §13 for the full reasoning on each.
+fine-tuning, multi-user roles beyond "owner," AI-assisted configuration,
+the visual flow builder. See `REQUIREMENTS.md` §10, §13 for the full
+reasoning on each.
+
+**No longer in this list, moved to Cut (2026-07-31, REQUIREMENTS §10)**:
+real live-data/platform-API connectors (Shopify/WooCommerce/etc.) and
+real channel integrations beyond Telegram. Both got a **simulated**
+version instead (§6, §8) — not "not yet built," but "deliberately fake,
+not planned to become real." Don't move these back to this list without
+re-litigating that decision; "deferred" and "simulated-instead" are
+different things, see REQUIREMENTS §10 for why the distinction matters.
 
 ---
 

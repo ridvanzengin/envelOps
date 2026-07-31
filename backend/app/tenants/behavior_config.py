@@ -96,6 +96,17 @@ class BookOrCheckoutConfig(BehaviorAreaBase):
     cta_style: Literal["natural_mention", "direct_cta"] = "natural_mention"
 
 
+class ToolCallingConfig(BehaviorAreaBase):
+    """Enables the fake, simulated commerce connectors (app/commerce/) --
+    both False by default, reproducing today's exact behavior (no tool
+    ever offered to the model). Two independent flags, not one master
+    switch: a service business shouldn't be forced to also "enable"
+    inventory just to get order tracking."""
+
+    order_status_lookup_enabled: bool = False
+    inventory_check_enabled: bool = False
+
+
 class ChannelToneConfig(BaseModel):
     """Per-channel_type ("platform," in this project's own UI vocabulary)
     override. Not a BehaviorAreaBase subclass -- a structural axis
@@ -121,6 +132,7 @@ class TenantBehaviorConfig(BaseModel):
     lead_handling: LeadHandlingConfig = Field(default_factory=LeadHandlingConfig)
     escalation_cover: EscalationCoverConfig = Field(default_factory=EscalationCoverConfig)
     book_or_checkout: BookOrCheckoutConfig = Field(default_factory=BookOrCheckoutConfig)
+    tool_calling: ToolCallingConfig = Field(default_factory=ToolCallingConfig)
 
     # Deliberately plain `str` keys, NOT Literal[<channel names>] --
     # Pydantic validates dict *keys* against a Literal regardless of

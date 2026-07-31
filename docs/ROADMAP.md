@@ -11,16 +11,24 @@
 
 ---
 
-## 1. Status as of 2026-07-30
+## 1. Status as of 2026-07-31
 
-**PRs #23–#36 are all merged into `main`** (Test Console through §3.8's
-tenant settings API + UI — see §3.1–§3.8 below for what each one
-shipped). Check `gh pr view <n> --json state` before assuming a given
-PR's status by the time this is read again, this line goes stale fast
-(learned the hard way in a prior session: pushing more commits to an
-already-merged PR's branch does NOT bring them into `main` — always
-verify with `gh pr view`, don't assume a `git push` succeeding means
-the changes are live).
+**Portfolio scope pivot — read §6 first, it changes how to read everything
+below.** The real pilot is deprioritized; real integrations beyond
+Telegram (channels and commerce alike) are cut in favor of simulated
+ones; Turkish/bilingual pipeline support is cut. §2's priorities below
+predate this pivot and are now stale in places — §6 has the current
+picture.
+
+**PRs #23–#36 are all merged into `main`. PR #37 (§6's Turkish removal,
+real tool-calling + fake connectors, 4 simulated channels, the Settings
+Tool-calling tab, and this doc housekeeping) is open, not yet merged** —
+`feature/simulated-integrations-tool-calling`, 5 commits. Check
+`gh pr view 37 --json state` before assuming its status by the time this
+is read again, this line goes stale fast (learned the hard way in a
+prior session: pushing more commits to an already-merged PR's branch does
+NOT bring them into `main` — always verify with `gh pr view`, don't
+assume a `git push` succeeding means the changes are live).
 
 **The §5.1 safety-floor finding (outcome-guarantee check missing
 safety/risk-absence language) is explicitly postponed to a later
@@ -38,33 +46,25 @@ Two real pipeline bugs were found and fixed via live Test Console use
    `escalate_to_human` (the default for every tenant) — fixed to log the
    escalation immediately, same as the safety-floor path.
 
-## 2. Immediate priorities (ranked)
+## 2. Immediate priorities (ranked) — **stale as of the §6 pivot, kept for the record**
 
-1. **Language-consistency bug in the disclaimer path (deferred from last
-   session, not fully confirmed fixed).** The "I don't have that
-   information" disclaimer sometimes broke language consistency — e.g. a
-   Turkish question ("kırmızı var mı?") got an English disclaimer while
-   other Turkish questions correctly got a Turkish one. Suspected cause:
-   the model echoed `keep_chatting`'s own English instruction phrasing
-   ("you MUST say you don't have that information...") rather than
-   translating the underlying meaning. **§3.6's fix (2026-07-29) may have
-   resolved this as a side effect** — the raw disclaimer text no longer
-   reaches the customer at all now, replaced by `_generate_cover_reply`'s
-   already-language-tested prompt — spot-checked once in Turkish with a
-   correct result, but not broadly re-verified. Re-test before assuming
-   this is closed.
+1. ~~Language-consistency bug in the disclaimer path.~~ **Moot (2026-07-31)**
+   — §6's Turkish cut removes the language-matching instruction that
+   caused this entirely; there's nothing left to be inconsistent. Resolved
+   by cutting the mechanism, not by a targeted fix — see §6 for why.
 2. ~~Conversation history is a real, known gap.~~ **Done (2026-07-29)** —
    see its own write-up below, right after this list, for what shipped
-   and how it was verified. Unblocks §3.2 (clarifying question).
-3. **Instagram channel integration** is still the actual pilot blocker
-   underneath all of the above — Telegram is the only real channel built;
-   Instagram is what the honey-seller pilot (REQUIREMENTS §12) actually
-   needs.
+   and how it was verified. Unblocked §3.2 (clarifying question).
+3. ~~Instagram channel integration is still the actual pilot blocker.~~
+   **Superseded (2026-07-31)** — there's no real pilot to unblock anymore
+   (§6), and Instagram is now a simulated channel (§6 Milestone 2), not a
+   real-integration gap to close.
 
-Secondary, not urgent: ~10–15s per Test Console send (up to 4 sequential
-Gemini calls, none parallelized — `search_knowledge` doesn't actually
-depend on `understand_intent`'s output, so parallelizing those two is a
-viable future latency win).
+Secondary, not urgent, still true: ~10–15s per Test Console send (up to 4
+sequential Gemini calls even before §6's tool-calling addition, none
+parallelized — `search_knowledge` doesn't actually depend on
+`understand_intent`'s output, so parallelizing those two is a viable
+future latency win).
 
 ### Conversation history — done (2026-07-29)
 
@@ -1304,3 +1304,272 @@ source's text, saved, and confirmed the new text round-tripped correctly.
 3. **§5.3** (AI copilot) — longest-horizon item here; needs §5.1's
    scenario diversity and §3.3/§3.4's data maturing first, and its own
    dedicated design pass on the approval-point question above.
+
+## 6. Portfolio scope pivot: simulated integrations, real tool-calling (2026-07-31)
+
+### The decision
+
+Mid-session, while running §5.1's successor (a one-tenant-at-a-time
+calibration loop against real Bitext-sampled DMs — see Milestone 4
+below), the scope had visibly outgrown what's sustainable for a solo
+project: 6-7 planned calibration tenants, a live-commerce-connector
+conversation, real multi-channel integration work stacking up. Direct
+instruction: re-scope. **The real pilot (a friend's honey business,
+REQUIREMENTS §12) is deprioritized — EnvelOps is now explicitly a solo
+portfolio project demonstrating AI behavior orchestration/safety/
+configuration, not a product being shipped to a real business.** User's
+own framing, adopted as the guiding principle for every decision below:
+*"this is not an integration project, this is an AI assistant behavior
+abstraction showcase project."*
+
+Four concrete decisions followed, each confirmed directly, not assumed:
+
+1. **Turkish/bilingual pipeline support: cut, not deferred.** It was also
+   the single biggest recurring bug source this session (language-
+   consistency issues found live 3+ separate times) — cutting it resolves
+   those bugs by removing the mechanism that caused them, not just less
+   scope on paper. REQUIREMENTS §11, ARCHITECTURE §7, CLAUDE.md all
+   updated to match (this same housekeeping pass).
+2. **Real integrations beyond Telegram: cut in favor of simulated ones**
+   — real Instagram/WhatsApp/Facebook Messaging API integrations and a
+   real Shopify/WooCommerce commerce connector were both about to pull in
+   real credentials, app-review processes, and open-ended external risk
+   with no payoff for what this project demonstrates. Simulated instead:
+   same real pipeline, webhook-shaped entry points, fake deterministic
+   data — see Milestones 1-2.
+3. **Multi-tenancy architecture stays; calibration-tenant *count* is
+   capped at ~2, not 6-7.** Explicitly not the same decision — ripping
+   out working, tested tenant-isolation code for uncertain benefit was
+   rejected; the thing actually cut is the *ambition to keep growing
+   tenant/vertical breadth*, not the architecture itself.
+4. **Tool-calling: real; only the underlying data is fake.** The model
+   genuinely decides whether to call a tool (real Gemini function-
+   calling); order-status/inventory results come from a stateless,
+   hash-seeded fake connector, not a real commerce API.
+
+Also cut in the same conversation, not detailed further here: §5.2
+(template gallery) and §5.3 (AI copilot) — both predicated on the
+original multi-vertical, many-tenant ambition this pivot explicitly
+walked back from.
+
+Three research agents (channel/webhook architecture, LLM tool-calling
+readiness, frontend channel representation) plus a design agent produced
+a detailed implementation plan before any code was written — see
+`/Users/ridvan/.claude/plans/but-i-want-instgram-staged-moon.md` if it's
+still around; the milestones below are what actually got built from it,
+including two points where live verification changed the plan's own
+design (§0.2/§7.3 in that plan file — single tool-decision call instead
+of a literal two-turn function-calling loop; calibration stays on Test
+Console mechanics rather than routing through the new simulated webhooks).
+
+### Milestone 0 — Turkish removal (done)
+
+Landed first, deliberately, before anything else touched the same
+functions. Stripped every "reply in the same language" prompt instruction
+out of `app/pipeline/graph.py` (`_generate_cover_reply`, `keep_chatting`,
+`book_or_checkout`) and `app/pipeline/behavior.py`
+(`render_knowledge_query_instruction`), and dropped the Turkish entries
+from `_DISCLAIMER_CONTENT_MARKERS`. **Not touched**: `escalation/
+safety_gate.py`'s own Turkish safety-term detection patterns — a
+different concern (catching dangerous phrases regardless of language),
+still real defensive value. Full backend suite (237 tests at the time)
+passed unmodified — nothing asserted the removed strings.
+
+### Milestone 1 — Real tool-calling with fake connectors (done)
+
+`app/core/llm.py` gained `generate_with_tools(prompt, tool_declarations)`
+— real Gemini function-calling (`types.FunctionDeclaration`/`Tool`/
+`GenerateContentConfig`, confirmed against the actually-installed
+`google-genai==2.14.0` by constructing real objects, not assumed from
+docs; the correct field is `parameters_json_schema`, snake_case, not the
+camelCase a first draft used). `tool_config` deliberately left unset
+(AUTO) — that default is the actual mechanism that makes "the model
+genuinely decides" true.
+
+New `app/commerce/` module (`schemas.py`/`connectors.py`/`tools.py`,
+deliberately no `models.py`/`repository.py`/`api.py` — a named exception
+to the domain-module convention, since there's no real backing store and
+nothing outside the pipeline calls these): `get_order_status`/
+`check_inventory`, hash-seeded off the input so the same order number or
+product always returns the same fake result — deterministic on purpose,
+for reproducible calibration reviews and exact-string tests, not
+incidental.
+
+New `ToolCallingConfig` (`app/tenants/behavior_config.py`) — two
+independent bounded bools, `order_status_lookup_enabled`/
+`inventory_check_enabled`, both `False` by default, following the exact
+`not_found_max_distance` precedent (opt-in, off by default, zero extra
+Gemini calls until a tenant turns one on).
+
+New `call_tools` node in `app/pipeline/graph.py`, wired onto the
+`decide_next_step → keep_chatting` edge only (`call_tools` now sits
+between them). Per a user-confirmed design decision: the fake connector's
+result is folded into `keep_chatting`'s *existing* knowledge-context
+block alongside `retrieved_chunks` — not sent back to Gemini for a second
+turn. Cheaper (avoids a 5th/6th sequential free-tier-limited call per
+message) and reuses every already-hardened downstream mechanism (STATUS-
+tag parsing, knowledge-gap escalation, tone/language rendering) instead
+of building a parallel reply path. New `PipelineState.tool_call_results:
+list[str]` field, same shape/spirit as `retrieved_chunks`, deliberately
+*not* added to `check_pending_escalation`'s reset list (symmetric with
+`retrieved_chunks`, which isn't reset either — nothing external reads
+either field post-run).
+
+**Verified live against the real Gemini API**, not just mocked: a direct
+smoke script confirmed the model calls `order_status_lookup` with the
+correct extracted `order_number` for a relevant question, and correctly
+declines to call anything for an unrelated one. Later, during Milestone
+4's real calibration run, the reply text for a live `track_order`
+question ("order 12345 is currently processing... 1 day until delivery")
+was checked against calling `get_order_status("12345")` directly — an
+exact match — about as close to definitive proof as available that the
+real tool-calling path fired in a genuine Gemini-generated reply, not a
+mock.
+
+26 new backend tests (`test_commerce.py` — determinism/bounds/dispatch/
+formatting; `test_pipeline_graph.py`'s new `TestCallTools` plus a
+`TestKeepChatting` addition; one new `test_pipeline_runner.py` test that
+actually compiles and runs `build_pipeline_graph()` with `call_tools`
+wired in — the only place the edge-mapping change itself gets exercised,
+since no `test_pipeline_graph.py` test invokes the compiled graph
+directly).
+
+### Milestone 2 — Simulated channels: Instagram, WhatsApp, Facebook, Email (done)
+
+New `app/channels/simulated_client.py` — payload shapes only (`MetaMessagingEvent`
+shared by Instagram/Facebook, both genuinely Meta Messenger Platform in
+production; `WhatsAppMessage`; `EmailWebhookPayload`), deliberately
+flattened one level below each platform's real webhook envelope, not full
+fidelity — over-engineering fake payload shapes wasn't the ask.
+
+`app/channels/api.py` extended, not replaced: extracted the logic already
+common to every channel's happy path into `_ingest_inbound_message`
+(conversation lookup-or-create, message persist, commit, publish_event,
+Celery hand-off) and refactored the Telegram handler to call it — a pure
+extraction, confirmed safe against the existing Telegram test suite
+(patches module-level names that still resolve correctly). Four new
+routes (`/channels/{instagram,facebook,whatsapp,email}/{channel_id}/webhook`),
+all sharing one `_simulated_webhook` auth/dispatch helper and one uniform
+`X-EnvelOps-Simulated-Webhook-Secret` header — deliberately not each
+platform's real signature scheme (Meta's HMAC, etc.), which would be
+exactly the over-engineering avoided.
+
+**Outbound send needed zero new code** — traced directly against
+`app/pipeline/tasks.py`: both send call sites already guard on
+`if channel.bot_token:` before attempting a real send, but persist the
+outbound `Message` row unconditionally beforehand. A simulated channel
+(`bot_token=None`) already gets a fully visible, SSE-published reply with
+no real network call, for free.
+
+New `scripts/register_simulated_channel.py` (mirrors
+`register_telegram_channel.py` minus the two real-API calls that have no
+equivalent) creates the `Channel` row.
+
+**Verified live end-to-end**: a real `curl` POST to
+`/channels/instagram/{channel_id}/webhook` flowed through Celery into the
+real pipeline and produced a real reply, landing in the DB with
+`is_test=False` — confirmed directly via SQL, not inferred.
+
+14 new backend tests (`test_channels_simulated_api.py`) plus the existing
+7 Telegram tests re-run unmodified as the refactor's regression check.
+
+### Milestone 3 — Frontend: real vs. simulated labeling (done)
+
+Fixed a real, confirmed 3-way duplication found during research: the
+channel-type list existed independently in `ChannelRail.tsx`, `Settings.tsx`,
+and `TestConsole.tsx` (the latter two never imported from `ChannelRail`,
+and `TestConsole`'s own order didn't even match `ChannelRail`'s). New
+`frontend/src/lib/channels.ts` — `CHANNEL_TYPES`, `REAL_CHANNEL_TYPES`,
+`isRealChannel()` — is now the one shared source, imported by all three.
+
+`ChannelRail`'s tooltip/CSS class changed from a binary real/"Test only,
+not connected yet" framing to real/**Simulated integration** — a
+categorically different, more accurate statement now that all five
+channels have *something* real behind them (a genuine webhook, even if a
+fake one). `.channel-rail__icon--telegram` renamed to
+`.channel-rail__icon--real`, applied via `isRealChannel()` instead of a
+hardcoded platform check.
+
+`ConversationPanel.tsx` needed **no changes** — `is_test=False` on
+simulated channels already makes the existing "Test" pill correctly not
+show, exactly as wanted (a simulated-channel conversation reads as a
+genuine inbound DM, not a debug session).
+
+**Verified live via Playwright**: Telegram shows "Real integration," the
+other four show "Simulated integration," correct tooltip/CSS; the
+Instagram conversation created during Milestone 2's live webhook test
+rendered in the rail with zero "Test" badges anywhere near it (checked
+both by direct DB query and by scoping a Playwright locator to that
+specific row, not just a page-wide text search, since "Test console" is
+also a nav-link label that would otherwise false-positive a naive check).
+
+`npm run build`/`npm run lint` clean throughout.
+
+### Milestone 4 — Resumed tenant calibration (done, ongoing)
+
+Per a user-confirmed decision: `scripts/seed_calibration_tenant.py` kept
+its existing synchronous Test Console mechanics unchanged — simulated
+webhooks got their own dedicated tests (Milestone 2) instead of being
+routed through the calibration loop itself.
+
+**Tenant #2, Voltage Gadgets** (online consumer electronics, seeded on
+the new simulated Instagram channel, both fake tools enabled) appended to
+`CALIBRATION_TENANTS` alongside Wildroot Apparel Co (tenant #1, already
+calibrated pre-pivot against the pre-tool-calling pipeline). 28 Bitext-
+sampled DMs run through the real pipeline. Result: 28/28 sent cleanly, 0
+errors — plus tool-calling's own live proof described in Milestone 1.
+
+**Two real findings from this run, not bugs in the new code — pre-existing
+pipeline behavior the calibration happened to surface, not yet acted on:**
+1. The model fabricates an ungrounded "email support@shop.com" workflow
+   for order-modify/cancel requests instead of using the tenant's actual
+   knowledge-base policy or escalating — the order-status tool correctly
+   declined to fire (it doesn't cover modify/cancel), but the model then
+   hallucinated a process rather than falling back correctly.
+2. "swap an article of order #12345" (an existing-order request) got
+   classified into the `book_or_checkout` branch and sent a fresh
+   checkout link — wrong for a modify-existing-order request.
+
+Both flagged to the user, not silently fixed; no decision yet on whether
+to address now or later.
+
+### Settings gap-close: Tool calling tab + PATCH support (2026-07-31, same session)
+
+Found via a direct question, not proactively: `ToolCallingConfig`
+(Milestone 1) had no UI *and* no way to set it through the real API —
+`app/tenants/api.py`'s `TenantSettingsPatch`/`_BEHAVIOR_AREA_FIELDS` were
+built in an earlier phase of this same session, before `ToolCallingConfig`
+existed, and were never updated. Voltage Gadgets' tool-calling config
+only existed because the seed script wrote to the DB directly, bypassing
+the API entirely.
+
+Closed both: `tool_calling` added to `TenantSettingsPatch`/
+`_BEHAVIOR_AREA_FIELDS` (mechanical — the dispatch loop already handled
+any field in that tuple generically), and a new "Tool calling" tab in
+Settings.tsx (11th tab now), same pattern as every other tab — two
+checkboxes, an additional-context field, plus an explicit "uses simulated
+demo data, not a real connected store" notice so it can never read as a
+real integration UI.
+
+**Verified live**: toggled Voltage Gadgets' inventory-check checkbox off
+through the real UI, saved, confirmed via a fresh `GET` it persisted
+through the real `PATCH` endpoint (not just optimistic local state), then
+restored it. New backend test (`test_patches_tool_calling`) covering
+independence from other areas. 283 backend tests total, ruff/mypy/
+`npm run build`/`npm run lint` all clean.
+
+### Status: PR #37 open
+
+Everything above is on `feature/simulated-integrations-tool-calling`,
+5 commits, pushed as **PR #37**, not yet merged. Docs housekeeping (this
+section, plus corrections across CLAUDE.md, REQUIREMENTS.md,
+ARCHITECTURE.md) is its own commit on the same branch/PR.
+
+**§2's "Immediate priorities" above are now stale as of this pivot**:
+item 1 (the disclaimer-path language-consistency bug) is moot — resolved
+by the Turkish cut, not a targeted fix, there's no language-matching left
+to be inconsistent. Item 3 (Instagram integration as "the actual pilot
+blocker") no longer applies in its original framing — there's no real
+pilot to unblock, and Instagram is now a simulated channel (Milestone 2),
+not a real-integration gap. Superseded by this section, not deleted from
+§2, so the reasoning that got us here stays visible.

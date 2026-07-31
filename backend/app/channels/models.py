@@ -15,6 +15,15 @@ class Channel(Base, TenantScopedMixin):
     # real-vs-test status be derived transitively (Conversation.channel_id
     # -> Channel.is_test) rather than duplicated onto Conversation/Lead/
     # Escalation rows.
+    #
+    # Three distinct is_test/bot_token combinations exist, not two:
+    # Telegram (is_test=False, real bot_token) is the one real integration;
+    # a simulated Instagram/WhatsApp/Facebook/Email channel
+    # (scripts/register_simulated_channel.py) is also is_test=False but
+    # bot_token=None -- a real-shaped, genuinely inbound-DM-flowing
+    # conversation, just never actually sent anywhere (app/pipeline/
+    # tasks.py's own `if channel.bot_token:` guard already no-ops the
+    # send); Test Console channels are the only is_test=True case.
     is_test: Mapped[bool] = mapped_column(nullable=False, default=False)
 
     # Telegram-specific for now (type == "telegram"); null for other channel

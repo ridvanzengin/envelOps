@@ -44,6 +44,14 @@ class PipelineState(BaseModel):
     already_escalated: bool = False
     detected_intent: str | None = None
     retrieved_chunks: list[str] = []
+    # Populated by call_tools (right before keep_chatting) when the tenant
+    # has opted into a fake connector (app/commerce/) and the model decides
+    # a tool call is actually needed -- one formatted fact string per
+    # successful call, same shape/spirit as retrieved_chunks (plain list of
+    # primitives, checkpointer-safe) and folded into keep_chatting's same
+    # context block. Empty for every tenant that hasn't opted in, which is
+    # every tenant today.
+    tool_call_results: list[str] = []
     lead_score: str | None = None
     decision: str | None = None
     draft_text: str | None = None

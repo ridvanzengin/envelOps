@@ -404,6 +404,15 @@
   padding: 12px;
 }
 
+/* Small muted note above a tab's own fields -- e.g. the tool-calling tab's
+   "uses simulated demo data" disclosure. Not an error, so deliberately
+   not .error-message's styling. */
+.form__hint {
+  margin: 0;
+  color: var(--text);
+  font-size: 12px;
+}
+
 /* First editable checkbox in this app (the one that existed before this
    was always disabled) -- .form__field's own flex-column layout doesn't
    fit a checkbox+label pair, so this variant goes row-wise instead,

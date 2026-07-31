@@ -3,10 +3,12 @@ from unittest.mock import AsyncMock, patch
 
 from langgraph.runtime import Runtime
 
+from app.core.llm import ToolCallRequest
 from app.pipeline.context import PipelineContext
 from app.pipeline.graph import (
     _clean_reason_for_display,
     book_or_checkout,
+    call_tools,
     check_pending_escalation,
     decide_next_step,
     keep_chatting,
@@ -515,6 +517,89 @@ class TestDecideNextStepRouting:
         assert result.decision == "book_or_checkout"
 
 
+class TestCallTools:
+    def test_skips_when_intent_does_not_need_grounding(self) -> None:
+        for intent in ("small_talk", "other"):
+            state = _make_state("hi")
+            state.detected_intent = intent
+            state.tenant_behavior_config = {
+                "tool_calling": {"order_status_lookup_enabled": True}
+            }
+            with patch("app.pipeline.graph.generate_with_tools") as mock_gen:
+                result = call_tools(state)
+            mock_gen.assert_not_called()
+            assert result.tool_call_results == []
+
+    def test_skips_when_no_tools_enabled(self) -> None:
+        # All-defaults TenantBehaviorConfig (tool_calling off, the actual
+        # default for every tenant today) -- zero extra Gemini calls, the
+        # required byte-identical-at-defaults guarantee.
+        state = _make_state("Where's my order #12345?")
+        state.detected_intent = "knowledge_question"
+        with patch("app.pipeline.graph.generate_with_tools") as mock_gen:
+            result = call_tools(state)
+        mock_gen.assert_not_called()
+        assert result.tool_call_results == []
+
+    def test_populates_tool_call_results_on_a_real_tool_call(self) -> None:
+        # Only generate_with_tools is mocked -- the connector itself is
+        # real and deterministic, matching this module's own "don't mock
+        # the fake data layer" approach.
+        state = _make_state("Where's my order #12345?")
+        state.detected_intent = "knowledge_question"
+        state.tenant_behavior_config = {
+            "tool_calling": {"order_status_lookup_enabled": True}
+        }
+        tool_call = ToolCallRequest(name="order_status_lookup", args={"order_number": "12345"})
+        with patch(
+            "app.pipeline.graph.generate_with_tools", return_value=(None, [tool_call])
+        ):
+            result = call_tools(state)
+        assert len(result.tool_call_results) == 1
+        assert "12345" in result.tool_call_results[0]
+
+    def test_leaves_empty_when_model_calls_no_tool(self) -> None:
+        state = _make_state("Where's my order #12345?")
+        state.detected_intent = "knowledge_question"
+        state.tenant_behavior_config = {
+            "tool_calling": {"order_status_lookup_enabled": True}
+        }
+        with patch(
+            "app.pipeline.graph.generate_with_tools", return_value=("no tool needed", [])
+        ):
+            result = call_tools(state)
+        assert result.tool_call_results == []
+
+    def test_ignores_hallucinated_tool_call_without_raising(self) -> None:
+        state = _make_state("Where's my order #12345?")
+        state.detected_intent = "knowledge_question"
+        state.tenant_behavior_config = {
+            "tool_calling": {"order_status_lookup_enabled": True}
+        }
+        with patch(
+            "app.pipeline.graph.generate_with_tools",
+            return_value=(None, [ToolCallRequest(name="delete_all_orders", args={})]),
+        ):
+            result = call_tools(state)
+        assert result.tool_call_results == []
+
+    def test_only_offers_tools_the_tenant_has_enabled(self) -> None:
+        state = _make_state("Where's my order #12345?")
+        state.detected_intent = "knowledge_question"
+        state.tenant_behavior_config = {
+            "tool_calling": {
+                "order_status_lookup_enabled": True,
+                "inventory_check_enabled": False,
+            }
+        }
+        with patch(
+            "app.pipeline.graph.generate_with_tools", return_value=(None, [])
+        ) as mock_gen:
+            call_tools(state)
+        declarations = mock_gen.call_args.args[1]
+        assert [d.name for d in declarations] == ["order_status_lookup"]
+
+
 class TestKeepChatting:
     async def test_sets_draft_text_from_model_response(self) -> None:
         state = _make_state("Do you ship internationally?")
@@ -526,6 +611,22 @@ class TestKeepChatting:
         ):
             result = await keep_chatting(state, _make_runtime())
         assert result.draft_text == "Yes, we ship worldwide!"
+
+    async def test_folds_tool_call_results_into_the_same_context_block(self) -> None:
+        # call_tools (right before this node) populates tool_call_results;
+        # keep_chatting must fold it into the same knowledge context block
+        # as retrieved_chunks, not build a separate reply path for it.
+        state = _make_state("Where's my order and do you ship worldwide?")
+        state.detected_intent = "knowledge_question"
+        state.retrieved_chunks = ["We ship worldwide via DHL."]
+        state.tool_call_results = ["Order 12345 status: shipped."]
+        with patch(
+            "app.pipeline.graph.generate_text", return_value="ANSWERED\nx"
+        ) as mock_gen:
+            await keep_chatting(state, _make_runtime())
+        prompt = mock_gen.call_args.args[0]
+        assert "We ship worldwide via DHL." in prompt
+        assert "Order 12345 status: shipped." in prompt
 
     async def test_handles_no_retrieved_chunks_without_erroring(self) -> None:
         state = _make_state("Do you ship internationally?")

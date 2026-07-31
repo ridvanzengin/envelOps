@@ -7,6 +7,19 @@
 > far toward a research showcase; this version is scoped for what an actual
 > small/mid-size business could use.
 
+> **STATUS UPDATE (2026-07-31):** the real pilot this document was written
+> around (§1, §2, §12 — a friend's honey business) has been deprioritized.
+> EnvelOps is now a solo portfolio project demonstrating AI behavior
+> orchestration/safety/configuration, not a product being shipped to a real
+> business — see `docs/ROADMAP.md` for the full decision and reasoning. This
+> document's original vision/requirements text below is kept as-is, not
+> rewritten, since it's still an accurate record of what was actually
+> designed and why — but §11 (language support) is now **cut**, not a live
+> requirement, and §12's validation plan has been superseded by a different
+> methodology (a one-tenant-at-a-time calibration loop against real sampled
+> customer-support DMs — see ROADMAP.md). Read affected sections with that
+> in mind rather than assuming everything below is still current.
+
 ---
 
 ## 1. Vision
@@ -42,10 +55,16 @@ inside a few of its steps*:
 The requirement this implies: **"what counts as a hot lead" and "what closing
 looks like" must be configurable per business**, not hardcoded per vertical.
 
-**The Product/e-commerce row above is the concrete Phase 1 pilot**, not just
-an example: a real small honey seller, selling via Instagram DMs and a
-webstore. See §12 for the validation plan that leads up to using it as a
-live tenant.
+**The Product/e-commerce row above was the concrete Phase 1 pilot** (a real
+small honey seller, selling via Instagram DMs and a webstore) **— that
+pilot is now deprioritized (2026-07-31, see `docs/ROADMAP.md`).** The
+row's validation role is now served by a one-tenant-at-a-time calibration
+process instead: seed a fake business, run it against ~28 real sampled
+customer-support DMs, review live, lock in, move to the next tenant. Two
+calibration tenants exist so far (both product/e-commerce: Wildroot
+Apparel Co, Voltage Gadgets), deliberately capped rather than expanded
+across all four rows above — see ROADMAP.md for why. §12 below describes
+the original two-stage synthetic-then-real plan, superseded by this.
 
 ## 3. Core conversation pipeline
 
@@ -109,6 +128,16 @@ connection, because embedding it once guarantees it goes stale.
   backend would exclude exactly the smallest businesses this is meant to serve.
 - **Connecting live data is optional at onboarding** — a business must be able
   to have a fully working assistant grounded only in static knowledge.
+
+**Update (2026-07-31): a *simulated* version of this now exists, a real
+platform connector still doesn't.** Order-status and inventory lookups use
+real Gemini tool-calling (the model genuinely decides whether to call a
+tool) backed by fake, deterministic connectors (`app/commerce/`) — not a
+real Shopify/WooCommerce/etc. integration, and not planned to become one;
+building real third-party commerce integrations was explicitly decided
+against (see ROADMAP.md) as out of scope for what this project
+demonstrates. The "connect your store" real-platform path described above
+is still exactly as undesigned/unbuilt as before this update.
 
 ## 6. Escalation & safety
 
@@ -182,9 +211,11 @@ not a foundational rework.
 These are real, acknowledged gaps — not silently dropped, not required before
 starting the build:
 
-- **Channel failure behavior**: what happens when a channel (e.g. Beeper's
-  WhatsApp/Instagram bridge) disconnects — silent stop vs. detected fallback to
-  a "queue for human" mode. Flagged as needing a proper fix, not yet designed.
+- **Channel failure behavior**: what happens when a channel disconnects —
+  silent stop vs. detected fallback to a "queue for human" mode. Flagged
+  as needing a proper fix, not yet designed. Only really applies to
+  Telegram now (2026-07-31) — the other four channels are simulated
+  (ARCHITECTURE §8) and have no real external connection to fail.
 - **Observability dashboard, for two distinct audiences**: the builder's view
   (execution traces — why the AI answered this way) and the business owner's
   view (response time, draft-approval rate, leads gone cold). Likely two
@@ -208,6 +239,18 @@ Phase 1 — see §11 for where each one lands.
 - **ROI / ad-spend attribution** — cut. Was a differentiator in an earlier
   draft; removed by deliberate decision, not lost track of.
 - **Multi-model prompt playground** — cut, was scope creep.
+- **Turkish/bilingual pipeline support** (2026-07-31) — cut, not deferred;
+  see §11 (now marked cut below) for the full reasoning. Frontend UI i18n
+  (English/Turkish dashboard chrome) is unaffected, only the pipeline's
+  own reply-language-detection/matching is cut.
+- **Real commerce-platform connectors** (Shopify/WooCommerce/etc., 2026-07-31)
+  — cut in favor of a simulated version (§5's update above); building real
+  third-party integrations was judged out of scope for what this project
+  demonstrates, not just not-yet-built.
+- **Real channel integrations beyond Telegram** (Instagram/WhatsApp/
+  Facebook/Email, 2026-07-31) — cut in favor of simulated webhook-shaped
+  entry points (same real pipeline, no real platform contacted); see
+  ARCHITECTURE §8.
 
 **Deferred — will be built, just not in Phase 1:**
 
@@ -225,11 +268,26 @@ Phase 1 — see §11 for where each one lands.
   credibility/quality improvement, not required for the pipeline to function.
   A plain LLM call is an acceptable starting point for scoring and retrieval.
 
-## 11. Language support (Turkish + English)
+## 11. Language support (Turkish + English) — **CUT (2026-07-31)**
 
-**Phase 1 requirement, not deferred** — the first real pilot (§12) is a
-Turkish business, so this has to work from the start, not get bolted on
-later.
+**No longer a requirement.** This was written as "Phase 1 requirement, not
+deferred" specifically because the real pilot (§12) was a Turkish
+business — now that the pilot is deprioritized, the entire premise behind
+this section no longer holds. The pipeline no longer detects or matches
+reply language; replies are effectively always whatever language the
+model defaults to (English), regardless of input language. This also
+resolves what had been an open, recurring bug category (language-
+consistency issues found live more than once) by removing the mechanism
+that caused them, not by fixing them in place.
+
+**Not cut**: `escalation/safety_gate.py`'s own Turkish safety-term
+detection patterns (unrelated concern — catching dangerous phrases
+regardless of language, not reply-language-matching) and the frontend's
+`react-i18next` UI chrome (English/Turkish dashboard switcher, inert and
+isolated, not the source of any problem). Neither needed to change.
+
+Original requirement text kept below for the record, not because it's
+still in effect:
 
 - **LLM generation**: detect the language of the incoming message and reply
   in the same language (Turkish in, Turkish out; English in, English out).
@@ -252,9 +310,23 @@ later.
   picker exposed to end customers — the pipeline detects and matches, it
   doesn't ask.
 
-## 12. Pilot & validation plan
+## 12. Pilot & validation plan — **superseded (2026-07-31)**
 
-Before this touches a real customer conversation, two stages, in order:
+**The pilot this plan was written for is deprioritized** — EnvelOps is now
+a solo portfolio project, not a product being shipped to a real business
+(see the status update at the top of this document and `docs/ROADMAP.md`).
+Stage 1 below (synthetic messages) is still real, still used, and still
+useful; stage 2 (a real pilot business) is not happening. In its place: a
+one-tenant-at-a-time calibration loop (`scripts/seed_calibration_tenant.py`)
+— seed a fake business, run it against ~28 real Bitext-sampled customer-
+support DMs through the real pipeline, review live, lock in, move to the
+next tenant, deliberately capped at a small number of tenants rather than
+covering every §2 vertical. This validates the same things (pipeline
+correctness, grounding quality, safety-floor behavior) without the
+step-2-specific "real customers, real consequences" framing below, since
+there's no real pilot to protect.
+
+Original two-stage plan kept below for the record:
 
 1. **Synthetic messages** — exercise the full pipeline (§3) end to end,
    including the safety gate (§6), against fabricated DM conversations
@@ -278,17 +350,19 @@ demo looks good.
 
 1. Core pipeline (§3) + draft/approve (§4) + tenant-isolated data model (§7) +
    single owner role (§8) + static knowledge sources (§5) + one channel +
-   Turkish/English language support (§11)
-2. Safety escalation floor (§6) + live data connection (§5) for platforms that
-   support it
+   ~~Turkish/English language support (§11)~~ (cut 2026-07-31, see §11)
+2. Safety escalation floor (§6) + ~~live data connection (§5) for platforms
+   that support it~~ (a simulated version shipped 2026-07-31 instead — §5)
 3. Hybrid (graph-augmented) retrieval for relationally-complex business types
 4. Fine-tuning for retrieval and lead-scoring, if time allows
 5. Deferred items from §10, roughly in the order: dashboard/observability
    design (§9) → channel-failure fix (§9) → template gallery → multi-user
    roles → AI-assisted configuration
 
-Validation gate on step 1 (before calling it done): the synthetic-then-real
-pilot sequence in §12.
+Validation gate on step 1 (before calling it done): originally the
+synthetic-then-real pilot sequence in §12; now just the synthetic stage
+plus the calibration-tenant loop described in §12's update, since there's
+no real pilot to gate.
 
 ---
 
