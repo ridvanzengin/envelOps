@@ -209,35 +209,6 @@
   border-bottom: none;
 }
 
-/* Knowledge source view/edit expanded row (docs/ROADMAP.md -- "can't see
-   or edit" gap). Sits inside a colSpan cell spanning the whole table. */
-/* .table td.knowledge-sources__expanded (not just the bare class) --
-   needs to out-specificity .table td:last-child's right-align, which a
-   single class alone doesn't beat. This cell is a colSpan spanning the
-   whole row (technically "last child" too), but a paragraph of content
-   reads better left-aligned. */
-.table td.knowledge-sources__expanded {
-  background: var(--bg-subtle);
-  text-align: left;
-}
-
-.knowledge-sources__content {
-  margin: 0;
-  white-space: pre-wrap;
-  word-break: break-word;
-  font-family: inherit;
-  font-size: 13px;
-  color: var(--text-h);
-  max-height: 240px;
-  overflow-y: auto;
-}
-
-.knowledge-sources__edit-actions {
-  display: flex;
-  gap: 8px;
-  margin-top: 8px;
-}
-
 /* Rounds the table's own outer cells rather than clipping .card's
    overflow -- clipping would also cut off a dropdown menu opened from a
    row action near an edge (not needed yet here, but keeps the two
@@ -597,4 +568,10 @@
 
 .chevron--expanded {
   transform: rotate(90deg);
+}
+
+/* Static (non-toggling) left-pointing variant -- pagination's Prev
+   button, not a disclosure control. */
+.chevron--left {
+  transform: rotate(180deg);
 }
