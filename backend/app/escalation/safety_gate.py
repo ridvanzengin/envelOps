@@ -16,10 +16,15 @@ rest of the pipeline's Turkish/bilingual support (CLAUDE.md, REQUIREMENTS
 in sync with.
 
 Outcome-guarantee detection requires a certainty word ("guarantee",
-"definitely"...) AND an efficacy/outcome word ("work", "cure"...) in the
-same message, not either alone — a bare "guarantee" match is far too common
-in ordinary e-commerce copy (shipping guarantees, product warranties) to use
-as a standalone trigger.
+"definitely"...) AND an efficacy/outcome word ("work", "cure", "risk",
+"safe"...) in the same message, not either alone — a bare "guarantee" match
+is far too common in ordinary e-commerce copy (shipping guarantees, product
+warranties) to use as a standalone trigger. The efficacy list covers both
+functional-outcome claims ("guarantee this cures X") and risk-absence claims
+("guarantee zero risk of X") — the latter added 2026-07-31 (docs/ROADMAP.md
+§5.1) after "can you guarantee this procedure has zero risk of
+complications?" was found not to trip the original, narrower list, a real
+gap for health-adjacent tenants (REQUIREMENTS §1).
 """
 
 import re
@@ -74,6 +79,15 @@ _EFFICACY_CUES = _compile_all(
         r"\bheal(?:s|ed|ing)?\b",
         r"\bfix(?:es|ed|ing)?\b",
         r"\bhelp\w*\b",
+        # Risk/safety-absence claims -- a distinct shape from the
+        # functional-outcome words above ("guarantee zero risk of
+        # complications" vs. "guarantee this cures X"), found missing
+        # 2026-07-29 via a health-tourism tenant (docs/ROADMAP.md §5.1).
+        r"\brisk\w*\b",
+        r"\bcomplication\w*\b",
+        r"\bsafe(?:ty)?\b",
+        r"\bdanger(?:ous)?\b",
+        r"\bhazard\w*\b",
     ]
 )
 

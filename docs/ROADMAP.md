@@ -37,10 +37,10 @@ merged" for a while after the PR had actually merged, until caught and
 fixed in the same follow-up session as §7 below).
 
 **The §5.1 safety-floor finding (outcome-guarantee check missing
-safety/risk-absence language) is explicitly postponed to a later
-session, by direct instruction — not forgotten, not silently deprioritized.**
-Still recorded in full under §5.1 below; don't fix it without it being
-raised again.
+safety/risk-absence language) was raised again and fixed — see §7.3.**
+Was explicitly postponed at the time (2026-07-29), by direct instruction,
+until someone raised it again; still recorded in full under §5.1 below
+for the original finding/reasoning, not rewritten in place.
 
 Two real pipeline bugs were found and fixed via live Test Console use
 (both predate the PR itself):
@@ -1139,6 +1139,7 @@ work in themselves — recorded here rather than silently fixed:**
    regex list will miss plenty of real phrasing... treat expanding this
    as required before relying on it for real health-related tenants, not
    a nice-to-have") — this is concrete evidence for that, not a surprise.
+   **Raised again and fixed 2026-07-31 — see §7.3.**
 
 ### 5.2 Template gallery, built from the battle-tested seed scenarios
 Once 5.1's tenant/knowledge/settings configurations have been exercised
@@ -1715,3 +1716,37 @@ retrieval/generation variance across two separate real calls, and both
 outcomes are correct (the knowledge base's cancellation fact is
 retrievable and answerable; a model choosing to escalate on that same
 fact anyway is conservative, not wrong).
+
+### 7.3 §5.1's safety-floor gap fixed (raised again, same day)
+
+The outcome-guarantee check's efficacy-cue list (`_EFFICACY_CUES`,
+`escalation/safety_gate.py`) only covered functional-outcome words
+("cures", "works", "heals", "fixes", "helps") — a real gap named at
+§5.1 and explicitly postponed until raised again, which happened this
+session. Note: Aurora Aesthetics Clinic, the tenant that originally
+surfaced this gap, no longer exists in the seeded set (tenant count was
+capped at ~2 by §6's pivot, and `seed_calibration_tenant.py` never
+re-seeded a health-adjacent one) — confirmed live via a direct DB query
+before deciding how to proceed. Fixed anyway, unit-tests only, no live
+tenant needed: `check_platform_safety_floor` is pure, tenant-independent
+platform code, same as every other test in `test_safety_gate.py` already
+exercises without a seeded tenant.
+
+Added five new efficacy patterns — `risk`, `complication`, `safe(ty)`,
+`dangerous`, `hazard` — alongside the existing functional-outcome ones,
+still gated behind the same AND-with-a-certainty-word requirement (a
+bare "is it safe?" or "any risk of X?" still doesn't trigger anything on
+its own, same false-positive-avoidance shape as the original design).
+Module docstring and the `_EFFICACY_CUES` block both updated in place to
+explain the two-shape distinction (functional-outcome vs.
+risk-absence claims) for whoever reads this next.
+
+**Not live-verified** (unlike §7.2 above) — there's no health-adjacent
+tenant currently seeded to exercise this against, and re-seeding one
+just to verify a regex change was judged not worth the added scope for
+this fix specifically. 4 new unit tests in `SafetyFloorEnglishTests`:
+the original motivating phrase ("...zero risk of complications?") now
+triggers, a `safe`+`promise` variant also triggers, and two false-
+positive checks confirm bare risk/safety language without a certainty
+word still doesn't trigger. Full backend suite (281 tests — +4 from
+above), ruff, and mypy all clean.
