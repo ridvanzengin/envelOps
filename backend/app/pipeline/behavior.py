@@ -21,6 +21,7 @@ from app.tenants.behavior_config import (
     GreetingConfig,
     KnowledgeQueryConfig,
     OffTopicConfig,
+    ToolCallingConfig,
 )
 
 _SYSTEM_DEFAULT_CHANNEL_TONE_TEXT: dict[str, str] = {
@@ -181,8 +182,6 @@ def render_knowledge_query_instruction(
         "knowledge below -- you MUST say you don't have that "
         "information and a person will confirm, rather than guessing "
         "or inferring an answer that merely sounds plausible.\n"
-        "Apply this the same way in every language; do not be any less "
-        "careful in Turkish than you would be in English.\n\n"
         "Your entire response must be exactly this shape: a first line "
         "containing only the single word CLARIFY, ANSWERED, or "
         "NOT_FOUND (matching whichever of the three situations above "
@@ -238,3 +237,11 @@ def render_book_or_checkout_instruction(
         )
     escape_hatch = _escape_hatch_block(config.additional_context)
     return f"{instruction}\n\n{escape_hatch}" if escape_hatch else instruction
+
+
+def render_tool_calling_instruction(config: ToolCallingConfig) -> str:
+    """additional_context is this area's only configurable knob -- e.g. a
+    tenant noting "order numbers are always 5 digits" for the tool-decision
+    prompt (app/pipeline/graph.py's call_tools) to use. Empty at defaults,
+    same bar as every other render_* here."""
+    return _escape_hatch_block(config.additional_context)

@@ -13,6 +13,9 @@ match the already-migrated column rather than taking the model's default
 together, plus a migration to alter the existing column.
 """
 
+from dataclasses import dataclass
+from typing import Any
+
 from google import genai
 from google.genai import types
 
@@ -57,6 +60,58 @@ def generate_text(prompt: str) -> str:
         # failure mode for a pipeline that auto-sends by default.
         raise ValueError(f"Gemini returned no text content: {response!r}")
     return response.text
+
+
+@dataclass(frozen=True)
+class ToolDeclaration:
+    name: str
+    description: str
+    parameters: dict[str, Any]  # plain JSON-schema dict, e.g.
+    # {"type": "object", "properties": {...}, "required": [...]}
+
+
+@dataclass(frozen=True)
+class ToolCallRequest:
+    name: str
+    args: dict[str, Any]
+
+
+def generate_with_tools(
+    prompt: str, tool_declarations: list[ToolDeclaration]
+) -> tuple[str | None, list[ToolCallRequest]]:
+    """Real Gemini function-calling -- the model decides for itself whether
+    a tool is needed at all (tool_config is deliberately left unset, which
+    defaults to AUTO; that default is the actual mechanism that makes "the
+    model genuinely decides" true, not a formality). Callers execute
+    whatever calls come back themselves and fold the result into their own
+    prompt -- this function does not send a FunctionResponse back to Gemini
+    for a second turn, deliberately: that would be a second sequential
+    Gemini call per tool-using message, on a pipeline already documented
+    (docs/ROADMAP.md) as running up to several sequential free-tier-limited
+    calls per inbound DM.
+
+    Unlike generate_text, a None response.text here is the expected, common
+    case (a pure function-call response has no text part) -- not an error,
+    so this deliberately doesn't raise the way generate_text does."""
+    declarations = [
+        types.FunctionDeclaration(
+            name=d.name, description=d.description, parameters_json_schema=d.parameters
+        )
+        for d in tool_declarations
+    ]
+    response = _get_client().models.generate_content(
+        model=GENERATION_MODEL,
+        contents=prompt,
+        config=types.GenerateContentConfig(
+            tools=[types.Tool(function_declarations=declarations)]
+        ),
+    )
+    calls = [
+        ToolCallRequest(name=call.name, args=dict(call.args or {}))
+        for call in (response.function_calls or [])
+        if call.name is not None
+    ]
+    return response.text, calls
 
 
 def embed_text(text: str, *, task_type: str = "RETRIEVAL_DOCUMENT") -> list[float]:

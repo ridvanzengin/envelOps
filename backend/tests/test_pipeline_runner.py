@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, patch
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.types import Interrupt
 
+from app.core.llm import ToolCallRequest
 from app.pipeline.runner import publish_pipeline_events, resume_pipeline, run_pipeline
 from app.pipeline.state import PipelineState
 
@@ -214,6 +215,91 @@ class TestRunPipelinePauses:
         assert second["already_escalated"] is True
         assert second.get("draft_text") is None
         assert second.get("decision") is None
+
+
+class TestRunPipelineToolCalling:
+    """The only place call_tools's actual insertion into the compiled
+    graph (build_pipeline_graph's decide_next_step -> call_tools ->
+    keep_chatting wiring) gets exercised -- no test_pipeline_graph.py test
+    invokes build_pipeline_graph() at all, they call each node as a bare
+    function directly."""
+
+    async def test_tool_result_reaches_the_final_reply(self) -> None:
+        state = _make_state("Where's my order #12345?")
+        fake_tenant = type(
+            "Tenant",
+            (),
+            {
+                "closing_action": "escalate_to_human",
+                "behavior_config": {
+                    "tool_calling": {"order_status_lookup_enabled": True}
+                },
+            },
+        )()
+        tool_call = ToolCallRequest(name="order_status_lookup", args={"order_number": "12345"})
+        with (
+            patch(
+                "app.pipeline.graph.generate_text",
+                side_effect=["knowledge_question", "cold", "ANSWERED\nHere's your update!"],
+            ) as mock_generate_text,
+            patch(
+                "app.pipeline.graph.generate_with_tools", return_value=(None, [tool_call])
+            ) as mock_tools,
+            patch("app.pipeline.graph.embed_text", return_value=[0.1]),
+            patch("app.pipeline.graph.KnowledgeChunkRepository") as mock_knowledge_repo_cls,
+            patch("app.pipeline.graph.TenantTriggerPhraseRepository") as mock_phrase_repo_cls,
+            patch("app.pipeline.graph.TenantRepository") as mock_tenant_repo_cls,
+            patch("app.pipeline.graph.LeadRepository") as mock_lead_repo_cls,
+            patch("app.pipeline.graph.EscalationRepository") as mock_escalation_repo_cls,
+            patch("app.pipeline.graph.MessageRepository") as mock_message_repo_cls,
+        ):
+            mock_knowledge_repo_cls.return_value.search_similar = AsyncMock(return_value=[])
+            mock_phrase_repo_cls.return_value.list = AsyncMock(return_value=[])
+            mock_tenant_repo_cls.return_value.get = AsyncMock(return_value=fake_tenant)
+            mock_lead_repo_cls.return_value.add = AsyncMock()
+            mock_escalation_repo_cls.return_value.get_pending_by_conversation = AsyncMock(
+                return_value=None
+            )
+            mock_message_repo_cls.return_value.add = AsyncMock()
+            mock_message_repo_cls.return_value.list_by_conversation = AsyncMock(
+                return_value=[]
+            )
+            result = await run_pipeline(state, AsyncMock(), InMemorySaver())
+
+        mock_tools.assert_called_once()
+        assert result["draft_text"] == "Here's your update!"
+        # keep_chatting is the 3rd generate_text call (understand_intent,
+        # score_lead, keep_chatting) -- its prompt must actually contain
+        # the fake connector's (deterministic) formatted result, not just
+        # "some prompt or other" that happens to get a mocked reply back.
+        keep_chatting_prompt = mock_generate_text.call_args_list[2].args[0]
+        assert "Order 12345 status:" in keep_chatting_prompt
+
+    async def test_tool_calling_off_by_default_never_calls_generate_with_tools(self) -> None:
+        state = _make_state("What flavors do you have?")
+        with (
+            patch("app.pipeline.graph.generate_text", return_value="cold"),
+            patch("app.pipeline.graph.generate_with_tools") as mock_tools,
+            patch("app.pipeline.graph.embed_text", return_value=[0.1]),
+            patch("app.pipeline.graph.TenantRepository") as mock_tenant_repo_cls,
+            patch("app.pipeline.graph.KnowledgeChunkRepository") as mock_knowledge_repo_cls,
+            patch("app.pipeline.graph.TenantTriggerPhraseRepository") as mock_phrase_repo_cls,
+            patch("app.pipeline.graph.LeadRepository") as mock_lead_repo_cls,
+            patch("app.pipeline.graph.EscalationRepository") as mock_escalation_repo_cls,
+        ):
+            mock_tenant_repo_cls.return_value.get = AsyncMock(
+                return_value=type("Tenant", (), {"behavior_config": {}})()
+            )
+            mock_knowledge_repo_cls.return_value.search_similar = AsyncMock(return_value=[])
+            mock_phrase_repo_cls.return_value.list = AsyncMock(return_value=[])
+            mock_lead_repo_cls.return_value.add = AsyncMock()
+            mock_escalation_repo_cls.return_value.add = AsyncMock()
+            mock_escalation_repo_cls.return_value.get_pending_by_conversation = AsyncMock(
+                return_value=None
+            )
+            await run_pipeline(state, AsyncMock(), InMemorySaver())
+
+        mock_tools.assert_not_called()
 
 
 class TestResumePipeline:

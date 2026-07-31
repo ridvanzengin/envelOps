@@ -22,9 +22,10 @@ from langgraph.graph import END, StateGraph
 from langgraph.runtime import Runtime
 from langgraph.types import interrupt
 
+from app.commerce.tools import enabled_tools, execute, format_result
 from app.conversations.models import Message
 from app.conversations.repository import MessageRepository
-from app.core.llm import embed_text, generate_text
+from app.core.llm import embed_text, generate_text, generate_with_tools
 from app.escalation.models import Escalation
 from app.escalation.repository import EscalationRepository, TenantTriggerPhraseRepository
 from app.escalation.safety_gate import check_safety_floor
@@ -39,6 +40,7 @@ from app.pipeline.behavior import (
     render_greeting_instruction,
     render_knowledge_query_instruction,
     render_off_topic_instruction,
+    render_tool_calling_instruction,
 )
 from app.pipeline.context import PipelineContext
 from app.pipeline.state import PipelineState
@@ -89,17 +91,13 @@ _KEEP_CHATTING_STATUS_RE = re.compile(
 # disclaimer text with no escalation created. A required-format instruction
 # alone isn't reliable enough for something that decides whether a customer
 # gets escalated for real -- this is not exhaustive (matches the exact
-# English wording this instruction asks for, plus a couple of common
-# Turkish equivalents actually seen in testing), but it means a model that
+# English wording this instruction asks for), but it means a model that
 # forgets the tag while still writing disclaimer-shaped prose is still
 # caught, same layered-detection spirit as escalation/safety_gate.py.
 _DISCLAIMER_CONTENT_MARKERS = (
     "don't have that information",
     "do not have that information",
     "a person will confirm",
-    "bu bilgiye sahip değilim",
-    "bilgim yok",
-    "bir kişi",
 )
 
 
@@ -258,8 +256,7 @@ def _generate_cover_reply(state: PipelineState) -> str:
         "eligibility reason.\n\n"
         f"{cover_modifier}"
         f"{_history_block(state)}"
-        "Customer's latest message (your reply MUST be in this exact "
-        f"same language -- do not translate): {state.incoming_text}"
+        f"Customer's latest message: {state.incoming_text}"
     )
 
 
@@ -295,19 +292,15 @@ async def _write_internal_note(
 
 def understand_intent(state: PipelineState) -> PipelineState:
     # Explicit per-label definitions, not just the label names -- found via
-    # REQUIREMENTS §12 stage 1 synthetic testing:
-    # a hypothetical pre-purchase question ("what if I don't like it, can I
-    # return it?") classified as knowledge_question in Turkish but
-    # complaint_or_problem in English, because nothing told the model where
-    # that boundary actually sits. The hypothetical-vs-actual distinction
-    # below is what's supposed to make the same underlying question land on
-    # the same label regardless of which language it's asked in.
+    # REQUIREMENTS §12 stage 1 synthetic testing: a hypothetical
+    # pre-purchase question ("what if I don't like it, can I return it?")
+    # was getting classified inconsistently, because nothing told the model
+    # where the knowledge_question/complaint_or_problem boundary actually
+    # sits. The hypothetical-vs-actual distinction below is what fixes that.
     prompt = (
         "Classify the intent of this customer DM into exactly one of: "
         f"{', '.join(sorted(_INTENT_LABELS))}.\n\n"
-        "Label definitions -- apply these the same way regardless of "
-        "which language the message is in; the same underlying question "
-        "must get the same label whether asked in Turkish or English:\n"
+        "Label definitions:\n"
         "- knowledge_question: asking for information -- policy, product "
         "details, or a hypothetical \"what if\" scenario about something "
         "that hasn't happened yet (e.g. \"can I return it if I don't like "
@@ -319,8 +312,8 @@ def understand_intent(state: PipelineState) -> PipelineState:
         "- purchase_intent: ready or trying to buy/book right now.\n"
         "- small_talk: greeting or chit-chat, no real question.\n"
         "- other: doesn't fit any of the above.\n\n"
-        "Respond in neither Turkish nor English — just the single label, "
-        "nothing else, no punctuation.\n\n"
+        "Respond with just the single label, nothing else, no "
+        "punctuation.\n\n"
         f"{_history_block(state)}"
         f"Latest message: {state.incoming_text}"
     )
@@ -356,9 +349,8 @@ def score_lead(state: PipelineState) -> PipelineState:
         "general question, no buying signal. Consider the whole "
         "conversation so far, not just the latest message — someone who's "
         "asked several questions and now says \"let's do it\" is hotter "
-        "than that message would suggest in isolation. The message may be "
-        "in Turkish or English. Reply with only the single label, nothing "
-        "else, no punctuation.\n\n"
+        "than that message would suggest in isolation. Reply with only "
+        "the single label, nothing else, no punctuation.\n\n"
         f"{_history_block(state)}"
         f"Latest message: {state.incoming_text}\n"
         f"Detected intent: {state.detected_intent}"
@@ -482,6 +474,50 @@ def route_after_decision(state: PipelineState) -> str:
     return state.decision
 
 
+def call_tools(state: PipelineState) -> PipelineState:
+    """Runs on the decide_next_step -> keep_chatting edge only (never on
+    the escalation/book_or_checkout branches, which don't need live data
+    for a holding reply or a checkout handoff). Sync/DB-free, same shape
+    as understand_intent/score_lead. Fully inert -- zero extra Gemini
+    calls -- for every tenant that hasn't opted into a fake connector
+    (app/tenants/behavior_config.py's ToolCallingConfig), which is every
+    tenant today.
+
+    Deliberately a single decision call, not a two-turn function-calling
+    loop: the fake connector's result is folded into keep_chatting's own
+    existing prompt (see its context_block below) rather than sent back to
+    Gemini for a second turn, to avoid a second sequential Gemini call per
+    tool-using message and to keep keep_chatting's already-hardened
+    STATUS-tag/escalation logic completely untouched."""
+    if state.detected_intent not in _INTENTS_NEEDING_GROUNDING:
+        return state
+    behavior_config = load_tenant_behavior_config(state.tenant_behavior_config)
+    declarations = enabled_tools(behavior_config.tool_calling)
+    if not declarations:
+        return state
+
+    prompt = (
+        "You can call a tool to look up a real order's status or a "
+        "product's inventory, if the customer's message actually needs "
+        "one. Only call a tool when you can confidently extract the "
+        "information it needs (e.g. an order number) from the message or "
+        "conversation below -- if you don't have enough to call it "
+        "confidently, don't call it and don't guess a value.\n\n"
+        f"{render_tool_calling_instruction(behavior_config.tool_calling)}"
+        f"{_history_block(state)}"
+        f"Latest message: {state.incoming_text}"
+    )
+    _text, tool_calls = generate_with_tools(prompt, declarations)
+
+    results = []
+    for call in tool_calls:
+        result = execute(call.name, call.args)
+        if result is not None:
+            results.append(format_result(call.name, result))
+    state.tool_call_results = results
+    return state
+
+
 async def keep_chatting(
     state: PipelineState, runtime: Runtime[PipelineContext]
 ) -> PipelineState:
@@ -512,9 +548,17 @@ async def keep_chatting(
     # the root now via KnowledgeQueryConfig.not_found_max_distance
     # (search_knowledge), this instruction wording is the second layer.
     if state.detected_intent in _INTENTS_NEEDING_GROUNDING:
+        # tool_call_results (call_tools, right before this node) folds in
+        # here alongside retrieved_chunks -- same context block, so the
+        # CLARIFY/ANSWERED/NOT_FOUND mechanism below never needs to know
+        # whether a given fact came from the knowledge base or a fake
+        # live-data tool call.
+        context_lines = [f"- {chunk}" for chunk in state.retrieved_chunks] + [
+            f"- {result}" for result in state.tool_call_results
+        ]
         context_block = (
-            "\n".join(f"- {chunk}" for chunk in state.retrieved_chunks)
-            if state.retrieved_chunks
+            "\n".join(context_lines)
+            if context_lines
             else "(no matching knowledge found for this question)"
         )
         content_instruction = render_knowledge_query_instruction(
@@ -557,8 +601,7 @@ async def keep_chatting(
         f"{content_instruction}"
         f"{history_block}"
         f"{continuation_instruction}"
-        "Customer's latest message (your reply MUST be in this exact same "
-        f"language — do not translate, do not switch languages): {state.incoming_text}"
+        f"Customer's latest message: {state.incoming_text}"
     )
     raw = generate_text(prompt).strip()
 
@@ -668,8 +711,7 @@ async def book_or_checkout(
             "briefly (not apologetic or corporate-sounding) that someone "
             "from the team will follow up shortly to complete this.\n\n"
             f"{_history_block(state)}"
-            "Customer's latest message (your reply MUST be in this exact "
-            f"same language — do not translate): {state.incoming_text}"
+            f"Customer's latest message: {state.incoming_text}"
         )
         return state
 
@@ -683,8 +725,7 @@ async def book_or_checkout(
         f"replying directly to a customer's message. {tone_guidance} "
         f"{cta_instruction}\n\n"
         f"{_history_block(state)}"
-        "Customer's latest message (your reply MUST be in this exact same "
-        f"language — do not translate, do not switch languages): {state.incoming_text}"
+        f"Customer's latest message: {state.incoming_text}"
     )
     state.draft_text = generate_text(prompt)
     return state
@@ -759,6 +800,7 @@ def build_pipeline_graph() -> StateGraph[PipelineState, PipelineContext]:
     graph.add_node("search_knowledge", search_knowledge)
     graph.add_node("score_lead", score_lead)
     graph.add_node("decide_next_step", decide_next_step)
+    graph.add_node("call_tools", call_tools)
     graph.add_node("keep_chatting", keep_chatting)
     graph.add_node("escalate_to_human", escalate_to_human)
     graph.add_node("book_or_checkout", book_or_checkout)
@@ -779,11 +821,12 @@ def build_pipeline_graph() -> StateGraph[PipelineState, PipelineContext]:
         "decide_next_step",
         route_after_decision,
         {
-            "keep_chatting": "keep_chatting",
+            "keep_chatting": "call_tools",
             "escalate_to_human": "escalate_to_human",
             "book_or_checkout": "book_or_checkout",
         },
     )
+    graph.add_edge("call_tools", "keep_chatting")
     graph.add_edge("keep_chatting", "log_lead_and_notify")
     graph.add_edge("escalate_to_human", "log_lead_and_notify")
     graph.add_edge("book_or_checkout", "log_lead_and_notify")
