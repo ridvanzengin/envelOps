@@ -16,6 +16,8 @@ extend-immutable-calls = [
     "fastapi.Path",
     "fastapi.Cookie",
     "fastapi.Body",
+    "fastapi.File",
+    "fastapi.Form",
 ]
 
 [tool.mypy]

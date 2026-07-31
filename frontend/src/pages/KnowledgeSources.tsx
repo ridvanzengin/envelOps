@@ -2,7 +2,7 @@ import { Fragment, useCallback, useEffect, useState } from "react";
 import type { FormEvent } from "react";
 import { useTranslation } from "react-i18next";
 
-import { apiDelete, apiGet, apiPost, apiPut, ApiError } from "../api/client";
+import { apiDelete, apiGet, apiPost, apiPostFile, apiPut, ApiError } from "../api/client";
 import { useAuth } from "../auth/useAuth";
 import { ChevronIcon, PencilIcon, TrashIcon } from "../components/icons";
 
@@ -15,7 +15,7 @@ interface KnowledgeSource {
   content: string;
 }
 
-type SourceType = "manual" | "url";
+type SourceType = "manual" | "url" | "pdf";
 
 export default function KnowledgeSources() {
   const { t } = useTranslation();
@@ -28,6 +28,12 @@ export default function KnowledgeSources() {
   const [type, setType] = useState<SourceType>("manual");
   const [content, setContent] = useState("");
   const [url, setUrl] = useState("");
+  const [pdfFile, setPdfFile] = useState<File | null>(null);
+  // Bumped after a successful pdf upload to force the (uncontrolled)
+  // file input to remount -- <input type="file"> can't have its
+  // displayed filename cleared by resetting React state alone, the DOM
+  // element owns that itself.
+  const [pdfInputKey, setPdfInputKey] = useState(0);
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
@@ -62,14 +68,27 @@ export default function KnowledgeSources() {
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (type === "pdf" && !pdfFile) return;
     setFormError(null);
     setSubmitting(true);
     try {
-      const body = type === "manual" ? { type, content } : { type, url };
-      const created = await apiPost<KnowledgeSource>("/knowledge/sources", body, token);
+      // pdf goes through a separate endpoint entirely (multipart/form-data,
+      // not JSON) -- POST /knowledge/sources itself only ever accepts
+      // manual/url (app/knowledge/api.py's CreateKnowledgeSourceRequest).
+      let created: KnowledgeSource;
+      if (type === "pdf") {
+        const formData = new FormData();
+        formData.append("file", pdfFile as File);
+        created = await apiPostFile<KnowledgeSource>("/knowledge/sources/pdf", formData, token);
+      } else {
+        const body = type === "manual" ? { type, content } : { type, url };
+        created = await apiPost<KnowledgeSource>("/knowledge/sources", body, token);
+      }
       setSources((current) => (current ? [created, ...current] : [created]));
       setContent("");
       setUrl("");
+      setPdfFile(null);
+      setPdfInputKey((current) => current + 1);
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
         logout();
@@ -183,9 +202,10 @@ export default function KnowledgeSources() {
           <select value={type} onChange={(e) => setType(e.target.value as SourceType)}>
             <option value="manual">{t("knowledgeSources.typeManual")}</option>
             <option value="url">{t("knowledgeSources.typeUrl")}</option>
+            <option value="pdf">{t("knowledgeSources.typePdf")}</option>
           </select>
         </label>
-        {type === "manual" ? (
+        {type === "manual" && (
           <label className="form__field">
             {t("knowledgeSources.content")}
             <textarea
@@ -194,10 +214,23 @@ export default function KnowledgeSources() {
               required
             />
           </label>
-        ) : (
+        )}
+        {type === "url" && (
           <label className="form__field">
             {t("knowledgeSources.url")}
             <input type="url" value={url} onChange={(e) => setUrl(e.target.value)} required />
+          </label>
+        )}
+        {type === "pdf" && (
+          <label className="form__field">
+            {t("knowledgeSources.pdfFile")}
+            <input
+              key={pdfInputKey}
+              type="file"
+              accept="application/pdf"
+              onChange={(e) => setPdfFile(e.target.files?.[0] ?? null)}
+              required
+            />
           </label>
         )}
         <button type="submit" className="button button--primary" disabled={submitting}>
@@ -266,7 +299,7 @@ export default function KnowledgeSources() {
                             }`}
                           />
                         </button>
-                        {source.type === "manual" && (
+                        {(source.type === "manual" || source.type === "pdf") && (
                           <button
                             type="button"
                             className="button"

@@ -3,7 +3,7 @@ from datetime import UTC, datetime
 from typing import Literal
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -13,10 +13,16 @@ from app.core.llm import embed_text
 from app.knowledge.chunking import chunk_text
 from app.knowledge.html_text import extract_text
 from app.knowledge.models import KnowledgeChunk, KnowledgeSource
+from app.knowledge.pdf_text import extract_text as extract_pdf_text
 from app.knowledge.repository import KnowledgeChunkRepository, KnowledgeSourceRepository
 from app.knowledge.web_fetch import fetch_url
 
 router = APIRouter(prefix="/knowledge", tags=["knowledge"])
+
+# Generous for a business-facts document, not unbounded -- guards against
+# an accidental (or hostile) huge upload turning into an equally huge
+# number of embed_text calls in _ingest_chunks below.
+_MAX_PDF_BYTES = 10 * 1024 * 1024
 
 
 class CreateKnowledgeSourceRequest(BaseModel):
@@ -121,6 +127,62 @@ async def create_knowledge_source(
     )
 
 
+@router.post("/sources/pdf")
+async def create_pdf_knowledge_source(
+    file: UploadFile = File(...),
+    current_user: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> KnowledgeSourceResponse:
+    """Separate endpoint from POST /sources above, not a third branch of
+    CreateKnowledgeSourceRequest -- a PDF is a binary file upload
+    (multipart/form-data), not JSON, and FastAPI's UploadFile doesn't
+    compose with a Pydantic request body in the same endpoint.
+    docs/ARCHITECTURE.md §6 -- the one documented, deliberately deferred
+    source type; pypdf is the new dependency that was waiting on this.
+    source_uri stores the original filename (the closest pdf equivalent
+    to a url source's fetch url -- something identifying to show in the
+    sources list), not a stored copy of the file itself; there's no file
+    storage in this app, the extracted text is the only thing kept, same
+    as url sources never keep the fetched HTML around either."""
+    if (
+        file.content_type != "application/pdf"
+        and not (file.filename or "").lower().endswith(".pdf")
+    ):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "file must be a PDF")
+
+    raw = await file.read()
+    if len(raw) > _MAX_PDF_BYTES:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "PDF too large (max 10MB)")
+
+    try:
+        text = extract_pdf_text(raw)
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
+    if not text.strip():
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "no text content found to ingest")
+
+    source_repo = KnowledgeSourceRepository(session)
+    source = await source_repo.add(
+        KnowledgeSource(
+            tenant_id=current_user.tenant_id,
+            type="pdf",
+            source_uri=file.filename,
+            last_synced_at=datetime.now(UTC),
+        )
+    )
+    chunks = await _ingest_chunks(session, current_user.tenant_id, source.id, text)
+    await session.commit()
+
+    return KnowledgeSourceResponse(
+        id=source.id,
+        type=source.type,
+        source_uri=source.source_uri,
+        last_synced_at=source.last_synced_at,
+        chunk_count=len(chunks),
+        content=_join_chunk_texts(chunks),
+    )
+
+
 @router.get("/sources")
 async def list_knowledge_sources(
     current_user: CurrentUser = Depends(get_current_user),
@@ -199,16 +261,19 @@ async def update_knowledge_source(
     """Added 2026-07-29, alongside delete -- the other half of the "can't
     see or edit" gap found via live use: a manual entry's actual text was
     never shown anywhere, let alone editable, so the only way to correct
-    one was delete-and-re-add. Manual sources only, symmetric with
+    one was delete-and-re-add. Manual and pdf sources only, symmetric with
     refresh's own url-only restriction above -- a url source's content
     comes from the url itself, so editing it by hand would just be
     silently overwritten by the next refresh; 400s instead of allowing
-    that footgun."""
+    that footgun. pdf joined this allow-list when pdf support was added
+    (docs/ARCHITECTURE.md §6) -- once a pdf's text is extracted there's no
+    stored original to re-sync with either, same "own text now" shape as
+    manual, not a url's "re-fetch from the same place" shape."""
     source_repo = KnowledgeSourceRepository(session)
     source = await source_repo.get(current_user.tenant_id, source_id)
     if source is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "knowledge source not found")
-    if source.type != "manual":
+    if source.type not in ("manual", "pdf"):
         raise HTTPException(
             status.HTTP_400_BAD_REQUEST,
             f"'{source.type}' sources can't be edited directly; refresh instead",
