@@ -17,7 +17,7 @@
 
 ---
 
-## Current state (as of 2026-07-31)
+## Current state (as of 2026-08-01)
 
 EnvelOps is a solo portfolio project demonstrating AI behavior
 orchestration/safety/configuration — **not** a product being shipped to a
@@ -39,20 +39,19 @@ scope-pivot reasoning. Concretely, right now:
   via `scripts/seed_calibration_tenant.py` — the current primary way new
   tenant configs get exercised, replacing the original synthetic-then-
   real-pilot validation plan (REQUIREMENTS §12).
-- All PRs through #43 are merged into `main`. Always check `gh pr view <N>
-  --json state` before trusting a specific PR's status — this file goes
-  stale between sessions.
+- The Dashboard page is real now (stats/trend/intent breakdown/channels/
+  knowledge status/recent escalations, all live tenant data) — no more
+  open items carried in this file as of PR #46.
+- All PRs through #46 are merged into `main` (**check this**: PR #46 may
+  still be open when this line is read — verify with `gh pr view 46
+  --json state` rather than trusting this file). Always check `gh pr
+  view <N> --json state` before trusting any specific PR's status — this
+  file goes stale between sessions.
 
 ## Open items
 
 Real, not yet designed in detail, not currently being worked:
 
-- **Full observability dashboard** — builder's trace view vs. business
-  owner's operational view, likely two separate views.
-  `pipeline_traces`/rail badges/Test Console diagnostics already populate
-  the data this would be built on. The one open item actively worth
-  building next — most showable feature on the list, and the data's
-  already there.
 - **Minor, not urgent**: ~10–15s per Test Console send (up to several
   sequential Gemini calls, none parallelized — `search_knowledge` doesn't
   actually depend on `understand_intent`'s output, so parallelizing those
@@ -136,7 +135,19 @@ conversation rail filter chips + pagination, Settings tab reorganization,
 free-text fields converted to resizable textareas (PR #41). PDF knowledge
 source support (PR #42). Knowledge sources page full redesign — stat
 tiles, pill-style type selector, per-chunk preview, search/filter (PR
-#43).
+#43). Also this day: docs housekeeping — `ROADMAP.md` condensed from
+~1800 lines of session write-ups to open items + this changelog (PR #45).
+
+**2026-08-01** — Real Dashboard page (`GET /dashboard/summary` +
+stat tiles/trend chart/intent breakdown/channels table/knowledge status/
+recent escalations), closing the last open item above. Hand-rolled SVG
+charts, no new dependency — a donut chart was dropped for a ranked bar
+list after this app's status-color tokens failed a categorical
+CVD-separation check run against them. Bug found and fixed via live
+verification: daily trend bucketing excluded *today* entirely (anchored
+on the range's start date, not its end), so a tenant's whole day of
+activity was invisible on every chart while still counting in the stat
+tiles above it (PR #46).
 
 ---
 

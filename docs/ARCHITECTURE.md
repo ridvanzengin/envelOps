@@ -611,9 +611,17 @@ isn't repeated here.
   there's nothing real to connect (§6). Channel connection status
   (registering a new Telegram bot, or a simulated channel, from the UI)
   is still not built — both remain script-only (§8).
-- **Dashboard** — still a placeholder; minimal for Phase 1 (leads today,
-  escalations today, response times) once built. The full two-audience
-  observability design is still an open item (see §11).
+- **Dashboard** — real now (2026-08-01, `GET /dashboard/summary`,
+  `app/dashboard/`), no longer a placeholder: stat tiles (conversations,
+  messages, hot leads, escalations, avg response time — REQUIREMENTS §9's
+  original "leads today, escalations today, response times" list),
+  a daily trend chart, a conversations-by-intent breakdown, a per-channel
+  resolution-rate table, knowledge base status, and recent escalations
+  (deep-links into the conversation panel on click). One unified view,
+  not the two-audience (builder/owner) split originally scoped — see
+  REQUIREMENTS §9 for why that held up fine at this project's data
+  volumes. Every chart is hand-rolled SVG, no new frontend dependency —
+  `frontend/src/components/dashboard/`.
 
 Dev-only CORS avoidance: `frontend/vite.config.ts` proxies each backend
 router prefix (`/auth`, `/escalations`, ...) to `localhost:8000` so the
@@ -631,8 +639,10 @@ now owns tracking "what's next," so it doesn't drift out of sync with a
 second copy here. Kept brief in this document because these are
 architectural gaps, not day-to-day status:
 
-- Full observability dashboard (builder's trace view vs. owner's
-  operational view) — the one item actually still open.
+No open items carried here as of 2026-08-01 — the full observability
+dashboard (the last one) is built, see §10. Check `docs/ROADMAP.md`'s own
+Open items section before assuming that still holds; new gaps get
+scoped there first, this section only follows once one lands here too.
 
 **Cut, not open items anymore (2026-07-31)**, see `docs/ROADMAP.md`:
 ~~`book_or_checkout` beyond a static link~~ (a real Shopify/WooCommerce/

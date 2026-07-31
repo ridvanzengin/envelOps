@@ -213,13 +213,16 @@ not a foundational rework.
 
 ## 9. Roadmap — undecided design details (non-blocking)
 
-The one real, acknowledged gap still open — not silently dropped, not
-required before starting the build:
-
-- **Observability dashboard, for two distinct audiences**: the builder's view
-  (execution traces — why the AI answered this way) and the business owner's
-  view (response time, draft-approval rate, leads gone cold). Likely two
-  different views, not one dashboard serving both — not yet designed.
+**Observability dashboard — built (2026-08-01), see `docs/ROADMAP.md`.**
+Shipped as one unified view, not the two distinct audiences (builder's
+trace view vs. business owner's operational view) originally envisioned
+below — real conversation/message/lead/escalation/pipeline-trace data
+(stat tiles, a daily trend chart, an intent breakdown, a per-channel
+resolution-rate table) turned out to serve both readings well enough in
+a single page for a portfolio project's data volumes; revisit the split
+if that stops holding. Original framing, for the record: "the builder's
+view (execution traces — why the AI answered this way) and the business
+owner's view (response time, draft-approval rate, leads gone cold)."
 
 **Cut from this list (2026-07-31), not just deferred** — see §10 and
 `docs/ROADMAP.md`: channel failure behavior beyond the health-check stub,
