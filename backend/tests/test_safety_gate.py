@@ -38,6 +38,32 @@ class SafetyFloorEnglishTests(unittest.TestCase):
         )
         self.assertIsNotNone(trigger)
 
+    def test_triggers_on_risk_absence_guarantee_request(self) -> None:
+        # docs/ROADMAP.md §5.1: found live via a health-tourism tenant --
+        # the original efficacy list only covered functional-outcome
+        # words ("cures", "works"), missing risk-absence claims entirely.
+        trigger = check_platform_safety_floor(
+            "Can you guarantee this procedure has zero risk of complications?"
+        )
+        self.assertIsNotNone(trigger)
+        self.assertIn("outcome-guarantee", trigger.reason)
+
+    def test_triggers_on_safety_guarantee_request(self) -> None:
+        trigger = check_platform_safety_floor(
+            "Do you promise this treatment is completely safe?"
+        )
+        self.assertIsNotNone(trigger)
+
+    def test_no_false_positive_on_bare_risk_or_safety_language(self) -> None:
+        # "risk"/"safe" alone, with no certainty word, must not trigger --
+        # same AND-not-OR requirement as the original efficacy cues.
+        self.assertIsNone(
+            check_platform_safety_floor("Is there any risk my package gets lost?")
+        )
+        self.assertIsNone(
+            check_platform_safety_floor("Is it safe to leave the package at my door?")
+        )
+
     def test_reason_names_the_category(self) -> None:
         trigger = check_platform_safety_floor("I'm having an allergic reaction")
         assert trigger is not None
