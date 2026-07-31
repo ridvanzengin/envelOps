@@ -112,6 +112,25 @@ class TestRenderKnowledgeQueryInstruction:
         assert "more formal" in result
         assert "We are cash-only." in result
 
+    def test_covers_action_requests_not_just_questions(self) -> None:
+        # docs/ROADMAP.md calibration finding: an order-modify/cancel
+        # REQUEST needs the same grounding treatment as an information
+        # QUESTION, not a free pass to invent an answer just because it's
+        # phrased as "can you do X" rather than "do you know X".
+        result = render_knowledge_query_instruction(KnowledgeQueryConfig(), "ctx")
+        assert "requests to DO something" in result
+        assert "cancel" in result
+
+    def test_forbids_inventing_unstated_specifics(self) -> None:
+        # docs/ROADMAP.md calibration finding: the model fabricated an
+        # ungrounded "email support@shop.com" workflow instead of
+        # escalating when the knowledge base didn't cover an order-modify
+        # request. The prior wording ("guessing or inferring an answer
+        # that merely sounds plausible") wasn't explicit enough to stop
+        # this in practice.
+        result = render_knowledge_query_instruction(KnowledgeQueryConfig(), "ctx")
+        assert "Never invent a next step, workflow, contact email" in result
+
 
 class TestRenderComplaintAddendum:
     def test_default_is_empty(self) -> None:

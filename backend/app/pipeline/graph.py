@@ -297,19 +297,38 @@ def understand_intent(state: PipelineState) -> PipelineState:
     # was getting classified inconsistently, because nothing told the model
     # where the knowledge_question/complaint_or_problem boundary actually
     # sits. The hypothetical-vs-actual distinction below is what fixes that.
+    #
+    # knowledge_question's existing-order carve-out and purchase_intent's
+    # "NEW" qualifier were added after a real calibration finding
+    # (docs/ROADMAP.md): "swap an article of order #12345" -- a request to
+    # modify an EXISTING order -- was classified as purchase_intent, which
+    # (combined with a "hot" lead score) routed it into book_or_checkout
+    # and sent a fresh checkout link, wrong for a change/cancel request.
+    # Same fix shape as the hypothetical-vs-actual split above: the
+    # boundary needed spelling out, not a new label -- modify/cancel/
+    # exchange requests belong in knowledge_question so they're grounded
+    # against the tenant's actual order-change policy (and escalated if
+    # that policy doesn't cover the specific case), not treated as a new
+    # sale.
     prompt = (
         "Classify the intent of this customer DM into exactly one of: "
         f"{', '.join(sorted(_INTENT_LABELS))}.\n\n"
         "Label definitions:\n"
         "- knowledge_question: asking for information -- policy, product "
-        "details, or a hypothetical \"what if\" scenario about something "
+        "details, a hypothetical \"what if\" scenario about something "
         "that hasn't happened yet (e.g. \"can I return it if I don't like "
         "it?\" is hypothetical, not a real problem, even if phrased with "
-        "mild hesitation).\n"
+        "mild hesitation), or wanting to modify, cancel, exchange, or "
+        "track an order the customer ALREADY placed (e.g. \"can you "
+        "cancel order #12345\", \"I want to swap an item on my order\" -- "
+        "these are about an existing order's status/policy, not a new "
+        "sale, even though something about the order is changing).\n"
         "- complaint_or_problem: describing an ACTUAL problem with an "
         "order/product the customer already has or experienced (e.g. "
         "\"it arrived damaged\", \"this isn't working\").\n"
-        "- purchase_intent: ready or trying to buy/book right now.\n"
+        "- purchase_intent: ready or trying to buy/book something NEW "
+        "right now -- not modifying, cancelling, or exchanging an order "
+        "already placed (that's knowledge_question instead).\n"
         "- small_talk: greeting or chit-chat, no real question.\n"
         "- other: doesn't fit any of the above.\n\n"
         "Respond with just the single label, nothing else, no "
