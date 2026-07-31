@@ -331,20 +331,20 @@
   border-color: var(--danger);
 }
 
-/* Settings page: tab navigation (narrower, left) beside the active tab's
-   own card (wider, right) -- Safety trigger phrases used to be a
-   permanently-visible column of its own; it's just another tab now
-   (docs/ROADMAP.md UI polish pass), so the right column shows whichever
-   tab is selected instead of always showing Safety. Capped max-width so
-   the pair doesn't stretch edge-to-edge on a wide monitor; single column
-   below 900px since a cramped 2-up doesn't help there (nav still renders
-   as its own 2-column grid within that single column, not 1). */
+/* Settings page: two independent tab groups side by side, each with its
+   own nav row and its own card below it (direct instruction) -- Safety
+   trigger phrases used to be a permanently-visible column of its own;
+   it's just another tab now (docs/ROADMAP.md UI polish pass), grouped
+   into the right-hand column with the other business-mechanics tabs.
+   Two cards can be on screen at once (e.g. Closing behavior beside
+   Safety trigger phrases), not just one shared active tab. Full page
+   width, not capped -- direct instruction; single column below 900px,
+   each group's nav still wraps to as many rows as it needs there. */
 .settings-columns {
   display: grid;
-  grid-template-columns: 240px 1fr;
+  grid-template-columns: 1fr 1fr;
   gap: 32px;
   align-items: start;
-  max-width: 1180px;
 }
 
 @media (max-width: 900px) {
@@ -353,15 +353,21 @@
   }
 }
 
-/* Nav as a compact 2-column grid of buttons, not the old single-row
-   wrapping strip -- 12 tabs (11 behavior areas + Safety) don't fit one
-   readable row, and a plain single-column vertical list would run
-   noticeably taller than the content card beside it. */
+.settings-column {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+
+/* Each column's own nav row, wrapping as needed -- 6 tabs at a
+   comfortable label width won't always fit one line, especially at
+   narrower viewport widths, so this wraps rather than forcing a fixed
+   column count the way the single-column 12-tab nav used to. */
 .tabs {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
+  display: flex;
+  flex-wrap: wrap;
   gap: 4px;
-  align-content: start;
 }
 
 .tabs__tab {
