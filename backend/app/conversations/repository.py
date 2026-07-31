@@ -93,6 +93,26 @@ class ConversationRepository(TenantScopedRepository[Conversation]):
         result = await self.session.execute(stmt)
         return [(row[0], row[1], row[2]) for row in result.all()]
 
+    async def list_in_range_with_channel(
+        self, tenant_id: uuid.UUID, start: datetime, end: datetime
+    ) -> list[tuple[Conversation, Channel]]:
+        """Dashboard aggregates (app/dashboard/service.py) -- conversations
+        created in [start, end), joined to their channel for the per-channel
+        breakdown. Inner join on Channel is safe here (unlike
+        list_with_last_message's outer join on Message above): every
+        conversation always has exactly one channel."""
+        stmt = (
+            select(Conversation, Channel)
+            .join(Channel, Channel.id == Conversation.channel_id)
+            .where(
+                Conversation.tenant_id == tenant_id,
+                Conversation.created_at >= start,
+                Conversation.created_at < end,
+            )
+        )
+        result = await self.session.execute(stmt)
+        return [(row[0], row[1]) for row in result.all()]
+
 
 class MessageRepository(TenantScopedRepository[Message]):
     model = Message
@@ -115,6 +135,21 @@ class MessageRepository(TenantScopedRepository[Message]):
             select(Message)
             .where(Message.tenant_id == tenant_id, Message.conversation_id == conversation_id)
             .order_by(Message.created_at.asc())
+        )
+        result = await self.session.scalars(stmt)
+        return list(result)
+
+    async def list_in_range(
+        self, tenant_id: uuid.UUID, start: datetime, end: datetime
+    ) -> list[Message]:
+        """Dashboard aggregates (app/dashboard/service.py) -- messages sent
+        in [start, end) across every conversation, used for the outbound-
+        count stat tile and the inbound->outbound response-time estimate.
+        Not scoped to one conversation, unlike list_by_conversation above."""
+        stmt = select(Message).where(
+            Message.tenant_id == tenant_id,
+            Message.created_at >= start,
+            Message.created_at < end,
         )
         result = await self.session.scalars(stmt)
         return list(result)

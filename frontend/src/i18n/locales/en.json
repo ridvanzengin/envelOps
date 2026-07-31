@@ -285,5 +285,37 @@
         "label": "Anything the AI should always keep in mind"
       }
     }
+  },
+  "dashboard": {
+    "rangeLabel": "Date range",
+    "rangeDays": "{{count}} days",
+    "loading": "Loading…",
+    "loadError": "Couldn't load dashboard data. Try again.",
+    "statConversations": "Total conversations",
+    "statMessages": "Messages sent",
+    "statHotLeads": "Hot leads",
+    "statEscalated": "Escalated",
+    "statResponseTime": "Avg. response time",
+    "minutes": "{{count}}m",
+    "underAMinute": "<1m",
+    "conversationsOverTime": "Conversations over time",
+    "conversationsByIntent": "Conversations by intent",
+    "noIntentData": "No classified conversations yet in this range.",
+    "topChannels": "Top channels",
+    "channel": "Channel",
+    "conversations": "Conversations",
+    "resolutionRate": "Resolution rate",
+    "noChannelData": "No conversations yet in this range.",
+    "knowledgeStatus": "Knowledge base status",
+    "sources": "Sources",
+    "chunks": "Chunks",
+    "chunkCount": "{{count}} chunks",
+    "noKnowledgeSources": "No knowledge sources yet.",
+    "recentEscalations": "Recent escalations",
+    "noEscalations": "No escalations yet.",
+    "escalationStatus": {
+      "pending": "Escalated",
+      "resolved": "Resolved"
+    }
   }
 }

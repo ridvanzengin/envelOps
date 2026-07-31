@@ -1,0 +1,406 @@
+/* Visually-hidden but screen-reader-visible -- the table-view twin every
+   chart needs (dataviz skill: "every chart has a table-view twin"), for
+   the trend chart specifically since its values are otherwise only
+   reachable via Y-position + hover. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.dashboard__range {
+  display: flex;
+  gap: 4px;
+  background: var(--bg-subtle);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 3px;
+}
+
+.dashboard__range-option {
+  border: none;
+  border-radius: 6px;
+  padding: 6px 12px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.dashboard__range-option:hover {
+  color: var(--text-h);
+}
+
+.dashboard__range-option--active {
+  background: var(--bg);
+  color: var(--text-h);
+  box-shadow: var(--shadow-sm);
+}
+
+/* Stat-tile KPI row -- same auto-fit grid shape as
+   .knowledge-sources__stats, five tiles instead of three. */
+.dashboard__stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.dashboard-stat-tile {
+  padding: 16px;
+}
+
+.dashboard-stat-tile__header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text);
+  margin-bottom: 10px;
+}
+
+.dashboard-stat-tile__icon {
+  display: inline-flex;
+  color: var(--accent);
+}
+
+.dashboard-stat-tile__icon svg {
+  width: 16px;
+  height: 16px;
+}
+
+.dashboard-stat-tile__label {
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.dashboard-stat-tile__value {
+  font-size: 26px;
+  font-weight: 600;
+  color: var(--text-h);
+  /* Proportional figures, not tabular-nums, at display size -- dataviz
+     skill's figure contract (tabular-nums is reserved for columns of
+     numbers that must align, e.g. table rows). */
+  font-variant-numeric: proportional-nums;
+  margin-bottom: 8px;
+}
+
+.dashboard-stat-tile__footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 24px;
+}
+
+.dashboard-stat-tile__delta {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.dashboard-stat-tile__delta--positive {
+  color: var(--success);
+}
+
+.dashboard-stat-tile__delta--negative {
+  color: var(--danger);
+}
+
+.dashboard-stat-tile__delta--neutral {
+  color: var(--text);
+}
+
+.dashboard-sparkline {
+  flex-shrink: 0;
+}
+
+/* Two-up panel rows -- chart+intent breakdown, then channels+knowledge. */
+.dashboard__row {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+@media (max-width: 900px) {
+  .dashboard__row {
+    grid-template-columns: 1fr;
+  }
+}
+
+.dashboard__panel {
+  padding: 20px;
+}
+
+.dashboard__panel h2 {
+  margin: 0 0 16px;
+}
+
+.dashboard-trend-chart {
+  position: relative;
+}
+
+.dashboard-trend-chart__svg {
+  width: 100%;
+  height: auto;
+  overflow: visible;
+  touch-action: none;
+}
+
+.dashboard-trend-chart__gridline {
+  stroke: var(--border);
+  stroke-width: 1;
+}
+
+.dashboard-trend-chart__tick {
+  fill: var(--text);
+  font-size: 11px;
+}
+
+.dashboard-trend-chart__area {
+  fill: var(--accent);
+  opacity: 0.1;
+  stroke: none;
+}
+
+.dashboard-trend-chart__line {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.dashboard-trend-chart__crosshair {
+  stroke: var(--border);
+  stroke-width: 1;
+}
+
+.dashboard-trend-chart__dot {
+  fill: var(--accent);
+  stroke: var(--bg);
+  stroke-width: 2;
+}
+
+.dashboard-trend-chart__tooltip {
+  position: absolute;
+  top: 8px;
+  transform: translateX(-50%);
+  background: var(--bg-subtle);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 12px;
+  color: var(--text);
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  box-shadow: var(--shadow-sm);
+  white-space: nowrap;
+}
+
+.dashboard-trend-chart__tooltip strong {
+  color: var(--text-h);
+  font-size: 14px;
+}
+
+/* Ranked bar list ("conversations by intent") -- single accent hue, not
+   a categorical palette; identity comes from the row label, see
+   IntentBarList.tsx's own comment for why. */
+.dashboard-bar-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.dashboard-bar-list__row {
+  display: grid;
+  grid-template-columns: 100px 1fr 70px;
+  align-items: center;
+  gap: 10px;
+}
+
+.dashboard-bar-list__label {
+  font-size: 13px;
+  color: var(--text-h);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dashboard-bar-list__track {
+  height: 8px;
+  background: var(--bg-subtle);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.dashboard-bar-list__bar {
+  height: 100%;
+  background: var(--accent);
+  border-radius: 4px;
+}
+
+.dashboard-bar-list__value {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-h);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.dashboard-bar-list__count {
+  font-weight: 400;
+  color: var(--text);
+}
+
+.dashboard__channel-cell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.dashboard__channel-cell svg {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  color: var(--text);
+}
+
+.dashboard__knowledge-summary {
+  display: flex;
+  gap: 24px;
+  margin-bottom: 16px;
+}
+
+.dashboard__knowledge-summary-value {
+  display: block;
+  font-size: 22px;
+  font-weight: 600;
+  color: var(--text-h);
+}
+
+.dashboard__knowledge-summary-label {
+  display: block;
+  font-size: 12px;
+  color: var(--text);
+}
+
+.dashboard__knowledge-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.dashboard__knowledge-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.dashboard__knowledge-row:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.dashboard__knowledge-row-title {
+  font-size: 13px;
+  color: var(--text-h);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dashboard__knowledge-row-meta {
+  font-size: 12px;
+  color: var(--text);
+}
+
+.dashboard__escalation-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.dashboard__escalation-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 4px;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.dashboard__escalation-list li:last-child .dashboard__escalation-row {
+  border-bottom: none;
+}
+
+.dashboard__escalation-row:hover {
+  background: var(--bg-subtle);
+}
+
+.dashboard__escalation-icon {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  color: var(--text);
+}
+
+.dashboard__escalation-reason {
+  flex: 1;
+  font-size: 13px;
+  color: var(--text-h);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dashboard__escalation-status {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  padding: 1px 7px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--bg-subtle);
+  color: var(--text);
+  flex-shrink: 0;
+}
+
+.dashboard__escalation-status--pending {
+  background: var(--danger-bg);
+  color: var(--danger);
+  border-color: var(--danger);
+}
+
+.dashboard__escalation-status--resolved {
+  background: var(--success-bg);
+  color: var(--success);
+  border-color: var(--success);
+}
+
+.dashboard__escalation-time {
+  font-size: 12px;
+  color: var(--text);
+  flex-shrink: 0;
+}

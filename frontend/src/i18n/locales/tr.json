@@ -285,5 +285,37 @@
         "label": "Yapay zekanın her zaman aklında tutması gereken herhangi bir şey"
       }
     }
+  },
+  "dashboard": {
+    "rangeLabel": "Tarih aralığı",
+    "rangeDays": "{{count}} gün",
+    "loading": "Yükleniyor…",
+    "loadError": "Panel verileri yüklenemedi. Tekrar deneyin.",
+    "statConversations": "Toplam konuşma",
+    "statMessages": "Gönderilen mesaj",
+    "statHotLeads": "Sıcak potansiyel müşteri",
+    "statEscalated": "Yükseltilen",
+    "statResponseTime": "Ort. yanıt süresi",
+    "minutes": "{{count}}dk",
+    "underAMinute": "<1dk",
+    "conversationsOverTime": "Zaman içinde konuşmalar",
+    "conversationsByIntent": "Niyete göre konuşmalar",
+    "noIntentData": "Bu aralıkta henüz sınıflandırılmış konuşma yok.",
+    "topChannels": "En iyi kanallar",
+    "channel": "Kanal",
+    "conversations": "Konuşmalar",
+    "resolutionRate": "Çözüm oranı",
+    "noChannelData": "Bu aralıkta henüz konuşma yok.",
+    "knowledgeStatus": "Bilgi tabanı durumu",
+    "sources": "Kaynaklar",
+    "chunks": "Parçalar",
+    "chunkCount": "{{count}} parça",
+    "noKnowledgeSources": "Henüz bilgi kaynağı yok.",
+    "recentEscalations": "Son yükseltmeler",
+    "noEscalations": "Henüz yükseltme yok.",
+    "escalationStatus": {
+      "pending": "Yükseltildi",
+      "resolved": "Çözüldü"
+    }
   }
 }

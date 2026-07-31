@@ -1,4 +1,5 @@
 import uuid
+from datetime import datetime
 
 from sqlalchemy import select
 
@@ -28,18 +29,30 @@ class EscalationRepository(TenantScopedRepository[Escalation]):
         return await self.session.scalar(stmt)
 
     async def list_with_channel_info(
-        self, tenant_id: uuid.UUID
+        self,
+        tenant_id: uuid.UUID,
+        start: datetime | None = None,
+        end: datetime | None = None,
     ) -> list[tuple[Escalation, Channel]]:
         """Two-hop join (Escalation -> Conversation -> Channel) -- lets
         ChannelRail (frontend) show a per-channel-type pending-escalation
         badge instead of one tenant-wide count, now that Test Console
-        channels mean more than one channel type can be live at once."""
+        channels mean more than one channel type can be live at once.
+
+        start/end (both optional, default unfiltered -- the original
+        behavior, still what GET /escalations wants) narrow to escalations
+        *created* in [start, end) -- app/dashboard/service.py's per-channel
+        resolution-rate breakdown."""
         stmt = (
             select(Escalation, Channel)
             .join(Conversation, Conversation.id == Escalation.conversation_id)
             .join(Channel, Channel.id == Conversation.channel_id)
             .where(Escalation.tenant_id == tenant_id)
         )
+        if start is not None:
+            stmt = stmt.where(Escalation.created_at >= start)
+        if end is not None:
+            stmt = stmt.where(Escalation.created_at < end)
         result = await self.session.execute(stmt)
         return [(row[0], row[1]) for row in result.all()]
 
