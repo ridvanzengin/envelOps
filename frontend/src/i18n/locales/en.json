@@ -8,7 +8,7 @@
   "pages": {
     "knowledge": "Add (URL/PDF/manual), list, and refresh knowledge sources.",
     "testConsole": "Send a test message through the real pipeline on any platform, to compare how replies differ by channel.",
-    "settings": "Safety trigger phrases (system defaults locked, add your own below) and AI behavior/business settings. Channel connection status isn't shown here yet.",
+    "settings": "AI behavior, business settings, and safety trigger phrases, organized by tab. Channel connection status isn't shown here yet.",
     "dashboard": "Leads today, escalations today, response times."
   },
   "theme": {
@@ -18,9 +18,6 @@
   "menu": {
     "language": "Language",
     "theme": "Theme"
-  },
-  "common": {
-    "testBadge": "Test"
   },
   "channelRail": {
     "telegram": "Telegram",
@@ -36,7 +33,8 @@
     "platform": "Platform",
     "newSession": "New session",
     "newSessionHint": "Start a fresh test conversation on this platform, tracked separately from previous ones",
-    "sessionLabel": "Session: {{sessionId}}",
+    "sessionName": "Session name",
+    "sessionNamePlaceholder": "Name this test session…",
     "loading": "Loading…",
     "empty": "No messages yet — send one to see how the AI replies on this platform.",
     "loadError": "Couldn't load this platform's test conversation. Try again.",
@@ -75,6 +73,11 @@
     "threadLoading": "Loading messages…",
     "threadLoadError": "Couldn't load this conversation's messages. Try again.",
     "filterEscalated": "Escalated",
+    "filterUnescalated": "Not escalated",
+    "filterHotLead": "Hot lead",
+    "pagePrev": "Prev",
+    "pageNext": "Next",
+    "pageIndicator": "Page {{current}} of {{total}}",
     "replyPlaceholder": "Type a reply…",
     "replyDisabledHint": "Sending replies isn't available yet",
     "internalNoteSender": "Internal note"
@@ -130,7 +133,8 @@
     "editError": "Couldn't save this source. Try again."
   },
   "settings": {
-    "safetyTriggersTitle": "Safety trigger phrases",
+    "safetyTriggersTitle": "Safety Triggers",
+    "safetyDescription": "System defaults are always enabled to keep conversations safe.",
     "systemDefaultsTitle": "System defaults (locked)",
     "systemDefaultCategories": {
       "contraindication": "Contraindication language (e.g. drug interactions, allergies)",
@@ -149,7 +153,6 @@
     "deleteConfirm": "Delete this trigger phrase? This can't be undone.",
     "deleteError": "Couldn't delete this phrase. Try again.",
     "tenantSettings": {
-      "title": "AI behavior & business settings",
       "loading": "Loading settings…",
       "loadError": "Couldn't load settings. Try again.",
       "save": "Save",
@@ -162,6 +165,7 @@
       },
       "closingBehavior": {
         "title": "Closing behavior",
+        "description": "Choose what should happen when a lead is ready to close the conversation.",
         "closingAction": "When a lead is ready to close",
         "closingActionOptions": {
           "keepChatting": "Keep chatting",
@@ -172,26 +176,31 @@
       },
       "greeting": {
         "title": "Greeting",
+        "description": "Set the tone for how the AI greets a customer at the start of a conversation.",
         "inviteFollowup": "Invite a follow-up question after greeting",
         "additionalContext": "Anything the AI should know when greeting a customer"
       },
       "offTopic": {
         "title": "Off-topic messages",
+        "description": "Decide how the AI responds when a message doesn't fit a specific question, complaint, or purchase interest.",
         "additionalContext": "Anything the AI should know when a message is off-topic"
       },
       "knowledgeQuery": {
         "title": "Knowledge questions",
+        "description": "Control how confidently the AI answers questions using your knowledge base.",
         "limitToConfident": "Only answer when confident it's a real match",
         "notFoundMaxDistance": "Confidence threshold ({{value}}) — lower is stricter",
         "additionalContext": "Anything the AI should know when answering questions"
       },
       "complaint": {
         "title": "Complaints",
+        "description": "Choose how the AI should acknowledge a customer describing a problem.",
         "empatheticAcknowledgment": "Acknowledge the complaint with empathy first",
         "additionalContext": "Anything the AI should know when handling a complaint"
       },
       "leadHandling": {
         "title": "Lead handling",
+        "description": "Decide what counts as a hot, ready-to-close lead.",
         "closingActionOverride": "Override closing behavior for hot leads",
         "closingActionOverrideOptions": {
           "useClosingBehaviorAbove": "Use closing behavior above",
@@ -203,11 +212,13 @@
         "additionalContext": "Anything the AI should know about qualifying leads"
       },
       "escalationCover": {
-        "title": "Escalation cover message",
+        "title": "Escalation",
+        "description": "Set the tone for the message a customer sees while their question is escalated to a human.",
         "additionalContext": "Anything the AI should know when covering for an escalation"
       },
       "bookOrCheckout": {
         "title": "Booking / checkout",
+        "description": "Control how the AI presents your booking or checkout link.",
         "ctaStyle": "Call-to-action style",
         "ctaStyleOptions": {
           "naturalMention": "Mention naturally",
@@ -217,6 +228,7 @@
       },
       "toolCalling": {
         "title": "Tool calling",
+        "description": "Let the AI look up order status or inventory using simulated demo data.",
         "simulatedDataNotice": "Uses simulated demo data, not a real connected store -- there's nothing to connect.",
         "orderStatusLookup": "Let the AI look up an order's status when asked",
         "inventoryCheck": "Let the AI check product inventory when asked",
@@ -224,6 +236,7 @@
       },
       "channelOverrides": {
         "title": "Platform-specific tone",
+        "description": "Override the default tone for individual messaging platforms.",
         "overrideChannel": "Override tone for {{channel}}",
         "formality": "Formality",
         "formalityOptions": {
@@ -239,7 +252,8 @@
         }
       },
       "generalContext": {
-        "title": "General business context",
+        "title": "Business Context",
+        "description": "Give the AI background facts about your business to keep in mind everywhere.",
         "label": "Anything the AI should always keep in mind"
       }
     }

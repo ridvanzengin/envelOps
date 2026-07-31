@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import type { FormEvent } from "react";
+import type { FormEvent, KeyboardEvent } from "react";
 import { useTranslation } from "react-i18next";
 
 import { apiGet, apiPost, ApiError } from "../api/client";
@@ -8,6 +8,7 @@ import { MessageThread } from "../components/MessageThread";
 import { RefreshIcon } from "../components/icons";
 import type { Message } from "../context/conversationPanel/context";
 import { CHANNEL_TYPES as PLATFORMS } from "../lib/channels";
+import { handleTextareaEnterKey } from "../utils/submitOnEnter";
 import "./TestConsole.css";
 
 interface TestConversationResponse {
@@ -43,6 +44,21 @@ export default function TestConsole() {
   // free via a fresh mount; the New Session button below is for resetting
   // without leaving the page.
   const [sessionId, setSessionId] = useState(generateSessionId);
+  // Editable copy of sessionId, committed on blur/Enter rather than on
+  // every keystroke -- sessionId IS Conversation.external_contact_id
+  // (used directly in loadConversation's effect below), so updating it
+  // per-character would fire a GET on every keystroke and look like the
+  // session kept switching out from under whatever was just typed. There
+  // is no rename endpoint (nor should there be one -- external_contact_id
+  // is how a conversation is identified, not a cosmetic label), so
+  // committing a new name doesn't rename the current session's thread, it
+  // switches to (or creates, if new) a *different* session under that
+  // name -- the same thing typing a different id here has always done,
+  // just user-chosen instead of only ever auto-generated.
+  const [sessionNameDraft, setSessionNameDraft] = useState(sessionId);
+  useEffect(() => {
+    setSessionNameDraft(sessionId);
+  }, [sessionId]);
   const [messages, setMessages] = useState<Message[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [escalatedNotice, setEscalatedNotice] = useState<string | null>(null);
@@ -82,6 +98,28 @@ export default function TestConsole() {
     setSessionId(generateSessionId());
     setInputText("");
     setSendError(null);
+  }
+
+  function commitSessionName() {
+    const trimmed = sessionNameDraft.trim();
+    // Blank isn't a valid session identifier -- revert rather than send
+    // an empty external_contact_id.
+    if (trimmed === "") {
+      setSessionNameDraft(sessionId);
+      return;
+    }
+    if (trimmed !== sessionId) {
+      setSessionId(trimmed);
+    }
+  }
+
+  function handleSessionNameKeyDown(event: KeyboardEvent<HTMLInputElement>) {
+    if (event.key === "Enter") {
+      event.currentTarget.blur();
+    } else if (event.key === "Escape") {
+      setSessionNameDraft(sessionId);
+      event.currentTarget.blur();
+    }
   }
 
   async function handleSend(event: FormEvent<HTMLFormElement>) {
@@ -134,6 +172,17 @@ export default function TestConsole() {
             ))}
           </select>
         </label>
+        <label className="form__field test-console__session-name">
+          {t("testConsole.sessionName")}
+          <input
+            type="text"
+            value={sessionNameDraft}
+            onChange={(event) => setSessionNameDraft(event.target.value)}
+            onBlur={commitSessionName}
+            onKeyDown={handleSessionNameKeyDown}
+            placeholder={t("testConsole.sessionNamePlaceholder")}
+          />
+        </label>
         <button
           type="button"
           className="button test-console__new-session"
@@ -144,9 +193,6 @@ export default function TestConsole() {
           {t("testConsole.newSession")}
         </button>
       </div>
-      <p className="test-console__session-label">
-        {t("testConsole.sessionLabel", { sessionId })}
-      </p>
 
       <div className="card test-console__thread-card">
         {loadError && (
@@ -173,13 +219,14 @@ export default function TestConsole() {
       </div>
 
       <form className="test-console__input-row" onSubmit={(event) => void handleSend(event)}>
-        <input
-          type="text"
+        <textarea
           className="test-console__input"
           value={inputText}
           onChange={(event) => setInputText(event.target.value)}
+          onKeyDown={(event) => handleTextareaEnterKey(event, setInputText)}
           placeholder={t("testConsole.inputPlaceholder")}
           disabled={sending}
+          rows={1}
         />
         <button
           type="submit"

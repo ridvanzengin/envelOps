@@ -2,23 +2,39 @@
   display: flex;
   align-items: flex-end;
   gap: 12px;
-  margin-bottom: 6px;
+  margin-bottom: 16px;
+}
+
+.test-console__platform,
+.test-console__session-name {
+  margin-bottom: 0;
 }
 
 .test-console__platform {
-  max-width: 280px;
-  margin-bottom: 0;
+  max-width: 220px;
+}
+
+.test-console__session-name {
+  flex: 1;
+  max-width: 320px;
+}
+
+/* Explicit height on all three toolbar controls -- a native <select>'s
+   intrinsic rendering doesn't reliably match a <button>/<input> of the
+   same padding/border/font-size across browsers (OS-drawn dropdown
+   chrome adds its own sizing), so matching padding alone left the
+   platform dropdown and the New Session button visibly different
+   heights. Pinning all three to the same height is more robust than
+   trying to reverse-engineer padding that happens to line up. */
+.test-console__platform select,
+.test-console__session-name input,
+.test-console__new-session {
+  height: 36px;
+  box-sizing: border-box;
 }
 
 .test-console__new-session {
   flex-shrink: 0;
-}
-
-.test-console__session-label {
-  color: var(--text);
-  font-size: 12px;
-  font-family: var(--mono, monospace);
-  margin-bottom: 16px;
 }
 
 .test-console__thread-card {
@@ -50,12 +66,20 @@
 
 .test-console__input-row {
   display: flex;
+  align-items: flex-end;
   gap: 8px;
 }
 
+/* <textarea> now (was a single-line <input>) -- Cmd/Ctrl+Enter inserts a
+   real newline (utils/submitOnEnter.ts), plain Enter still sends, same
+   as the input it replaced. min-height matches that input's old single-
+   line height so this doesn't look taller by default; resize: vertical
+   (not the browser default `both`) so dragging can't widen it into
+   the Send button next to it. */
 .test-console__input {
   flex: 1;
   min-width: 0;
+  min-height: 38px;
   padding: 8px 10px;
   border: 1px solid var(--border);
   border-radius: 6px;
@@ -63,6 +87,8 @@
   color: var(--text-h);
   font: inherit;
   font-size: 14px;
+  line-height: 1.4;
+  resize: vertical;
 }
 
 .test-console__input:focus {

@@ -87,24 +87,71 @@
   padding: 24px 8px;
 }
 
+/* Filter-chip row at the top of the list (docs/ROADMAP.md UI polish pass)
+   -- one chip per "important tag" worth quickly filtering by. Each chip's
+   color is the single source of truth for that tag's meaning everywhere
+   else it appears (the matching per-row badge above), not a separate,
+   possibly-drifting color choice. Exclusive, not multi-select (direct
+   instruction) -- selecting a chip shows ONLY that one's matches,
+   cancelling out whichever chip was active before. */
+.conversation-panel__filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
 .conversation-panel__filter {
   display: inline-flex;
   align-items: center;
   gap: 6px;
   padding: 3px 8px;
-  margin-bottom: 10px;
   border-radius: 999px;
-  border: 1px solid var(--danger);
-  background: var(--danger-bg);
-  color: var(--danger);
+  border: 1px solid var(--border);
+  background: var(--bg-subtle);
+  color: var(--text);
   font: inherit;
   font-size: 12px;
   font-weight: 500;
   cursor: pointer;
 }
 
+.conversation-panel__filter--escalated {
+  border-color: var(--danger);
+  background: var(--danger-bg);
+  color: var(--danger);
+}
+
+/* Green/--success -- reused from decision-book_or_checkout's unrelated
+   meaning elsewhere (that badge never appears in this rail's rows, only
+   in Test Console's per-message view, so there's no on-screen clash),
+   picked deliberately here for its own sense: "nothing needs attention." */
+.conversation-panel__filter--unescalated {
+  border-color: var(--success);
+  background: var(--success-bg);
+  color: var(--success);
+}
+
+.conversation-panel__filter--hot_lead {
+  border-color: var(--warning);
+  background: var(--warning-bg);
+  color: var(--warning);
+}
+
+.conversation-panel__filter--purchase_intent {
+  border-color: var(--accent-border);
+  background: var(--accent-bg);
+  color: var(--accent-h);
+}
+
+.conversation-panel__filter--complaint {
+  border-color: var(--info);
+  background: var(--info-bg);
+  color: var(--info);
+}
+
 .conversation-panel__filter--active {
-  outline: 2px solid var(--danger);
+  outline: 2px solid currentColor;
   outline-offset: 1px;
 }
 
@@ -128,6 +175,36 @@
   display: flex;
   flex-direction: column;
   gap: 6px;
+}
+
+.conversation-panel__pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.conversation-panel__page-button {
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-subtle);
+  color: var(--text-h);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.conversation-panel__page-button:disabled {
+  color: var(--text);
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.conversation-panel__page-indicator {
+  font-size: 12px;
+  color: var(--text);
 }
 
 .conversation-panel__row {
@@ -299,13 +376,24 @@
 }
 
 .diagnostics-badge--score-warm,
-.diagnostics-badge--decision-keep_chatting {
+.diagnostics-badge--decision-keep_chatting,
+.diagnostics-badge--intent-purchase_intent {
   background: var(--accent-bg);
   color: var(--accent-h);
   border-color: var(--accent-border);
 }
 
-.diagnostics-badge--score-hot,
+/* Hot lead is its own color (warning/amber), distinct from an actual
+   escalation (danger/red) -- these used to share --danger, which made a
+   merely-hot-but-not-escalated lead look identical to a real escalation
+   at a glance. Coherent with the "Hot lead" filter chip below, which
+   uses the same token. */
+.diagnostics-badge--score-hot {
+  background: var(--warning-bg);
+  color: var(--warning);
+  border-color: var(--warning);
+}
+
 .diagnostics-badge--decision-escalate_to_human {
   background: var(--danger-bg);
   color: var(--danger);
@@ -316,6 +404,38 @@
   background: var(--success-bg);
   color: var(--success);
   border-color: var(--success);
+}
+
+/* Complaint gets its own color (info/violet) -- distinct from hot
+   (amber), escalated (red), and purchase intent (teal), and not reused
+   from success/green (which already means something unrelated:
+   decision-book_or_checkout above). Coherent with the "Complaint" filter
+   chip below, same token. */
+.diagnostics-badge--intent-complaint_or_problem {
+  background: var(--info-bg);
+  color: var(--info);
+  border-color: var(--info);
+}
+
+/* Conversation-rail-only badge (docs/ROADMAP.md UI polish pass): replaces
+   the old .status-badge/.test-badge pair -- "open" was every conversation's
+   status (never anything else, so it was pure noise) and "Test" wasn't
+   worth a permanent per-row badge. An actual escalation is the one
+   row-level fact worth flagging inline, same red used everywhere else in
+   this app for escalation (the filter chip below, the internal-note
+   bubble, the escalate_to_human diagnostics badge). */
+.escalated-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  background: var(--danger-bg);
+  color: var(--danger);
+  border: 1px solid var(--danger);
 }
 
 .conversation-panel__input-row {

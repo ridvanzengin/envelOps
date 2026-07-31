@@ -12,6 +12,10 @@
   --success-bg: rgba(63, 185, 80, 0.12);
   --danger: #f85149;
   --danger-bg: rgba(248, 81, 73, 0.12);
+  --warning: #d29922;
+  --warning-bg: rgba(210, 153, 34, 0.15);
+  --info: #a371f7;
+  --info-bg: rgba(163, 113, 247, 0.15);
   --radius: 8px;
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
   --shadow: rgba(0, 0, 0, 0.4) 0 10px 15px -3px, rgba(0, 0, 0, 0.25) 0 4px 6px -2px;
@@ -36,6 +40,10 @@
   --success-bg: #ecf9ef;
   --danger: #c93131;
   --danger-bg: #fdecec;
+  --warning: #9a6700;
+  --warning-bg: #fff8ec;
+  --info: #8250df;
+  --info-bg: #f5f0ff;
   --shadow-sm: 0 1px 2px rgba(16, 24, 40, 0.06);
   --shadow: rgba(0, 0, 0, 0.1) 0 10px 15px -3px, rgba(0, 0, 0, 0.05) 0 4px 6px -2px;
   color-scheme: light;

@@ -1,11 +1,26 @@
 import { useCallback, useEffect, useState } from "react";
-import type { FormEvent } from "react";
+import type { ComponentType, FormEvent, SVGProps } from "react";
 import { useTranslation } from "react-i18next";
 
 import { apiDelete, apiGet, apiPatch, apiPost, ApiError } from "../api/client";
 import { useAuth } from "../auth/useAuth";
-import { TrashIcon } from "../components/icons";
+import {
+  AlertTriangleIcon,
+  ArrowUpCircleIcon,
+  CreditCardIcon,
+  FileTextIcon,
+  FlagIcon,
+  FlaskIcon,
+  GlobeIcon,
+  HelpCircleIcon,
+  KnowledgeIcon,
+  ShieldIcon,
+  SmileIcon,
+  TargetIcon,
+  TrashIcon,
+} from "../components/icons";
 import { CHANNEL_TYPES } from "../lib/channels";
+import { handleTextareaEnterKey } from "../utils/submitOnEnter";
 
 interface TriggerPhrase {
   id: string;
@@ -25,7 +40,8 @@ const SYSTEM_DEFAULT_CATEGORY_KEYS = [
 
 // Mirrors backend/app/tenants/behavior_config.py exactly -- one combined
 // shape for the full GET response; PATCH sends only one tab's own slice
-// at a time (see TAB_ORDER/buildTabPatch below), never this whole object.
+// at a time (see LEFT_TAB_ORDER/RIGHT_TAB_ORDER/buildTabPatch below),
+// never this whole object.
 type BusinessTone = "friendly_business" | "formal_business";
 type ClosingAction = "keep_chatting" | "escalate_to_human" | "book_or_checkout";
 
@@ -106,8 +122,12 @@ type BehaviorAreaKey =
   | "book_or_checkout"
   | "tool_calling";
 
-// One entry per tab (left column) -- each saves independently, PATCHing
-// only its own slice of TenantSettings. Order here is the tab order.
+// One entry per tab -- each of the first 11 saves independently, PATCHing
+// only its own slice of TenantSettings (buildTabPatch below); "safety" is
+// the odd one out (moved in from its own always-visible column, docs/
+// ROADMAP.md UI polish pass) -- it has its own separate add/delete
+// endpoints (handleSubmit/handleDelete below), not a PATCH slice, so it's
+// excluded from buildTabPatch's switch entirely. Order here is tab order.
 type TabKey =
   | "closing"
   | "greeting"
@@ -119,20 +139,31 @@ type TabKey =
   | "bookOrCheckout"
   | "toolCalling"
   | "channels"
-  | "generalContext";
+  | "generalContext"
+  | "safety";
 
-const TAB_ORDER: TabKey[] = [
-  "closing",
+// Split into two independent tab groups, each with its own nav row and
+// its own card below it (direct instruction) -- two visible cards at
+// once, not one shared active tab, so e.g. Closing behavior and Safety
+// trigger phrases can both be on screen together. 6 + 6 (all 12 tabs
+// accounted for); grouped left = conversation-facing tone/behavior
+// areas, right = business mechanics + safety.
+const LEFT_TAB_ORDER: TabKey[] = [
   "greeting",
+  "closing",
   "offTopic",
   "knowledgeQuery",
   "complaint",
   "leadHandling",
+];
+
+const RIGHT_TAB_ORDER: TabKey[] = [
   "escalationCover",
   "bookOrCheckout",
   "toolCalling",
   "channels",
   "generalContext",
+  "safety",
 ];
 
 const TAB_TITLE_KEYS: Record<TabKey, string> = {
@@ -147,6 +178,40 @@ const TAB_TITLE_KEYS: Record<TabKey, string> = {
   toolCalling: "settings.tenantSettings.toolCalling.title",
   channels: "settings.tenantSettings.channelOverrides.title",
   generalContext: "settings.tenantSettings.generalContext.title",
+  safety: "settings.safetyTriggersTitle",
+};
+
+// Card header description shown under each tab's title (docs/ROADMAP.md
+// UI polish pass) -- new copy, one per tab, no prior equivalent existed
+// since tab content previously had no card/header at all.
+const TAB_DESCRIPTION_KEYS: Record<TabKey, string> = {
+  closing: "settings.tenantSettings.closingBehavior.description",
+  greeting: "settings.tenantSettings.greeting.description",
+  offTopic: "settings.tenantSettings.offTopic.description",
+  knowledgeQuery: "settings.tenantSettings.knowledgeQuery.description",
+  complaint: "settings.tenantSettings.complaint.description",
+  leadHandling: "settings.tenantSettings.leadHandling.description",
+  escalationCover: "settings.tenantSettings.escalationCover.description",
+  bookOrCheckout: "settings.tenantSettings.bookOrCheckout.description",
+  toolCalling: "settings.tenantSettings.toolCalling.description",
+  channels: "settings.tenantSettings.channelOverrides.description",
+  generalContext: "settings.tenantSettings.generalContext.description",
+  safety: "settings.safetyDescription",
+};
+
+const TAB_ICONS: Record<TabKey, ComponentType<SVGProps<SVGSVGElement>>> = {
+  closing: FlagIcon,
+  greeting: SmileIcon,
+  offTopic: HelpCircleIcon,
+  knowledgeQuery: KnowledgeIcon,
+  complaint: AlertTriangleIcon,
+  leadHandling: TargetIcon,
+  escalationCover: ArrowUpCircleIcon,
+  bookOrCheckout: CreditCardIcon,
+  toolCalling: FlaskIcon,
+  channels: GlobeIcon,
+  generalContext: FileTextIcon,
+  safety: ShieldIcon,
 };
 
 // Exactly what PATCH /tenants/settings accepts for a given tab -- always
@@ -177,6 +242,14 @@ function buildTabPatch(tab: TabKey, settings: TenantSettings): Record<string, un
       return { channel_overrides: settings.behavior_config.channel_overrides };
     case "generalContext":
       return { general_context: settings.behavior_config.general_context };
+    case "safety":
+      // Never actually reachable -- the safety tab renders its own
+      // add-phrase form (handleSubmit) instead of the tenant-settings
+      // form this function backs, so handleSaveTab/buildTabPatch are
+      // never invoked with tab="safety" in practice. Only here to keep
+      // this switch exhaustive over TabKey; an empty patch is a safe,
+      // inert fallback if that assumption is ever wrong.
+      return {};
   }
 }
 
@@ -224,11 +297,12 @@ function AdditionalContextField({
   return (
     <label className="form__field tenant-settings__fields--full">
       {label}
-      <input
-        type="text"
+      <textarea
         maxLength={500}
         value={value ?? ""}
         onChange={(e) => onChange(e.target.value || null)}
+        onKeyDown={(e) => handleTextareaEnterKey(e, (v) => onChange(v || null))}
+        rows={1}
       />
     </label>
   );
@@ -247,10 +321,16 @@ export default function Settings() {
 
   const [settings, setSettings] = useState<TenantSettings | null>(null);
   const [settingsError, setSettingsError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<TabKey>("closing");
+  // Two independent active tabs, one per column (see LEFT_TAB_ORDER/
+  // RIGHT_TAB_ORDER above) -- each defaults to its own group's first tab.
+  const [activeLeftTab, setActiveLeftTab] = useState<TabKey>(LEFT_TAB_ORDER[0]);
+  const [activeRightTab, setActiveRightTab] = useState<TabKey>(RIGHT_TAB_ORDER[0]);
   // Keyed by tab, not a single shared value -- each tab saves
   // independently, so an in-flight save or a stale error on one tab
-  // must never bleed into another tab's button/message.
+  // must never bleed into another tab's button/message. Shared across
+  // both columns (a TabKey only ever lives in one column at a time, per
+  // LEFT_TAB_ORDER/RIGHT_TAB_ORDER being disjoint), so no per-column
+  // duplication needed here.
   const [savingTab, setSavingTab] = useState<TabKey | null>(null);
   const [saveErrors, setSaveErrors] = useState<Partial<Record<TabKey, string>>>({});
 
@@ -427,44 +507,136 @@ export default function Settings() {
     }
   }
 
-  return (
-    <section className="page">
-      <div className="page__header">
-        <h1>{t("nav.settings")}</h1>
+  // One nav row per column (docs/ROADMAP.md UI polish pass) -- `tabs` is
+  // that column's own slice of the 12 (LEFT_TAB_ORDER/RIGHT_TAB_ORDER),
+  // `active`/`onSelect` are that column's own independent state, so the
+  // two columns' selections never interfere with each other.
+  function renderTabNav(tabs: TabKey[], active: TabKey, onSelect: (tab: TabKey) => void) {
+    return (
+      <div className="tabs" role="tablist">
+        {tabs.map((tab) => {
+          const TabIcon = TAB_ICONS[tab];
+          return (
+            <button
+              key={tab}
+              type="button"
+              role="tab"
+              aria-selected={active === tab}
+              className={`tabs__tab${active === tab ? " tabs__tab--active" : ""}`}
+              onClick={() => onSelect(tab)}
+            >
+              <TabIcon className="tabs__tab-icon" />
+              {t(TAB_TITLE_KEYS[tab])}
+            </button>
+          );
+        })}
       </div>
-      <p className="page__description">{t("pages.settings")}</p>
+    );
+  }
 
-      <div className="settings-columns">
-        <div>
-          <h2>{t("settings.tenantSettings.title")}</h2>
-          {settingsError && (
-            <p className="error-message" role="alert">
-              {settingsError}
-            </p>
-          )}
-          {settings === null && !settingsError && <p>{t("settings.tenantSettings.loading")}</p>}
-          {settings !== null && (
-            <>
-              <div className="tabs" role="tablist">
-                {TAB_ORDER.map((tab) => (
+  // The card for whichever tab is active in a given column -- called
+  // once per column below with that column's own active tab, so the same
+  // icon/title/description/body logic (including the safety-vs-behavior-
+  // form branch) doesn't need to exist twice.
+  function renderTabCard(tab: TabKey) {
+    const TabIcon = TAB_ICONS[tab];
+    return (
+      <div className="card settings-card">
+        <div className="settings-card__header">
+          <span className="settings-card__icon">
+            <TabIcon />
+          </span>
+          <div>
+            <h2 className="settings-card__title">{t(TAB_TITLE_KEYS[tab])}</h2>
+            <p className="settings-card__description">{t(TAB_DESCRIPTION_KEYS[tab])}</p>
+          </div>
+        </div>
+
+        <div className="settings-card__body">
+          {tab === "safety" ? (
+              <>
+                <h3>{t("settings.systemDefaultsTitle")}</h3>
+                <ul className="list">
+                  {SYSTEM_DEFAULT_CATEGORY_KEYS.map((key) => (
+                    <li key={key} className="list__item">
+                      <label>
+                        <input type="checkbox" checked disabled />
+                        {t(`settings.systemDefaultCategories.${key}`)}
+                      </label>
+                    </li>
+                  ))}
+                </ul>
+
+                <h3>{t("settings.tenantPhrasesTitle")}</h3>
+                {error && (
+                  <p className="error-message" role="alert">
+                    {error}
+                  </p>
+                )}
+                {phrases === null && !error && <p>{t("settings.loading")}</p>}
+                {phrases !== null && phrases.length === 0 && (
+                  <div className="empty-state">{t("settings.empty")}</div>
+                )}
+                {phrases !== null && phrases.length > 0 && (
+                  <ul className="list">
+                    {phrases.map((phrase) => (
+                      <li key={phrase.id} className="list__item list__item--with-action">
+                        <span>{phrase.phrase}</span>
+                        <button
+                          type="button"
+                          className="button button--danger"
+                          disabled={deletingId === phrase.id}
+                          onClick={() => void handleDelete(phrase.id)}
+                          aria-label={t("settings.delete")}
+                          title={t("settings.delete")}
+                        >
+                          <TrashIcon />
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+
+                <form className="form" onSubmit={(event) => void handleSubmit(event)}>
+                  <label className="form__field">
+                    {t("settings.newPhrase")}
+                    <input
+                      type="text"
+                      value={newPhrase}
+                      onChange={(e) => setNewPhrase(e.target.value)}
+                      required
+                    />
+                  </label>
                   <button
-                    key={tab}
-                    type="button"
-                    role="tab"
-                    aria-selected={activeTab === tab}
-                    className={`tabs__tab${activeTab === tab ? " tabs__tab--active" : ""}`}
-                    onClick={() => setActiveTab(tab)}
+                    type="submit"
+                    className="button button--primary button--fit"
+                    disabled={submitting}
                   >
-                    {t(TAB_TITLE_KEYS[tab])}
+                    {submitting ? t("settings.adding") : t("settings.add")}
                   </button>
-                ))}
-              </div>
-
-              <form
-                className="form tenant-settings"
-                onSubmit={(event) => void handleSaveTab(activeTab, event)}
-              >
-                {activeTab === "closing" && (
+                  {formError && (
+                    <p className="error-message" role="alert">
+                      {formError}
+                    </p>
+                  )}
+                </form>
+              </>
+            ) : (
+              <>
+                {settingsError && (
+                  <p className="error-message" role="alert">
+                    {settingsError}
+                  </p>
+                )}
+                {settings === null && !settingsError && (
+                  <p>{t("settings.tenantSettings.loading")}</p>
+                )}
+                {settings !== null && (
+                  <form
+                    className="form tenant-settings"
+                    onSubmit={(event) => void handleSaveTab(tab, event)}
+                  >
+                    {tab === "closing" && (
                   <div className="tenant-settings__fields">
                     <label className="form__field">
                       {t("settings.tenantSettings.closingBehavior.closingAction")}
@@ -502,7 +674,7 @@ export default function Settings() {
                   </div>
                 )}
 
-                {activeTab === "greeting" && (
+                {tab === "greeting" && (
                   <div className="tenant-settings__fields">
                     <ToneSelect
                       value={settings.behavior_config.greeting.tone}
@@ -529,7 +701,7 @@ export default function Settings() {
                   </div>
                 )}
 
-                {activeTab === "offTopic" && (
+                {tab === "offTopic" && (
                   <div className="tenant-settings__fields">
                     <ToneSelect
                       value={settings.behavior_config.off_topic.tone}
@@ -546,7 +718,7 @@ export default function Settings() {
                   </div>
                 )}
 
-                {activeTab === "knowledgeQuery" && (
+                {tab === "knowledgeQuery" && (
                   <div className="tenant-settings__fields">
                     <ToneSelect
                       value={settings.behavior_config.knowledge_query.tone}
@@ -599,7 +771,7 @@ export default function Settings() {
                   </div>
                 )}
 
-                {activeTab === "complaint" && (
+                {tab === "complaint" && (
                   <div className="tenant-settings__fields">
                     <label className="form__field form__field--checkbox">
                       <input
@@ -621,7 +793,7 @@ export default function Settings() {
                   </div>
                 )}
 
-                {activeTab === "leadHandling" && (
+                {tab === "leadHandling" && (
                   <div className="tenant-settings__fields">
                     <label className="form__field">
                       {t("settings.tenantSettings.leadHandling.closingActionOverride")}
@@ -681,7 +853,7 @@ export default function Settings() {
                   </div>
                 )}
 
-                {activeTab === "escalationCover" && (
+                {tab === "escalationCover" && (
                   <div className="tenant-settings__fields">
                     <ToneSelect
                       value={settings.behavior_config.escalation_cover.tone}
@@ -698,7 +870,7 @@ export default function Settings() {
                   </div>
                 )}
 
-                {activeTab === "bookOrCheckout" && (
+                {tab === "bookOrCheckout" && (
                   <div className="tenant-settings__fields">
                     <label className="form__field">
                       {t("settings.tenantSettings.bookOrCheckout.ctaStyle")}
@@ -728,7 +900,7 @@ export default function Settings() {
                   </div>
                 )}
 
-                {activeTab === "toolCalling" && (
+                {tab === "toolCalling" && (
                   <div className="tenant-settings__fields">
                     <p className="tenant-settings__fields--full form__hint">
                       {t("settings.tenantSettings.toolCalling.simulatedDataNotice")}
@@ -769,7 +941,7 @@ export default function Settings() {
                   </div>
                 )}
 
-                {activeTab === "channels" && (
+                {tab === "channels" && (
                   <div className="tenant-settings__fields">
                     {CHANNEL_TYPES.map((channel) => {
                       const override = settings.behavior_config.channel_overrides[channel];
@@ -867,15 +1039,18 @@ export default function Settings() {
                   </div>
                 )}
 
-                {activeTab === "generalContext" && (
+                {tab === "generalContext" && (
                   <div className="tenant-settings__fields">
                     <label className="form__field tenant-settings__fields--full">
                       {t("settings.tenantSettings.generalContext.label")}
-                      <input
-                        type="text"
+                      <textarea
                         maxLength={500}
                         value={settings.behavior_config.general_context ?? ""}
                         onChange={(e) => updateGeneralContext(e.target.value || null)}
+                        onKeyDown={(e) =>
+                          handleTextareaEnterKey(e, (v) => updateGeneralContext(v || null))
+                        }
+                        rows={1}
                       />
                     </label>
                   </div>
@@ -884,94 +1059,41 @@ export default function Settings() {
                 <button
                   type="submit"
                   className="button button--primary button--fit"
-                  disabled={savingTab === activeTab}
+                  disabled={savingTab === tab}
                 >
-                  {savingTab === activeTab
+                  {savingTab === tab
                     ? t("settings.tenantSettings.saving")
                     : t("settings.tenantSettings.save")}
                 </button>
-                {saveErrors[activeTab] && (
+                {saveErrors[tab] && (
                   <p className="error-message" role="alert">
-                    {saveErrors[activeTab]}
+                    {saveErrors[tab]}
                   </p>
                 )}
               </form>
-            </>
-          )}
-        </div>
-
-        <div>
-          <h2>{t("settings.safetyTriggersTitle")}</h2>
-
-          <h3>{t("settings.systemDefaultsTitle")}</h3>
-          <div className="card">
-            <ul className="list">
-              {SYSTEM_DEFAULT_CATEGORY_KEYS.map((key) => (
-                <li key={key} className="list__item">
-                  <label>
-                    <input type="checkbox" checked disabled />
-                    {t(`settings.systemDefaultCategories.${key}`)}
-                  </label>
-                </li>
-              ))}
-            </ul>
-          </div>
-
-          <h3>{t("settings.tenantPhrasesTitle")}</h3>
-          {error && (
-            <p className="error-message" role="alert">
-              {error}
-            </p>
-          )}
-          {phrases === null && !error && <p>{t("settings.loading")}</p>}
-          {phrases !== null && phrases.length === 0 && (
-            <div className="empty-state">{t("settings.empty")}</div>
-          )}
-          {phrases !== null && phrases.length > 0 && (
-            <div className="card">
-              <ul className="list">
-                {phrases.map((phrase) => (
-                  <li key={phrase.id} className="list__item list__item--with-action">
-                    <span>{phrase.phrase}</span>
-                    <button
-                      type="button"
-                      className="button button--danger"
-                      disabled={deletingId === phrase.id}
-                      onClick={() => void handleDelete(phrase.id)}
-                      aria-label={t("settings.delete")}
-                      title={t("settings.delete")}
-                    >
-                      <TrashIcon />
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-
-          <form className="form" onSubmit={(event) => void handleSubmit(event)}>
-            <label className="form__field">
-              {t("settings.newPhrase")}
-              <input
-                type="text"
-                value={newPhrase}
-                onChange={(e) => setNewPhrase(e.target.value)}
-                required
-              />
-            </label>
-            <button
-              type="submit"
-              className="button button--primary button--fit"
-              disabled={submitting}
-            >
-              {submitting ? t("settings.adding") : t("settings.add")}
-            </button>
-            {formError && (
-              <p className="error-message" role="alert">
-                {formError}
-              </p>
+                )}
+              </>
             )}
-          </form>
+          </div>
+        </div>
+    );
+  }
+
+  return (
+    <section className="page">
+      <div className="page__header">
+        <h1>{t("nav.settings")}</h1>
+      </div>
+      <p className="page__description">{t("pages.settings")}</p>
+
+      <div className="settings-columns">
+        <div className="settings-column">
+          {renderTabNav(LEFT_TAB_ORDER, activeLeftTab, setActiveLeftTab)}
+          {renderTabCard(activeLeftTab)}
+        </div>
+        <div className="settings-column">
+          {renderTabNav(RIGHT_TAB_ORDER, activeRightTab, setActiveRightTab)}
+          {renderTabCard(activeRightTab)}
         </div>
       </div>
     </section>

@@ -1,5 +1,21 @@
 import { createContext } from "react";
 
+// The rail's quick-filter chips (docs/ROADMAP.md UI polish pass) -- each
+// one a boolean fact already present on Conversation below, not a new
+// backend field. "escalated" reads from escalationByConversationId (a
+// conversation doesn't carry its own escalation state directly), the
+// other two read straight off detected_intent/lead_score.
+//
+// Exclusive, not multi-select (direct instruction): clicking a chip
+// selects only that filter, cancelling out whatever was active before --
+// not a Set of independently-toggled chips ANDed/ORed together.
+export type ConversationFilterKey =
+  | "escalated"
+  | "unescalated"
+  | "hot_lead"
+  | "purchase_intent"
+  | "complaint";
+
 // Latest pipeline_traces row for a message/conversation (docs/ROADMAP.md
 // §3.3/§3.4) -- `decision` is only ever populated per-message
 // (MessageThread/Test Console); the rail's per-conversation row
@@ -68,8 +84,8 @@ export interface ConversationPanelContextValue {
   // than one channel type can be live at once.
   pendingEscalationCountByChannelType: Record<string, number>;
 
-  escalatedOnly: boolean;
-  setEscalatedOnly: (value: boolean) => void;
+  activeFilter: ConversationFilterKey | null;
+  toggleFilter: (key: ConversationFilterKey) => void;
 
   selectedConversationId: string | null;
   selectConversation: (id: string) => void;
