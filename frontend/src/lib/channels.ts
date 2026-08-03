@@ -1,11 +1,29 @@
+import {
+  EmailIcon,
+  FacebookIcon,
+  InstagramIcon,
+  TelegramIcon,
+  WhatsAppIcon,
+} from "../components/icons";
+
 // The one shared source of truth for the five rail channel types --
 // previously duplicated independently in ChannelRail.tsx (CHANNELS,
 // with icon + real), Settings.tsx (CHANNEL_TYPES), and TestConsole.tsx
-// (PLATFORMS, in yet a third order). Icons stay a ChannelRail-only
-// rendering concern, not coupled in here.
+// (PLATFORMS, in yet a third order).
 export const CHANNEL_TYPES = ["telegram", "whatsapp", "facebook", "instagram", "email"] as const;
 
 export type ChannelType = (typeof CHANNEL_TYPES)[number];
+
+// Icons moved in here once ConversationPanel needed the same mapping
+// ChannelRail already had (its own header, next to the platform name) --
+// no longer a ChannelRail-only rendering concern.
+export const CHANNEL_ICONS: Record<ChannelType, typeof TelegramIcon> = {
+  telegram: TelegramIcon,
+  whatsapp: WhatsAppIcon,
+  facebook: FacebookIcon,
+  instagram: InstagramIcon,
+  email: EmailIcon,
+};
 
 // Only Telegram is a real, built integration (app/channels/api.py's real
 // webhook, with actual credentials). The other four are simulated --

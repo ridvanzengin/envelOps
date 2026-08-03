@@ -4,6 +4,8 @@ import { useTranslation } from "react-i18next";
 import type { Conversation, ConversationFilterKey } from "../context/conversationPanel/context";
 import { useConversationPanel } from "../context/conversationPanel/useConversationPanel";
 import { useTick } from "../hooks/useTick";
+import { CHANNEL_ICONS } from "../lib/channels";
+import type { ChannelType } from "../lib/channels";
 import { formatRelativeTime } from "../utils/relativeTime";
 import { DiagnosticsBadges } from "./DiagnosticsBadges";
 import { ChevronLeftIcon, SendIcon } from "./icons";
@@ -184,6 +186,8 @@ export function ConversationPanel() {
     currentPage * CONVERSATIONS_PAGE_SIZE,
   );
 
+  const ChannelIcon = activeChannelType ? CHANNEL_ICONS[activeChannelType as ChannelType] : undefined;
+
   return (
     <aside className="conversation-panel" style={{ width }}>
       <div className="conversation-panel__resize-handle" onMouseDown={handleResizeStart} />
@@ -198,6 +202,7 @@ export function ConversationPanel() {
             <ChevronLeftIcon />
           </button>
         )}
+        {ChannelIcon && <ChannelIcon className="conversation-panel__title-icon" />}
         <span className="conversation-panel__title">
           {selectedConversationId !== null
             ? (selectedConversation?.external_contact_id ?? t(`channelRail.${activeChannelType}`))
