@@ -246,6 +246,33 @@ fixed it. Root cause not fully isolated — treat "commit before invoking,
 don't hold a long-open write transaction across a checkpointed run" as the
 working rule either way.
 
+**Celery worker gotcha, hit and fixed 2026-08-03 — never let a Celery task
+reuse a pooled asyncpg connection across separate `asyncio.run()` calls:**
+`app/pipeline/tasks.py`'s tasks each wrap their body in a fresh
+`asyncio.run(...)` — a new event loop per task invocation, in the same
+long-running warm worker process across many tasks. A connection checked
+out of a normal SQLAlchemy async engine's pool is a real asyncpg
+connection bound to whichever loop was running when it was first opened;
+reused on a later task's new loop, asyncpg raises `RuntimeError: ... got
+Future ... attached to a different loop`, then `InterfaceError: cannot
+perform operation: another operation is in progress` on the next attempt.
+Reproduced directly in isolation (two sequential `asyncio.run()` calls
+against the shared pooled engine, no Celery involved) before touching any
+code, then confirmed the fix the same way. Fix: `app/core/db.py` has a
+second, `NullPool`-backed engine/sessionmaker (`worker_engine`/
+`worker_async_session`) used only by `pipeline/tasks.py` — opens and
+closes a real connection per checkout instead of reusing one across loop
+boundaries, same "accept per-call connect overhead, stay loop-safe"
+tradeoff `app/core/events.py`'s `publish_event()` already made for Redis.
+The FastAPI-facing `engine`/`async_session` stay pooled and untouched —
+uvicorn's one long-lived loop was never affected by this, no reason to
+give up pooling there too. Any *new* async resource shared between
+FastAPI and Celery (a client, an engine, a connection) needs this same
+"is it reused across a fresh `asyncio.run()` boundary" check before
+assuming a module-level singleton is safe — `redis_client.py`'s lazy
+singleton is deliberately FastAPI-only for exactly this reason (see its
+own docstring), and this db.py fix follows the same shape.
+
 **LangGraph gotcha already hit once — never call `resume_pipeline()`/
 `Command(resume=...)` with `None`:** raises `UnboundLocalError:
 resume_is_map` from inside langgraph's own `_loop.py` (`resume_is_map` is
