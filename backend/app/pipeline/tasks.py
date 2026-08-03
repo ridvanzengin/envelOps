@@ -6,6 +6,14 @@ pipeline is async throughout (async DB session, async checkpointer), so
 this bridges via `asyncio.run()` once per task invocation — a standard,
 accepted pattern for running async code inside a sync Celery worker, not a
 workaround.
+
+Uses `app.core.db.worker_async_session` (a NullPool-backed sessionmaker),
+not the plain `async_session` the rest of the app uses — see that name's
+own docstring in db.py. A pooled connection reused across this file's
+separate asyncio.run() calls broke with an asyncpg cross-event-loop error
+(found live 2026-08-03, fixed here); imported under the `async_session`
+name below so the rest of this file, and the existing test suite's patch
+targets, don't need to change.
 """
 
 import asyncio
@@ -19,7 +27,7 @@ from app.conversations.models import Conversation, Message
 from app.conversations.repository import ConversationRepository, MessageRepository
 from app.core.celery_app import celery_app
 from app.core.config import settings
-from app.core.db import async_session
+from app.core.db import worker_async_session as async_session
 from app.core.events import publish_event
 from app.core.llm import generate_text
 from app.pipeline.repository import PipelineTraceRepository

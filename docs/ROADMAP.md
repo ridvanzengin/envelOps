@@ -48,44 +48,17 @@ scope-pivot reasoning. Concretely, right now:
   tenant's actual channels with a **working per-channel AI auto-reply
   on/off switch** (`GET /channels/connected`/`PATCH /channels/{id}`) —
   real channel *creation* is still script-only.
-- All PRs through #47 are merged into `main`, plus the channel AI-toggle
-  work described in the changelog below, not yet merged as of this
-  writing (**check this**: verify the actual PR number/state with `gh pr
-  list`/`gh pr view <N> --json state` rather than trusting this file).
-  Always check `gh pr
-  view <N> --json state` before trusting any specific PR's status — this
-  file goes stale between sessions.
+- All PRs through #47 are merged into `main` (confirmed via `gh pr view
+  47 --json state` 2026-08-03). The Celery worker asyncpg fix below is on
+  its own branch, not yet a PR as of this writing — **check this**:
+  verify the actual PR number/state with `gh pr list`/`gh pr view <N>
+  --json state` rather than trusting this file, which goes stale between
+  sessions.
 
 ## Open items
 
 Real, not yet designed in detail, not currently being worked:
 
-- **Bug, found live 2026-08-03, not yet fixed** — a Celery worker process
-  can only successfully complete its *first* `process_incoming_message`
-  task after starting; every subsequent task in that same warm worker
-  process fails with `RuntimeError: ... got Future ... attached to a
-  different loop` (asyncpg). Root cause: `app/core/db.py`'s async
-  `engine`/`async_session` are module-level singletons (created once,
-  when the module is first imported into the worker process), but
-  `pipeline/tasks.py`'s `process_incoming_message` wraps every task body
-  in a fresh `asyncio.run(...)` call — each call spins up a *new* event
-  loop and tears it down when done. The engine's connection pool holds a
-  pooled asyncpg connection bound to the *first* call's event loop; the
-  *second* call's new loop can't use it. Found by sending two real,
-  separate webhook messages to the same real (non-test) channel a
-  minute apart, with the worker left running in between — the first
-  succeeded, the second failed outright (reply silently never sent; the
-  inbound message itself is still stored, since that commit happens
-  before the task is even dispatched). Restarting the worker between
-  messages "fixes" it, which is itself confirmation of the cause, not a
-  workaround to rely on. **Not yet designed**: likely fix direction is
-  either creating the engine fresh per task (defeats connection pooling)
-  or restructuring so the pool isn't torn down/recreated across
-  `asyncio.run()` boundaries (e.g. one long-lived loop per worker process
-  instead of one `asyncio.run()` per task) — needs its own look before
-  picking, not a same-session guess. Same root-cause shape would affect
-  `follow_up_check` too, though it's less likely to fire twice against a
-  single warm worker in practice given its 30-minute cadence.
 - **Minor, not urgent**: ~10–15s per Test Console send (up to several
   sequential Gemini calls, none parallelized — `search_knowledge` doesn't
   actually depend on `understand_intent`'s output, so parallelizing those
@@ -122,6 +95,42 @@ auto-send + safety-floor-escalation-only gate (ARCHITECTURE §5) stays
 final, not provisional.
 
 ## Changelog
+
+**2026-08-03, later same day** — Fixed the Celery worker asyncpg
+cross-event-loop bug (found live during PR #47, filed not fixed there —
+see that PR's own write-up) on its own branch/session as planned
+(`fix/celery-asyncpg-event-loop`). Root cause confirmed
+by isolated repro first (two sequential `asyncio.run()` calls against the
+shared pooled engine, outside Celery entirely): the second call reliably
+raised the same `RuntimeError: ... attached to a different loop`, then an
+`InterfaceError` on the third — reproducing the exact live symptom before
+touching any code. Fix: `app/core/db.py` now exposes a second,
+`NullPool`-backed engine/sessionmaker (`worker_engine`/
+`worker_async_session`) used only by `app/pipeline/tasks.py` (imported
+under the existing `async_session` name so the rest of that file, and the
+existing test suite's `patch("app.pipeline.tasks.async_session", ...)`
+targets, didn't need to change) — NullPool opens/closes a real connection
+per checkout instead of reusing one across event-loop boundaries, the same
+"accept per-call connect overhead, stay loop-safe" tradeoff
+`app/core/events.py`'s `publish_event()` already made for Redis. The
+FastAPI-facing `engine`/`async_session` stay pooled, unchanged — uvicorn's
+one long-lived loop was never actually affected by this bug, so there was
+no reason to give up pooling there too. Verified, not just reasoned
+through: the isolated repro script passed cleanly post-fix (3/3 calls
+succeeded); `pytest -q` (317 passed), `ruff check`, `mypy` all clean; then
+a live end-to-end pass against the real docker-compose stack — worker
+restarted for a clean warm process, 20 real webhook POSTs fired at a real
+simulated Instagram channel in quick succession (deliberately more than
+the worker's prefork concurrency of 11, to force multiple tasks onto the
+same child process, matching the original failure shape) — zero
+`different loop`/`InterfaceError` occurrences in worker logs across all
+20. (Incidentally tripped the tenant's Gemini free-tier per-minute quota
+from the burst — expected, unrelated, self-recovered; verification
+conversations/messages/leads/traces cleaned up from the DB afterward
+rather than left as noise on a real tenant.) `follow_up_check` shares the
+same fix since it also now runs under `worker_async_session`, though its
+30-minute cadence made it unlikely to double-fire against one warm process
+in practice either way.
 
 **2026-07-28** — Conversation rail intent/lead-score badges; per-message
 pipeline diagnostics in Test Console.
