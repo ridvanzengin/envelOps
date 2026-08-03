@@ -45,13 +45,24 @@
   box-shadow: var(--shadow-sm);
 }
 
+/* One shared gap value for every direction -- section-to-section
+   (vertical) and card-to-card within a row (horizontal) are both 16px,
+   on purpose (direct instruction: vertical must equal horizontal, not
+   just "look close"). A single flex column here is what guarantees it;
+   before this, each section set its own margin-bottom independently and
+   they drifted (20px/16px) from the 16px row gap. */
+.dashboard__sections {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
 /* Stat-tile KPI row -- same auto-fit grid shape as
    .knowledge-sources__stats, five tiles instead of three. */
 .dashboard__stats {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 16px;
-  margin-bottom: 20px;
 }
 
 .dashboard-stat-tile {
@@ -121,12 +132,13 @@
   flex-shrink: 0;
 }
 
-/* Two-up panel rows -- chart+intent breakdown, then channels+knowledge. */
+/* Two-up panel rows -- chart+intent breakdown, then channels+knowledge.
+   Equal-width columns (direct instruction) -- both cards in a row carry
+   the same visual weight, not chart-dominant/sidebar-style. */
 .dashboard__row {
   display: grid;
-  grid-template-columns: 2fr 1fr;
+  grid-template-columns: 1fr 1fr;
   gap: 16px;
-  margin-bottom: 16px;
 }
 
 @media (max-width: 900px) {
@@ -213,26 +225,96 @@
   font-size: 14px;
 }
 
-/* Ranked bar list ("conversations by intent") -- single accent hue, not
-   a categorical palette; identity comes from the row label, see
-   IntentBarList.tsx's own comment for why. */
-.dashboard-bar-list {
+/* Dedicated categorical palette for the intent donut only -- see
+   DonutChart.tsx's own comment for why this isn't the app's existing
+   status tokens. Values are the dataviz skill's documented reference
+   palette, slots 1-5 (references/palette.md): blue/orange/aqua/yellow/
+   magenta, each with its dark-mode step. Declared at both scopes the
+   same way index.css's own tokens are (this app's ThemeContext stamps
+   data-theme on <html>, no OS-media-query path needed here since every
+   other token in this app follows the same convention). */
+:root {
+  --dashboard-chart-1: #3987e5;
+  --dashboard-chart-2: #d95926;
+  --dashboard-chart-3: #199e70;
+  --dashboard-chart-4: #c98500;
+  --dashboard-chart-5: #d55181;
+}
+
+:root[data-theme="light"] {
+  --dashboard-chart-1: #2a78d6;
+  --dashboard-chart-2: #eb6834;
+  --dashboard-chart-3: #1baf7a;
+  --dashboard-chart-4: #eda100;
+  --dashboard-chart-5: #e87ba4;
+}
+
+.dashboard-donut {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+
+.dashboard-donut__chart {
+  position: relative;
+  flex-shrink: 0;
+  width: 176px;
+  height: 176px;
+}
+
+.dashboard-donut__svg {
+  width: 100%;
+  height: 100%;
+}
+
+.dashboard-donut__center {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.dashboard-donut__center-value {
+  font-size: 24px;
+  font-weight: 600;
+  color: var(--text-h);
+  font-variant-numeric: proportional-nums;
+}
+
+.dashboard-donut__center-label {
+  font-size: 12px;
+  color: var(--text);
+}
+
+.dashboard-donut__legend {
   list-style: none;
   margin: 0;
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 12px;
-}
-
-.dashboard-bar-list__row {
-  display: grid;
-  grid-template-columns: 100px 1fr 70px;
-  align-items: center;
   gap: 10px;
+  flex: 1;
+  min-width: 160px;
 }
 
-.dashboard-bar-list__label {
+.dashboard-donut__legend-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.dashboard-donut__legend-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  flex-shrink: 0;
+}
+
+.dashboard-donut__legend-label {
+  flex: 1;
   font-size: 13px;
   color: var(--text-h);
   overflow: hidden;
@@ -240,28 +322,16 @@
   white-space: nowrap;
 }
 
-.dashboard-bar-list__track {
-  height: 8px;
-  background: var(--bg-subtle);
-  border-radius: 4px;
-  overflow: hidden;
-}
-
-.dashboard-bar-list__bar {
-  height: 100%;
-  background: var(--accent);
-  border-radius: 4px;
-}
-
-.dashboard-bar-list__value {
+.dashboard-donut__legend-value {
   font-size: 13px;
   font-weight: 600;
   color: var(--text-h);
   text-align: right;
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
-.dashboard-bar-list__count {
+.dashboard-donut__legend-count {
   font-weight: 400;
   color: var(--text);
 }
@@ -328,79 +398,4 @@
 .dashboard__knowledge-row-meta {
   font-size: 12px;
   color: var(--text);
-}
-
-.dashboard__escalation-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-
-.dashboard__escalation-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  width: 100%;
-  padding: 10px 4px;
-  border: none;
-  border-bottom: 1px solid var(--border);
-  background: transparent;
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-
-.dashboard__escalation-list li:last-child .dashboard__escalation-row {
-  border-bottom: none;
-}
-
-.dashboard__escalation-row:hover {
-  background: var(--bg-subtle);
-}
-
-.dashboard__escalation-icon {
-  width: 16px;
-  height: 16px;
-  flex-shrink: 0;
-  color: var(--text);
-}
-
-.dashboard__escalation-reason {
-  flex: 1;
-  font-size: 13px;
-  color: var(--text-h);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.dashboard__escalation-status {
-  font-size: 10px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
-  padding: 1px 7px;
-  border-radius: 999px;
-  border: 1px solid var(--border);
-  background: var(--bg-subtle);
-  color: var(--text);
-  flex-shrink: 0;
-}
-
-.dashboard__escalation-status--pending {
-  background: var(--danger-bg);
-  color: var(--danger);
-  border-color: var(--danger);
-}
-
-.dashboard__escalation-status--resolved {
-  background: var(--success-bg);
-  color: var(--success);
-  border-color: var(--success);
-}
-
-.dashboard__escalation-time {
-  font-size: 12px;
-  color: var(--text);
-  flex-shrink: 0;
 }

@@ -8,8 +8,7 @@
   "pages": {
     "knowledge": "Add (URL/PDF/manual), list, and refresh knowledge sources.",
     "testConsole": "Send a test message through the real pipeline on any platform, to compare how replies differ by channel.",
-    "settings": "AI behavior, business settings, and safety trigger phrases, organized by tab. Channel connection status isn't shown here yet.",
-    "dashboard": "Leads today, escalations today, response times."
+    "settings": "AI behavior, business settings, and safety trigger phrases, organized by tab. Channel connection status isn't shown here yet."
   },
   "theme": {
     "light": "Light theme",
@@ -291,31 +290,25 @@
     "rangeDays": "{{count}} days",
     "loading": "Loading…",
     "loadError": "Couldn't load dashboard data. Try again.",
-    "statConversations": "Total conversations",
-    "statMessages": "Messages sent",
-    "statHotLeads": "Hot leads",
+    "statConversations": "Total Conversations",
+    "statMessages": "Messages Sent",
+    "statHotLeads": "Hot Leads",
     "statEscalated": "Escalated",
-    "statResponseTime": "Avg. response time",
+    "statResponseTime": "Avg. Response Time",
     "minutes": "{{count}}m",
     "underAMinute": "<1m",
-    "conversationsOverTime": "Conversations over time",
-    "conversationsByIntent": "Conversations by intent",
+    "conversationsOverTime": "Conversations Over Time",
+    "conversationsByIntent": "Conversations By Intent",
     "noIntentData": "No classified conversations yet in this range.",
-    "topChannels": "Top channels",
+    "topChannels": "Top Channels",
     "channel": "Channel",
     "conversations": "Conversations",
     "resolutionRate": "Resolution rate",
     "noChannelData": "No conversations yet in this range.",
-    "knowledgeStatus": "Knowledge base status",
+    "knowledgeStatus": "Knowledge Base Status",
     "sources": "Sources",
     "chunks": "Chunks",
     "chunkCount": "{{count}} chunks",
-    "noKnowledgeSources": "No knowledge sources yet.",
-    "recentEscalations": "Recent escalations",
-    "noEscalations": "No escalations yet.",
-    "escalationStatus": {
-      "pending": "Escalated",
-      "resolved": "Resolved"
-    }
+    "noKnowledgeSources": "No knowledge sources yet."
   }
 }

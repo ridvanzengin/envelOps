@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 
 import { apiGet, ApiError } from "../api/client";
 import { useAuth } from "../auth/useAuth";
-import { IntentBarList } from "../components/dashboard/IntentBarList";
+import { DonutChart } from "../components/dashboard/DonutChart";
 import { StatTile } from "../components/dashboard/StatTile";
 import { TrendChart } from "../components/dashboard/TrendChart";
 import {
@@ -18,7 +18,6 @@ import {
   TelegramIcon,
   WhatsAppIcon,
 } from "../components/icons";
-import { useConversationPanel } from "../context/conversationPanel/useConversationPanel";
 import { formatRelativeTime } from "../utils/relativeTime";
 import "./Dashboard.css";
 
@@ -92,7 +91,6 @@ function sourceTitle(source: KnowledgeSource): string {
 export default function Dashboard() {
   const { t, i18n } = useTranslation();
   const { token, logout } = useAuth();
-  const { escalationById, openPanel, selectConversation } = useConversationPanel();
 
   const [days, setDays] = useState<RangeDays>(30);
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
@@ -123,18 +121,6 @@ export default function Dashboard() {
       .catch(() => setKnowledgeSources([]));
   }, [token]);
 
-  // Already loaded at the app-shell level (ConversationPanelProvider,
-  // App.tsx) -- no second fetch, same "correlate client-side from data
-  // already there" pattern docs/ARCHITECTURE.md §10 already uses for the
-  // rail's own escalation badges.
-  const recentEscalations = useMemo(
-    () =>
-      Array.from(escalationById.values())
-        .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
-        .slice(0, 5),
-    [escalationById],
-  );
-
   const knowledgeStats = useMemo(() => {
     if (!knowledgeSources) return null;
     const totalChunks = knowledgeSources.reduce((sum, source) => sum + source.chunk_count, 0);
@@ -153,11 +139,6 @@ export default function Dashboard() {
       month: "short",
       day: "numeric",
     });
-  }
-
-  function goToEscalation(conversationId: string, channelType: string) {
-    openPanel(channelType);
-    selectConversation(conversationId);
   }
 
   return (
@@ -181,7 +162,6 @@ export default function Dashboard() {
           ))}
         </div>
       </div>
-      <p className="page__description">{t("pages.dashboard")}</p>
 
       {summaryError && (
         <p className="error-message" role="alert">
@@ -191,7 +171,7 @@ export default function Dashboard() {
       {summary === null && !summaryError && <p>{t("dashboard.loading")}</p>}
 
       {summary && (
-        <>
+        <div className="dashboard__sections">
           <div className="dashboard__stats">
             <StatTile
               label={t("dashboard.statConversations")}
@@ -235,14 +215,14 @@ export default function Dashboard() {
           </div>
 
           <div className="dashboard__row">
-            <div className="card dashboard__panel dashboard__panel--wide">
+            <div className="card dashboard__panel">
               <h2>{t("dashboard.conversationsOverTime")}</h2>
               <TrendChart points={summary.conversations_trend} formatDate={formatDate} />
             </div>
             <div className="card dashboard__panel">
               <h2>{t("dashboard.conversationsByIntent")}</h2>
               {summary.intent_breakdown.length > 0 ? (
-                <IntentBarList
+                <DonutChart
                   items={summary.intent_breakdown}
                   labelFor={(intent) => t(`diagnostics.intent.${intent}`, intent)}
                 />
@@ -337,42 +317,7 @@ export default function Dashboard() {
               )}
             </div>
           </div>
-
-          <div className="card dashboard__panel">
-            <h2>{t("dashboard.recentEscalations")}</h2>
-            {recentEscalations.length > 0 ? (
-              <ul className="dashboard__escalation-list">
-                {recentEscalations.map((escalation) => {
-                  const Icon = CHANNEL_ICONS[escalation.channel_type];
-                  return (
-                    <li key={escalation.id}>
-                      <button
-                        type="button"
-                        className="dashboard__escalation-row"
-                        onClick={() =>
-                          goToEscalation(escalation.conversation_id, escalation.channel_type)
-                        }
-                      >
-                        {Icon && <Icon className="dashboard__escalation-icon" />}
-                        <span className="dashboard__escalation-reason">{escalation.reason}</span>
-                        <span
-                          className={`dashboard__escalation-status dashboard__escalation-status--${escalation.status}`}
-                        >
-                          {t(`dashboard.escalationStatus.${escalation.status}`, escalation.status)}
-                        </span>
-                        <span className="dashboard__escalation-time">
-                          {formatRelativeTime(escalation.created_at, i18n.language, t("time.justNow"))}
-                        </span>
-                      </button>
-                    </li>
-                  );
-                })}
-              </ul>
-            ) : (
-              <div className="empty-state">{t("dashboard.noEscalations")}</div>
-            )}
-          </div>
-        </>
+        </div>
       )}
     </section>
   );
