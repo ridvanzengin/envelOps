@@ -160,8 +160,15 @@
 }
 
 .dashboard-trend-chart__svg {
+  /* Width/height attributes on the element itself now track the
+     container's real pixel size (via ResizeObserver, TrendChart.tsx) --
+     display:block + width:100% here is just normal layout, not a scale
+     transform, since the measured width and 100% of this container are
+     the same value by construction. No more height:auto viewBox-ratio
+     trick, which was scaling text/strokes down along with everything
+     else on a narrower card. */
+  display: block;
   width: 100%;
-  height: auto;
   overflow: visible;
   touch-action: none;
 }

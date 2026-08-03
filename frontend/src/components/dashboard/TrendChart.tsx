@@ -1,13 +1,16 @@
-import { useMemo, useState } from "react";
+import { useLayoutEffect, useMemo, useRef, useState } from "react";
 
 interface TrendPoint {
   date: string;
   count: number;
 }
 
-const WIDTH = 720;
 const HEIGHT = 220;
 const PADDING = { top: 16, right: 16, bottom: 28, left: 40 };
+// Only used for the very first render, before the ResizeObserver below
+// has measured the real container -- close to a typical half-row card
+// width so there's no visible jump once the real value lands.
+const FALLBACK_WIDTH = 560;
 
 function niceMax(value: number): number {
   if (value <= 0) return 4;
@@ -21,6 +24,20 @@ function niceMax(value: number): number {
 // soft area wash (dataviz skill: single series needs no legend, hairline
 // recessive grid, crosshair+tooltip hover, an sr-only table twin so the
 // data isn't color/hover-only).
+//
+// The SVG's viewBox tracks the container's *real* pixel width via
+// ResizeObserver, rather than staying at one fixed width and letting CSS
+// (width:100%) scale it down to fit a narrower card. That original
+// approach scaled the whole coordinate system, including things
+// specified as plain numbers inside the SVG -- stroke widths, dot radii,
+// and (worst of all) text font-size, which has no CSS-pixel floor the
+// way HTML text does. On a narrower card (small-screen layout, not yet
+// mobile) an "11px" axis label was actually rendering at ~5 real pixels,
+// found live. Keeping the viewBox's width equal to the actual rendered
+// width makes the scale factor exactly 1, so every mark spec (2px line,
+// 11px tick labels) stays true to its real pixel size regardless of how
+// narrow the card gets -- only the plotted width (point spacing)
+// adapts, height stays fixed.
 export function TrendChart({
   points,
   formatDate,
@@ -28,9 +45,22 @@ export function TrendChart({
   points: TrendPoint[];
   formatDate: (isoDate: string) => string;
 }) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [width, setWidth] = useState(FALLBACK_WIDTH);
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
 
-  const plotWidth = WIDTH - PADDING.left - PADDING.right;
+  useLayoutEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const observer = new ResizeObserver((entries) => {
+      const measured = entries[0]?.contentRect.width;
+      if (measured && measured > 0) setWidth(measured);
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
+  const plotWidth = width - PADDING.left - PADDING.right;
   const plotHeight = HEIGHT - PADDING.top - PADDING.bottom;
   const maxValue = useMemo(() => niceMax(Math.max(...points.map((p) => p.count), 0)), [points]);
   const stepX = points.length > 1 ? plotWidth / (points.length - 1) : 0;
@@ -46,13 +76,15 @@ export function TrendChart({
   const areaPoints = `${xFor(0)},${yFor(0)} ${linePoints} ${xFor(points.length - 1)},${yFor(0)}`;
 
   const yTicks = [0, maxValue / 2, maxValue];
-  // Thin out x-axis labels so they never collide -- roughly 6 labels
-  // regardless of a 7/30/90-day range.
-  const labelEvery = Math.max(1, Math.ceil(points.length / 6));
+  // Thin out x-axis labels so they never collide -- roughly one label
+  // per 80px of real plotted width, regardless of a 7/30/90-day range or
+  // how narrow the card is.
+  const targetLabelCount = Math.max(2, Math.floor(plotWidth / 80));
+  const labelEvery = Math.max(1, Math.ceil(points.length / targetLabelCount));
 
   function handleMove(event: React.PointerEvent<SVGSVGElement>) {
     const rect = event.currentTarget.getBoundingClientRect();
-    const relativeX = ((event.clientX - rect.left) / rect.width) * WIDTH;
+    const relativeX = ((event.clientX - rect.left) / rect.width) * width;
     const index = Math.round((relativeX - PADDING.left) / (stepX || 1));
     setHoverIndex(Math.min(Math.max(index, 0), points.length - 1));
   }
@@ -60,9 +92,11 @@ export function TrendChart({
   const hovered = hoverIndex !== null ? points[hoverIndex] : null;
 
   return (
-    <div className="dashboard-trend-chart">
+    <div className="dashboard-trend-chart" ref={containerRef}>
       <svg
-        viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
+        viewBox={`0 0 ${width} ${HEIGHT}`}
+        width={width}
+        height={HEIGHT}
         className="dashboard-trend-chart__svg"
         role="img"
         aria-label="Conversations over time"
@@ -73,7 +107,7 @@ export function TrendChart({
           <g key={tick}>
             <line
               x1={PADDING.left}
-              x2={WIDTH - PADDING.right}
+              x2={width - PADDING.right}
               y1={yFor(tick)}
               y2={yFor(tick)}
               className="dashboard-trend-chart__gridline"
@@ -123,7 +157,7 @@ export function TrendChart({
       {hovered && (
         <div
           className="dashboard-trend-chart__tooltip"
-          style={{ left: `${(xFor(hoverIndex ?? 0) / WIDTH) * 100}%` }}
+          style={{ left: `${(xFor(hoverIndex ?? 0) / width) * 100}%` }}
         >
           <strong>{hovered.count.toLocaleString()}</strong>
           <span>{formatDate(hovered.date)}</span>
