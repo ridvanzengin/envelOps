@@ -204,7 +204,7 @@ export function ChannelRail() {
             aria-pressed={isActive}
             onClick={() => (isActive ? closePanel() : openPanel(key))}
           >
-            <ChannelIcon className="channel-rail__svg" />
+            <ChannelIcon className="channel-rail__svg channel-rail__svg--channel" />
             {badgeCount > 0 && <span className="channel-rail__badge">{badgeCount}</span>}
           </button>
         );
