@@ -42,13 +42,17 @@ scope-pivot reasoning. Concretely, right now:
 - The Dashboard page is real now (stats/trend/donut intent breakdown/
   channels table/knowledge status, all live tenant data) — no more open
   items carried in this file as of PR #46.
-- Channels and Integrations are new nav pages, both static previews with
-  no backend behind them — real per-tenant channel data and real
-  e-commerce connectors both stay out of scope, unchanged by their
-  existence (ARCHITECTURE §10/§12).
-- All PRs through #46 are merged into `main` (**check this**: PR #46 may
-  still be open when this line is read — verify with `gh pr view 46
-  --json state` rather than trusting this file). Always check `gh pr
+- Channels and Integrations are new nav pages. Integrations stays a
+  static preview, no backend — real e-commerce connectors stay out of
+  scope (ARCHITECTURE §12). Channels is now partly real: it lists the
+  tenant's actual channels with a **working per-channel AI auto-reply
+  on/off switch** (`GET /channels/connected`/`PATCH /channels/{id}`) —
+  real channel *creation* is still script-only.
+- All PRs through #47 are merged into `main`, plus the channel AI-toggle
+  work described in the changelog below, not yet merged as of this
+  writing (**check this**: verify the actual PR number/state with `gh pr
+  list`/`gh pr view <N> --json state` rather than trusting this file).
+  Always check `gh pr
   view <N> --json state` before trusting any specific PR's status — this
   file goes stale between sessions.
 
@@ -56,6 +60,32 @@ scope-pivot reasoning. Concretely, right now:
 
 Real, not yet designed in detail, not currently being worked:
 
+- **Bug, found live 2026-08-03, not yet fixed** — a Celery worker process
+  can only successfully complete its *first* `process_incoming_message`
+  task after starting; every subsequent task in that same warm worker
+  process fails with `RuntimeError: ... got Future ... attached to a
+  different loop` (asyncpg). Root cause: `app/core/db.py`'s async
+  `engine`/`async_session` are module-level singletons (created once,
+  when the module is first imported into the worker process), but
+  `pipeline/tasks.py`'s `process_incoming_message` wraps every task body
+  in a fresh `asyncio.run(...)` call — each call spins up a *new* event
+  loop and tears it down when done. The engine's connection pool holds a
+  pooled asyncpg connection bound to the *first* call's event loop; the
+  *second* call's new loop can't use it. Found by sending two real,
+  separate webhook messages to the same real (non-test) channel a
+  minute apart, with the worker left running in between — the first
+  succeeded, the second failed outright (reply silently never sent; the
+  inbound message itself is still stored, since that commit happens
+  before the task is even dispatched). Restarting the worker between
+  messages "fixes" it, which is itself confirmation of the cause, not a
+  workaround to rely on. **Not yet designed**: likely fix direction is
+  either creating the engine fresh per task (defeats connection pooling)
+  or restructuring so the pool isn't torn down/recreated across
+  `asyncio.run()` boundaries (e.g. one long-lived loop per worker process
+  instead of one `asyncio.run()` per task) — needs its own look before
+  picking, not a same-session guess. Same root-cause shape would affect
+  `follow_up_check` too, though it's less likely to fire twice against a
+  single warm worker in practice given its 30-minute cadence.
 - **Minor, not urgent**: ~10–15s per Test Console send (up to several
   sequential Gemini calls, none parallelized — `search_knowledge` doesn't
   actually depend on `understand_intent`'s output, so parallelizing those
@@ -186,6 +216,22 @@ tooltip. No fabricated numbers on either page — same rule as the
 Dashboard build; the reference mockups' invented stats (active
 conversation counts, satisfaction scores, sync timestamps) were dropped
 entirely rather than faked.
+
+**2026-08-03, same day** — Channels' "AI status" column made real: a
+per-channel auto-reply on/off switch, backed by a new
+`Channel.ai_enabled` column (migration, default on for every channel) and
+two new endpoints (`GET /channels/connected`, `PATCH /channels/{id}`).
+Deliberately gated where the pipeline turns a result into a customer-
+facing reply (`app/pipeline/tasks.py`'s `_process_incoming_message` and
+`_send_follow_up`), not before the pipeline runs — intent/lead-score/
+escalation keep getting computed and logged either way, confirmed
+directly with the user; only the actual send is suppressed. A
+conceptual cousin of the cancelled per-conversation "human-paused
+conversations" idea, but narrower (channel-wide, no human-send
+capability) and not a reversal of that cancellation. `GET /channels`
+deliberately isn't the bare collection-root route — `/channels` is also
+a frontend page route now, so the endpoint lives at `/channels/connected`
+instead, same fix `/knowledge/sources` already applies for `/knowledge`.
 
 ---
 

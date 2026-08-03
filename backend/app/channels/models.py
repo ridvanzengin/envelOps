@@ -40,3 +40,14 @@ class Channel(Base, TenantScopedMixin):
     # the right tenant/channel; this is what proves the call really came
     # from Telegram, not just someone who guessed a UUID.
     webhook_secret: Mapped[str | None] = mapped_column(nullable=True)
+    # Real on/off switch (Channels page, 2026-08-03) -- the pipeline still
+    # runs in full either way (intent/lead-score/escalation keep getting
+    # computed and logged); this only gates whether the resulting reply
+    # actually becomes a customer-facing outbound Message
+    # (app/pipeline/tasks.py's _process_incoming_message), and whether
+    # the periodic follow-up job (_send_follow_up) sends its nudge.
+    # Deliberately a separate field from `status` above, not a new value
+    # of it -- `status` is reserved for connection health (currently
+    # unread anywhere in the codebase), a different concern from "should
+    # the AI reply here."
+    ai_enabled: Mapped[bool] = mapped_column(nullable=False, default=True)

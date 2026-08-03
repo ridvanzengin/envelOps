@@ -1,8 +1,10 @@
 import uuid
 
 from fastapi import APIRouter, Depends, Header, HTTPException, status
+from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.auth.dependencies import CurrentUser, get_current_user
 from app.channels.models import Channel
 from app.channels.repository import ChannelRepository
 from app.channels.simulated_client import (
@@ -18,6 +20,61 @@ from app.core.events import publish_event
 from app.pipeline.tasks import process_incoming_message
 
 router = APIRouter(prefix="/channels", tags=["channels"])
+
+
+class ChannelResponse(BaseModel):
+    id: uuid.UUID
+    type: str
+    status: str
+    ai_enabled: bool
+
+    model_config = {"from_attributes": True}
+
+
+class UpdateChannelAIRequest(BaseModel):
+    ai_enabled: bool
+
+
+@router.get("/connected")
+async def list_channels(
+    current_user: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> list[ChannelResponse]:
+    """The Channels page's real channel list -- Test Console channels
+    excluded (ChannelRepository.list_non_test), since those are a
+    separate, always-manual mechanism, not something this page manages.
+    Deliberately not a bare `GET /channels` -- `/channels` is also a real
+    frontend page route (Channels.tsx), and a bare collection-root GET
+    here would need the same page-route/proxy collision workaround
+    `/knowledge` already hit once (frontend/vite.config.ts's own
+    comment); `/knowledge/sources` sidesteps it the same way this does."""
+    channel_repo = ChannelRepository(session)
+    channels = await channel_repo.list_non_test(current_user.tenant_id)
+    return [ChannelResponse.model_validate(channel) for channel in channels]
+
+
+@router.patch("/{channel_id}")
+async def update_channel_ai(
+    channel_id: uuid.UUID,
+    body: UpdateChannelAIRequest,
+    current_user: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> ChannelResponse:
+    """The Channels page's AI on/off switch -- direct field mutation +
+    commit, the same shape resolve_escalation (app/escalation/api.py)
+    already uses for a single-field status change, not a new pattern.
+    Takes effect at the two places that actually turn a pipeline result
+    into a customer-facing message (app/pipeline/tasks.py's
+    _process_incoming_message and _send_follow_up) -- the pipeline itself
+    keeps running either way, only the send is gated."""
+    channel_repo = ChannelRepository(session)
+    channel = await channel_repo.get(current_user.tenant_id, channel_id)
+    if channel is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "channel not found")
+
+    channel.ai_enabled = body.ai_enabled
+    await session.commit()
+    return ChannelResponse.model_validate(channel)
 
 # All 4 simulated channels (Instagram/WhatsApp/Facebook/Email) check one
 # uniform, EnvelOps-owned secret header -- not each real platform's own

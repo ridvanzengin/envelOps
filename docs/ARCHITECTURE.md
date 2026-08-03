@@ -442,8 +442,16 @@ per domain module, matching the `api.py` per module convention. `/test`
 (`app/test_console/api.py`) and `/events` (`app/events/api.py`, SSE live
 updates) are both exceptions with no `models.py`/`repository.py` of their
 own — `/test` reuses `Channel`/`Conversation`/`Message` as-is (§8),
-`/events` has no DB table at all. `/channels` now has five real routes
-(one webhook per channel type, §8), not just Telegram's.
+`/events` has no DB table at all. `/channels` now has five real webhook
+routes (one per channel type, §8), plus (2026-08-03) real management
+routes: `GET /channels/connected` (the tenant's non-test channels) and
+`PATCH /channels/{id}` (currently one field, `ai_enabled` — the Channels
+page's on/off switch, §10). `GET` deliberately isn't the bare
+`GET /channels` collection root — `/channels` is also a frontend page
+route (Channels.tsx), and a bare GET there hits the same page-route/proxy
+collision `/knowledge` already worked around once (`frontend/vite.config.ts`'s
+own comment) — `/connected` sidesteps it the same way `/knowledge/sources`
+does for `/knowledge`.
 
 **`/tenants`** (`app/tenants/api.py`, added 2026-07-30 — missing from
 this list until this housekeeping pass): `GET`/`PATCH /tenants/settings`,
@@ -500,9 +508,10 @@ list-then-fetch-per-row" reasoning as `KnowledgeSourceRepository.
 list_with_chunk_counts`) and `GET /conversations/{id}/messages` (full
 thread, oldest first).
 
-Still empty routers, wired into `main.py` but with nothing behind them:
-`/channels` (besides its five webhooks, §8 — still no channel-management
-CRUD), `/leads`, `/dashboard`.
+Still an empty router, wired into `main.py` but with nothing behind it:
+`/leads`. `/dashboard` is real now (§10) and `/channels` gained its own
+real (if still partial — no create/delete, just list + the AI toggle)
+management routes above, so neither belongs in this list anymore.
 
 ## 10. Frontend screens (Phase 1)
 
@@ -615,30 +624,41 @@ isn't repeated here.
   `app/dashboard/`), no longer a placeholder: stat tiles (conversations,
   messages, hot leads, escalations, avg response time — REQUIREMENTS §9's
   original "leads today, escalations today, response times" list),
-  a daily trend chart, a conversations-by-intent breakdown, a per-channel
-  resolution-rate table, knowledge base status, and recent escalations
-  (deep-links into the conversation panel on click). One unified view,
-  not the two-audience (builder/owner) split originally scoped — see
+  a daily trend chart, a conversations-by-intent donut breakdown, and a
+  per-channel resolution-rate table. Knowledge base status reuses the
+  existing `/knowledge/sources` endpoint rather than its own; a Recent
+  Escalations card was built and then removed again same-session (direct
+  feedback), so it's not part of the shipped page. One unified view, not
+  the two-audience (builder/owner) split originally scoped — see
   REQUIREMENTS §9 for why that held up fine at this project's data
   volumes. Every chart is hand-rolled SVG, no new frontend dependency —
   `frontend/src/components/dashboard/`.
 - **Channels** and **Integrations** (2026-08-03, `frontend/src/pages/
-  Channels.tsx`/`Integrations.tsx`) — two new nav items, both
-  **deliberately static previews, no backend behind either one.**
-  Channels lists the five real `CHANNEL_TYPES` with their real
-  Real/Simulated fact (`isRealChannel()`, the same one `ChannelRail.tsx`
-  already shows) and a static "Auto-reply: Always on" label (this app has
-  no per-channel-type AI on/off switch to wire up); Integrations lists
-  Shopify/WooCommerce/BigCommerce/Magento/PrestaShop, every row
-  permanently "Not connected." "Add channel"/"Test all channels"/
-  "Configure"/"Connect" all render disabled with a "coming soon" tooltip
-  — real channel creation stays script-only (§8), and real e-commerce
-  connectors stay exactly as cancelled as §12 already has them. **Adding
-  these nav items does not reverse that cancellation** — flagged
-  explicitly so the nav item's mere existence is never read as evidence
-  the decision changed; re-litigate §12 directly if it ever should.
-  Neither page fabricates a number anywhere (no message/conversation/
-  satisfaction/sync counts) — same rule the Dashboard build settled on.
+  Channels.tsx`/`Integrations.tsx`) — two new nav items, shipped as
+  static previews and then partly made real the same day:
+  - **Integrations** stays a deliberate static preview, no backend at
+    all — Shopify/WooCommerce/BigCommerce/Magento/PrestaShop, every row
+    permanently "Not connected," "Connect" disabled with a "coming soon"
+    tooltip. Real e-commerce connectors stay exactly as cancelled as §12
+    already has them — **this page does not reverse that decision**,
+    flagged explicitly so its mere existence is never read as evidence
+    the decision changed; re-litigate §12 directly if it ever should.
+  - **Channels** is now partly real: it lists the tenant's actual
+    channels (`GET /channels/connected`) with their real Real/Simulated
+    fact (`isRealChannel()`, the same one `ChannelRail.tsx` already
+    shows) and a **real, working AI auto-reply on/off switch** per
+    channel (`PATCH /channels/{id}`, §5/§9) — not a static label anymore.
+    A channel type with no real row yet for this tenant still renders as
+    a static "Not set up yet" placeholder. "Add channel"/"Test all
+    channels"/"Configure" stay disabled with a "coming soon" tooltip —
+    real channel *creation* is still script-only (§8); only toggling an
+    *existing* channel's AI is real. This does **not** reopen
+    §11/§12's cancelled "human-paused conversations" idea — that was a
+    per-*conversation* human-takeover feature needing pause/resume +
+    human-send endpoints; this is a coarser per-*channel* switch that
+    needed neither.
+  - Neither page fabricates a number anywhere (no message/conversation/
+    satisfaction/sync counts) — same rule the Dashboard build settled on.
 
 Dev-only CORS avoidance: `frontend/vite.config.ts` proxies each backend
 router prefix (`/auth`, `/escalations`, ...) to `localhost:8000` so the
@@ -686,8 +706,10 @@ integrations beyond Telegram, both replaced by a **simulated** version
 instead (§6, §8); the starter template gallery and AI-assisted
 configuration, both predicated on the multi-vertical tenant breadth the
 2026-07-31 portfolio-scope pivot walked back from. **Still true as of
-2026-08-03** despite the new Channels/Integrations nav pages (§10) —
-those are static UI previews, not a reversal; see §10's own note.
+2026-08-03** despite the new Channels/Integrations nav pages (§10) and
+Channels' real AI on/off switch — none of that adds a new real channel
+integration or e-commerce connector, just management UI/behavior around
+the ones (real and simulated) that already existed; see §10's own note.
 
 ---
 

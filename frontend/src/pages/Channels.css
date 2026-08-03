@@ -68,6 +68,73 @@
   color: var(--text);
 }
 
+.channels__row--not-set-up .channels__row-icon {
+  opacity: 0.6;
+}
+
+/* A checkbox visually styled as a sliding pill switch -- this app's only
+   other boolean control (Settings.tsx) is a plain checkbox; the AI
+   on/off switch is a real, prominent, single-purpose control worth its
+   own small primitive instead (matches the reference mockup's own
+   switch, not a checkbox). */
+.toggle-switch {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+
+.toggle-switch__input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.toggle-switch__track {
+  display: inline-block;
+  width: 36px;
+  height: 20px;
+  border-radius: 999px;
+  background: var(--border);
+  transition: background-color 0.15s ease;
+}
+
+.toggle-switch__thumb {
+  display: block;
+  width: 16px;
+  height: 16px;
+  margin: 2px;
+  border-radius: 999px;
+  background: var(--bg);
+  box-shadow: var(--shadow-sm);
+  transition: transform 0.15s ease;
+}
+
+.toggle-switch__input:checked + .toggle-switch__track {
+  background: var(--accent);
+}
+
+.toggle-switch__input:checked + .toggle-switch__track .toggle-switch__thumb {
+  transform: translateX(16px);
+}
+
+.toggle-switch__input:focus-visible + .toggle-switch__track {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.toggle-switch__input:disabled + .toggle-switch__track {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
 .channels__settings-link {
   margin-top: 16px;
   font-size: 13px;
