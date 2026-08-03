@@ -1,7 +1,7 @@
 import { Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 
-import { StoreIcon } from "../components/icons";
+import { MoreIcon, SettingsIcon, StoreIcon } from "../components/icons";
 import "./Integrations.css";
 
 // Deliberately abstract (StoreIcon, not brand logos) and deliberately
@@ -30,25 +30,54 @@ export default function Integrations() {
 
       <div className="card">
         <h2 className="integrations__section-title">{t("integrations.ecommercePlatforms")}</h2>
-        <ul className="integrations__list">
-          {PLATFORM_KEYS.map((key) => (
-            <li key={key} className="integrations__row">
-              <span className="integrations__row-icon">
-                <StoreIcon />
-              </span>
-              <span className="integrations__row-name">{t(`integrations.platforms.${key}`)}</span>
-              <span className="integrations__status">{t("integrations.notConnected")}</span>
-              <button
-                type="button"
-                className="button"
-                disabled
-                title={t("integrations.comingSoon")}
-              >
-                {t("integrations.connect")}
-              </button>
-            </li>
-          ))}
-        </ul>
+        <div className="table-wrapper">
+          <table className="table">
+            <thead>
+              <tr>
+                <th>{t("integrations.headerPlatform")}</th>
+                <th>{t("integrations.headerStatus")}</th>
+                <th>{t("integrations.headerAction")}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {PLATFORM_KEYS.map((key) => (
+                <tr key={key}>
+                  <td>
+                    <span className="integrations__platform-cell">
+                      <span className="integrations__row-icon">
+                        <StoreIcon />
+                      </span>
+                      {t(`integrations.platforms.${key}`)}
+                    </span>
+                  </td>
+                  <td>{t("integrations.notConnected")}</td>
+                  <td>
+                    <div className="table__actions">
+                      <button
+                        type="button"
+                        className="button"
+                        disabled
+                        title={t("integrations.comingSoon")}
+                        aria-label={t("integrations.configure")}
+                      >
+                        <SettingsIcon />
+                      </button>
+                      <button
+                        type="button"
+                        className="button"
+                        disabled
+                        title={t("integrations.comingSoon")}
+                        aria-label={t("integrations.moreActions")}
+                      >
+                        <MoreIcon />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
     </section>
   );

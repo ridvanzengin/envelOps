@@ -3,30 +3,20 @@
   gap: 8px;
 }
 
-.channels__list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-
-.channels__row {
+.channels__channel-cell {
   display: flex;
   align-items: center;
-  gap: 14px;
-  padding: 14px 16px;
-  border-bottom: 1px solid var(--border);
-}
-
-.channels__row:last-child {
-  border-bottom: none;
+  gap: 10px;
+  font-weight: 600;
+  color: var(--text-h);
 }
 
 .channels__row-icon {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 36px;
-  height: 36px;
+  width: 32px;
+  height: 32px;
   border-radius: 8px;
   background: var(--bg-subtle);
   color: var(--text-h);
@@ -34,15 +24,8 @@
 }
 
 .channels__row-icon svg {
-  width: 18px;
-  height: 18px;
-}
-
-.channels__row-name {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--text-h);
-  min-width: 110px;
+  width: 16px;
+  height: 16px;
 }
 
 .channels__badge {
@@ -60,16 +43,6 @@
   background: var(--accent-bg);
   color: var(--accent-h);
   border-color: var(--accent-border);
-}
-
-.channels__row-status {
-  flex: 1;
-  font-size: 13px;
-  color: var(--text);
-}
-
-.channels__row--not-set-up .channels__row-icon {
-  opacity: 0.6;
 }
 
 /* A checkbox visually styled as a sliding pill switch -- this app's only
@@ -149,15 +122,4 @@
 
 .channels__settings-link a:hover {
   text-decoration: underline;
-}
-
-@media (max-width: 700px) {
-  .channels__row {
-    flex-wrap: wrap;
-  }
-
-  .channels__row-status {
-    flex-basis: 100%;
-    order: 3;
-  }
 }

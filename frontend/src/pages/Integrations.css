@@ -23,30 +23,20 @@
   margin: 0 0 4px;
 }
 
-.integrations__list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-
-.integrations__row {
+.integrations__platform-cell {
   display: flex;
   align-items: center;
-  gap: 14px;
-  padding: 14px 16px;
-  border-bottom: 1px solid var(--border);
-}
-
-.integrations__row:last-child {
-  border-bottom: none;
+  gap: 10px;
+  font-weight: 600;
+  color: var(--text-h);
 }
 
 .integrations__row-icon {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 36px;
-  height: 36px;
+  width: 32px;
+  height: 32px;
   border-radius: 8px;
   background: var(--bg-subtle);
   color: var(--text-h);
@@ -54,28 +44,6 @@
 }
 
 .integrations__row-icon svg {
-  width: 18px;
-  height: 18px;
-}
-
-.integrations__row-name {
-  flex: 1;
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--text-h);
-}
-
-.integrations__status {
-  font-size: 13px;
-  color: var(--text);
-}
-
-@media (max-width: 700px) {
-  .integrations__row {
-    flex-wrap: wrap;
-  }
-
-  .integrations__row-name {
-    flex-basis: 100%;
-  }
+  width: 16px;
+  height: 16px;
 }

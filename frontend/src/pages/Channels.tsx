@@ -8,6 +8,8 @@ import {
   EmailIcon,
   FacebookIcon,
   InstagramIcon,
+  MoreIcon,
+  SettingsIcon,
   TelegramIcon,
   WhatsAppIcon,
 } from "../components/icons";
@@ -132,58 +134,97 @@ export default function Channels() {
 
       {channels !== null && (
         <div className="card">
-          <ul className="channels__list">
-            {CHANNEL_TYPES.map((type) => {
-              const Icon = CHANNEL_ICONS[type];
-              const real = isRealChannel(type);
-              // 0-or-1 in practice (each registration script creates
-              // exactly one real channel per type) -- takes the first if
-              // more than one ever exists, doesn't assume a hard limit.
-              const channel = channelsByType[type]?.[0];
+          <div className="table-wrapper">
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>{t("channels.headerChannel")}</th>
+                  <th>{t("channels.headerStatus")}</th>
+                  <th>{t("channels.headerAiAutoReply")}</th>
+                  <th>{t("channels.headerAction")}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {CHANNEL_TYPES.map((type) => {
+                  const Icon = CHANNEL_ICONS[type];
+                  const real = isRealChannel(type);
+                  // 0-or-1 in practice (each registration script creates
+                  // exactly one real channel per type) -- takes the first
+                  // if more than one ever exists, doesn't assume a hard
+                  // limit of one.
+                  const channel = channelsByType[type]?.[0];
 
-              return (
-                <li key={type} className="channels__row">
-                  <span className="channels__row-icon">
-                    <Icon />
-                  </span>
-                  <span className="channels__row-name">{t(`channelRail.${type}`)}</span>
-                  <span className={`channels__badge${real ? " channels__badge--real" : ""}`}>
-                    {real
-                      ? t("channelRail.realIntegration")
-                      : t("channelRail.simulatedIntegration")}
-                  </span>
-                  <label
-                    className="toggle-switch"
-                    title={channel ? undefined : t("channels.notSetUp")}
-                  >
-                    <input
-                      type="checkbox"
-                      className="toggle-switch__input"
-                      checked={channel ? channel.ai_enabled : false}
-                      disabled={!channel || togglingId === channel.id}
-                      onChange={() => channel && void handleToggle(channel)}
-                      aria-label={t("channels.autoReplyToggleLabel")}
-                    />
-                    <span className="toggle-switch__track">
-                      <span className="toggle-switch__thumb" />
-                    </span>
-                  </label>
-                  <span className="channels__row-status">
-                    {channel &&
-                      (channel.ai_enabled ? t("channels.autoReplyOn") : t("channels.autoReplyOff"))}
-                  </span>
-                  <button
-                    type="button"
-                    className="button"
-                    disabled
-                    title={t("channels.comingSoon")}
-                  >
-                    {t("channels.configure")}
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
+                  return (
+                    <tr key={type}>
+                      <td>
+                        <span className="channels__channel-cell">
+                          <span className="channels__row-icon">
+                            <Icon />
+                          </span>
+                          {t(`channelRail.${type}`)}
+                        </span>
+                      </td>
+                      <td>
+                        <span
+                          className={`channels__badge${real ? " channels__badge--real" : ""}`}
+                        >
+                          {real
+                            ? t("channelRail.realIntegration")
+                            : t("channelRail.simulatedIntegration")}
+                        </span>
+                      </td>
+                      <td>
+                        <label
+                          className="toggle-switch"
+                          title={channel ? undefined : t("channels.notSetUp")}
+                        >
+                          <input
+                            type="checkbox"
+                            className="toggle-switch__input"
+                            // Not-yet-provisioned channels show the switch
+                            // as on (matching Channel.ai_enabled's own
+                            // default) rather than off -- off would
+                            // misrepresent what actually happens once the
+                            // channel is set up: it starts enabled, it
+                            // doesn't need switching on.
+                            checked={channel ? channel.ai_enabled : true}
+                            disabled={!channel || togglingId === channel.id}
+                            onChange={() => channel && void handleToggle(channel)}
+                            aria-label={t("channels.autoReplyToggleLabel")}
+                          />
+                          <span className="toggle-switch__track">
+                            <span className="toggle-switch__thumb" />
+                          </span>
+                        </label>
+                      </td>
+                      <td>
+                        <div className="table__actions">
+                          <button
+                            type="button"
+                            className="button"
+                            disabled
+                            title={t("channels.comingSoon")}
+                            aria-label={t("channels.configure")}
+                          >
+                            <SettingsIcon />
+                          </button>
+                          <button
+                            type="button"
+                            className="button"
+                            disabled
+                            title={t("channels.comingSoon")}
+                            aria-label={t("channels.moreActions")}
+                          >
+                            <MoreIcon />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 
