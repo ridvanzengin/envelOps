@@ -3,12 +3,16 @@
     "knowledge": "Bilgi Kaynakları",
     "testConsole": "Test Konsolu",
     "settings": "Ayarlar",
-    "dashboard": "Panel"
+    "dashboard": "Panel",
+    "channels": "Kanallar",
+    "integrations": "Entegrasyonlar"
   },
   "pages": {
     "knowledge": "Bilgi kaynağı ekle (URL/PDF/manuel), listele ve yenile.",
     "testConsole": "Yanıtların platforma göre nasıl farklılaştığını karşılaştırmak için herhangi bir platformda gerçek pipeline üzerinden test mesajı gönderin.",
-    "settings": "Yapay zeka davranışı, işletme ayarları ve güvenlik tetikleyici ifadeleri, sekmelere göre düzenlenmiştir. Kanal bağlantı durumu henüz burada gösterilmiyor."
+    "settings": "Yapay zeka davranışı, işletme ayarları ve güvenlik tetikleyici ifadeleri, sekmelere göre düzenlenmiştir. Kanal bağlantı durumu henüz burada gösterilmiyor.",
+    "channels": "Yapay zeka asistanınızın kullanıcılarla konuştuğu yerleri bağlayın ve yönetin.",
+    "integrations": "Yapay zeka asistanınızın gerçek zamanlı verilere erişebilmesi için e-ticaret platformlarını ve hizmetlerini bağlayın."
   },
   "theme": {
     "light": "Açık tema",
@@ -310,5 +314,29 @@
     "chunks": "Parçalar",
     "chunkCount": "{{count}} parça",
     "noKnowledgeSources": "Henüz bilgi kaynağı yok."
+  },
+  "channels": {
+    "addChannel": "Kanal ekle",
+    "testAllChannels": "Tüm kanalları test et",
+    "configure": "Yapılandır",
+    "autoReplyAlwaysOn": "Otomatik yanıt: Her zaman açık",
+    "comingSoon": "Yakında geliyor — bu aşamada henüz yapılmadı",
+    "settingsLinkText": "Platforma özel ton ayarlarını mı arıyorsunuz?",
+    "settingsLinkLabel": "Ayarlar → Platforma özel ton bölümüne git"
+  },
+  "integrations": {
+    "ecommercePlatforms": "E-ticaret platformları",
+    "notConnected": "Bağlı değil",
+    "connect": "Bağlan",
+    "comingSoon": "Yakında geliyor — bu aşamada henüz yapılmadı",
+    "toolCallingNote": "Sipariş durumu ve stok sorguları simüle edilmiş demo verilerle bugün zaten çalışıyor.",
+    "toolCallingLinkLabel": "Ayarlar → Araç çağırma bölümüne git",
+    "platforms": {
+      "shopify": "Shopify",
+      "woocommerce": "WooCommerce",
+      "bigcommerce": "BigCommerce",
+      "magento": "Magento",
+      "prestashop": "PrestaShop"
+    }
   }
 }

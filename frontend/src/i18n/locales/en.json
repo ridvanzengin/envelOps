@@ -3,12 +3,16 @@
     "knowledge": "Knowledge sources",
     "testConsole": "Test console",
     "settings": "Settings",
-    "dashboard": "Dashboard"
+    "dashboard": "Dashboard",
+    "channels": "Channels",
+    "integrations": "Integrations"
   },
   "pages": {
     "knowledge": "Add (URL/PDF/manual), list, and refresh knowledge sources.",
     "testConsole": "Send a test message through the real pipeline on any platform, to compare how replies differ by channel.",
-    "settings": "AI behavior, business settings, and safety trigger phrases, organized by tab. Channel connection status isn't shown here yet."
+    "settings": "AI behavior, business settings, and safety trigger phrases, organized by tab. Channel connection status isn't shown here yet.",
+    "channels": "Connect and manage the places where your AI assistant talks with users.",
+    "integrations": "Connect e-commerce platforms and services to let your AI assistant access real-time data."
   },
   "theme": {
     "light": "Light theme",
@@ -310,5 +314,29 @@
     "chunks": "Chunks",
     "chunkCount": "{{count}} chunks",
     "noKnowledgeSources": "No knowledge sources yet."
+  },
+  "channels": {
+    "addChannel": "Add channel",
+    "testAllChannels": "Test all channels",
+    "configure": "Configure",
+    "autoReplyAlwaysOn": "Auto-reply: Always on",
+    "comingSoon": "Coming soon — not built in this phase",
+    "settingsLinkText": "Looking for tone settings per platform?",
+    "settingsLinkLabel": "Go to Settings → Platform-specific tone"
+  },
+  "integrations": {
+    "ecommercePlatforms": "E-commerce platforms",
+    "notConnected": "Not connected",
+    "connect": "Connect",
+    "comingSoon": "Coming soon — not built in this phase",
+    "toolCallingNote": "Order-status and inventory lookups already work today via simulated demo data.",
+    "toolCallingLinkLabel": "Go to Settings → Tool calling",
+    "platforms": {
+      "shopify": "Shopify",
+      "woocommerce": "WooCommerce",
+      "bigcommerce": "BigCommerce",
+      "magento": "Magento",
+      "prestashop": "PrestaShop"
+    }
   }
 }

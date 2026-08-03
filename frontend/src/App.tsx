@@ -8,7 +8,9 @@ import { ConversationPanel } from "./components/ConversationPanel";
 import { Sidebar } from "./components/Sidebar";
 import { ConversationPanelProvider } from "./context/conversationPanel/ConversationPanelContext";
 import { ThemeProvider } from "./context/theme/ThemeContext";
+import Channels from "./pages/Channels";
 import Dashboard from "./pages/Dashboard";
+import Integrations from "./pages/Integrations";
 import KnowledgeSources from "./pages/KnowledgeSources";
 import Login from "./pages/Login";
 import Settings from "./pages/Settings";
@@ -34,6 +36,8 @@ function AppShell() {
           <div className="app-content">
             <Routes>
               <Route path="/" element={<Dashboard />} />
+              <Route path="/channels" element={<Channels />} />
+              <Route path="/integrations" element={<Integrations />} />
               <Route path="/knowledge" element={<KnowledgeSources />} />
               <Route path="/test-console" element={<TestConsole />} />
               <Route path="/settings" element={<Settings />} />

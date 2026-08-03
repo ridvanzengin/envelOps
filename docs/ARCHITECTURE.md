@@ -622,6 +622,23 @@ isn't repeated here.
   REQUIREMENTS §9 for why that held up fine at this project's data
   volumes. Every chart is hand-rolled SVG, no new frontend dependency —
   `frontend/src/components/dashboard/`.
+- **Channels** and **Integrations** (2026-08-03, `frontend/src/pages/
+  Channels.tsx`/`Integrations.tsx`) — two new nav items, both
+  **deliberately static previews, no backend behind either one.**
+  Channels lists the five real `CHANNEL_TYPES` with their real
+  Real/Simulated fact (`isRealChannel()`, the same one `ChannelRail.tsx`
+  already shows) and a static "Auto-reply: Always on" label (this app has
+  no per-channel-type AI on/off switch to wire up); Integrations lists
+  Shopify/WooCommerce/BigCommerce/Magento/PrestaShop, every row
+  permanently "Not connected." "Add channel"/"Test all channels"/
+  "Configure"/"Connect" all render disabled with a "coming soon" tooltip
+  — real channel creation stays script-only (§8), and real e-commerce
+  connectors stay exactly as cancelled as §12 already has them. **Adding
+  these nav items does not reverse that cancellation** — flagged
+  explicitly so the nav item's mere existence is never read as evidence
+  the decision changed; re-litigate §12 directly if it ever should.
+  Neither page fabricates a number anywhere (no message/conversation/
+  satisfaction/sync counts) — same rule the Dashboard build settled on.
 
 Dev-only CORS avoidance: `frontend/vite.config.ts` proxies each backend
 router prefix (`/auth`, `/escalations`, ...) to `localhost:8000` so the
@@ -668,7 +685,9 @@ platform-API connectors (Shopify/WooCommerce/etc.) and real channel
 integrations beyond Telegram, both replaced by a **simulated** version
 instead (§6, §8); the starter template gallery and AI-assisted
 configuration, both predicated on the multi-vertical tenant breadth the
-2026-07-31 portfolio-scope pivot walked back from.
+2026-07-31 portfolio-scope pivot walked back from. **Still true as of
+2026-08-03** despite the new Channels/Integrations nav pages (§10) —
+those are static UI previews, not a reversal; see §10's own note.
 
 ---
 

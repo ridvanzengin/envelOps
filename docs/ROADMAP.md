@@ -17,7 +17,7 @@
 
 ---
 
-## Current state (as of 2026-08-01)
+## Current state (as of 2026-08-03)
 
 EnvelOps is a solo portfolio project demonstrating AI behavior
 orchestration/safety/configuration — **not** a product being shipped to a
@@ -39,9 +39,13 @@ scope-pivot reasoning. Concretely, right now:
   via `scripts/seed_calibration_tenant.py` — the current primary way new
   tenant configs get exercised, replacing the original synthetic-then-
   real-pilot validation plan (REQUIREMENTS §12).
-- The Dashboard page is real now (stats/trend/intent breakdown/channels/
-  knowledge status/recent escalations, all live tenant data) — no more
-  open items carried in this file as of PR #46.
+- The Dashboard page is real now (stats/trend/donut intent breakdown/
+  channels table/knowledge status, all live tenant data) — no more open
+  items carried in this file as of PR #46.
+- Channels and Integrations are new nav pages, both static previews with
+  no backend behind them — real per-tenant channel data and real
+  e-commerce connectors both stay out of scope, unchanged by their
+  existence (ARCHITECTURE §10/§12).
 - All PRs through #46 are merged into `main` (**check this**: PR #46 may
   still be open when this line is read — verify with `gh pr view 46
   --json state` rather than trusting this file). Always check `gh pr
@@ -138,16 +142,50 @@ tiles, pill-style type selector, per-chunk preview, search/filter (PR
 #43). Also this day: docs housekeeping — `ROADMAP.md` condensed from
 ~1800 lines of session write-ups to open items + this changelog (PR #45).
 
-**2026-08-01** — Real Dashboard page (`GET /dashboard/summary` +
-stat tiles/trend chart/intent breakdown/channels table/knowledge status/
-recent escalations), closing the last open item above. Hand-rolled SVG
-charts, no new dependency — a donut chart was dropped for a ranked bar
-list after this app's status-color tokens failed a categorical
-CVD-separation check run against them. Bug found and fixed via live
-verification: daily trend bucketing excluded *today* entirely (anchored
-on the range's start date, not its end), so a tenant's whole day of
-activity was invisible on every chart while still counting in the stat
-tiles above it (PR #46).
+**2026-08-01 through 2026-08-03** — Real Dashboard page (`GET
+/dashboard/summary` + stat tiles/trend chart/intent breakdown/channels
+table/knowledge status), closing the last open item above, all one PR
+(#46) iterated live against direct feedback:
+- Hand-rolled SVG charts throughout, no new frontend dependency
+  (`frontend/src/components/dashboard/`). First pass used a ranked bar
+  list for "conversations by intent" after this app's status-color
+  tokens failed a categorical CVD-separation check as a set; reversed to
+  a real donut chart on direct request, with a dedicated palette instead
+  (the dataviz skill's own reference palette for the three segments with
+  no existing badge color, this app's real `--accent`/`--info` tokens
+  reused for the two that do — re-validated for CVD separation in this
+  exact mixed order before shipping).
+- "Escalated" changed from a running total to *currently unresolved* —
+  the total-count version didn't move when an escalation got resolved,
+  which read as a bug next to two other now-facing tiles (Hot Leads,
+  Avg Response Time).
+- Recent Escalations card removed (direct request) after initially
+  shipping it as a clickable deep-link into the conversation panel.
+- Two real bugs found and fixed via live verification, not caught by
+  type-check/lint: (1) daily trend bucketing was anchored on the range's
+  *start* date and excluded today entirely, so a tenant's whole day of
+  activity was invisible on every chart while still counting in the stat
+  tiles above it; (2) the trend chart's fixed SVG viewBox was scaled down
+  via CSS to fit a narrower card, which scaled text/stroke-width along
+  with everything else — an 11px axis label was actually rendering at
+  ~5 real pixels on a small-screen layout. Fixed by measuring the
+  container via `ResizeObserver` and rendering at its real pixel width
+  instead of relying on viewBox scaling.
+
+**2026-08-03** — Two new nav pages, Channels and Integrations
+(`frontend/src/pages/Channels.tsx`/`Integrations.tsx`), modeled on
+reference mockups as UI scaffolding for a future phase — **both
+deliberately static previews, no backend work at all** (confirmed
+directly before building: real per-tenant channel data and real
+e-commerce connectors both stay out of scope for now, see ARCHITECTURE
+§10/§12). Channels lists the five real channel types with their real
+Real/Simulated fact; Integrations lists five e-commerce platforms, all
+permanently "Not connected." Every action button (Add channel/Test all
+channels/Configure/Connect) renders disabled with a "coming soon"
+tooltip. No fabricated numbers on either page — same rule as the
+Dashboard build; the reference mockups' invented stats (active
+conversation counts, satisfaction scores, sync timestamps) were dropped
+entirely rather than faked.
 
 ---
 
