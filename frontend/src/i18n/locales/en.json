@@ -55,7 +55,7 @@
     "intent": {
       "knowledge_question": "Knowledge question",
       "purchase_intent": "Purchase intent",
-      "complaint_or_problem": "Complaint/problem",
+      "complaint_or_problem": "Complaint",
       "small_talk": "Small talk",
       "other": "Other"
     },

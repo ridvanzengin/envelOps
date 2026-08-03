@@ -55,7 +55,7 @@
     "intent": {
       "knowledge_question": "Bilgi sorusu",
       "purchase_intent": "Satın alma niyeti",
-      "complaint_or_problem": "Şikayet/sorun",
+      "complaint_or_problem": "Şikayet",
       "small_talk": "Sohbet",
       "other": "Diğer"
     },
