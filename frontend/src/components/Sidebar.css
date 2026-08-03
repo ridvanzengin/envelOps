@@ -87,8 +87,13 @@
 }
 
 .sidebar__brand-icon {
-  width: 15px;
-  height: 15px;
+  /* 16, not the visually-similar 15 -- .sidebar__brand-mark is 24px, and
+     odd icon sizes leave a fractional (24-15)/2 = 4.5px centering offset
+     that Chrome snaps to a physical pixel asymmetrically, rendering the
+     glyph measurably (and visibly) off-center despite the flex box
+     itself being centered. 16 keeps the offset a whole number. */
+  width: 16px;
+  height: 16px;
 }
 
 .sidebar__nav {
