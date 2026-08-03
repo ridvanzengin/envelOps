@@ -283,18 +283,98 @@ class TestProcessIncomingMessageAsync:
         # The message is still recorded even though delivery is impossible.
         mock_message_repo_cls.return_value.add.assert_called_once()
 
+    async def test_no_message_sent_when_channel_ai_disabled(self) -> None:
+        # Channels page on/off switch, 2026-08-03 -- the pipeline run and
+        # its trace/escalation side effects still happen in full; only
+        # the customer-facing reply is suppressed.
+        session = AsyncMock()
+        channel = MagicMock()
+        channel.bot_token = "test-bot-token"
+        channel.type = "telegram"
+        channel.ai_enabled = False
+        conversation = MagicMock()
+        conversation.external_contact_id = "999"
+        with (
+            patch("app.pipeline.tasks.async_session", return_value=_FakeAsyncCM(session)),
+            patch(
+                "app.pipeline.tasks.get_checkpointer", return_value=_FakeAsyncCM(AsyncMock())
+            ),
+            patch(
+                "app.pipeline.tasks.run_pipeline",
+                AsyncMock(return_value={"decision": "keep_chatting", "draft_text": "Sure!"}),
+            ),
+            patch("app.pipeline.tasks.MessageRepository") as mock_message_repo_cls,
+            patch("app.pipeline.tasks.ConversationRepository") as mock_conv_repo_cls,
+            patch("app.pipeline.tasks.ChannelRepository") as mock_channel_repo_cls,
+            patch("app.pipeline.tasks.PipelineTraceRepository") as mock_trace_repo_cls,
+            patch("app.pipeline.tasks.send_message") as mock_send,
+            patch("app.pipeline.tasks.publish_pipeline_events") as mock_publish,
+        ):
+            mock_message_repo_cls.return_value.add = AsyncMock()
+            mock_conv_repo_cls.return_value.get = AsyncMock(return_value=conversation)
+            mock_channel_repo_cls.return_value.get = AsyncMock(return_value=channel)
+            mock_trace_repo_cls.return_value.record_result = AsyncMock()
+            mock_publish.return_value = None
+
+            await _process_incoming_message(
+                uuid.uuid4(),
+                uuid.uuid4(),
+                uuid.uuid4(),
+                uuid.uuid4(),
+                "Do you ship internationally?",
+            )
+
+        mock_message_repo_cls.return_value.add.assert_not_called()
+        mock_send.assert_not_called()
+        # Trace/commit/publish are unaffected -- diagnostics and dashboard
+        # data keep flowing even while this channel's replies are off.
+        mock_trace_repo_cls.return_value.record_result.assert_called_once()
+        session.commit.assert_called_once()
+        mock_publish.assert_called_once()
+
 
 class TestSendFollowUp:
+    async def test_no_op_when_channel_is_missing(self) -> None:
+        conversation = MagicMock()
+        message_repo = AsyncMock()
+        channel_repo = AsyncMock()
+        channel_repo.get = AsyncMock(return_value=None)
+
+        result = await _send_follow_up(conversation, message_repo, channel_repo)
+
+        message_repo.get_latest.assert_not_called()
+        message_repo.add.assert_not_called()
+        assert result is None
+
+    async def test_no_op_when_channel_ai_is_disabled(self) -> None:
+        # A follow-up nudge is itself an AI-generated auto-reply, so it's
+        # covered by the same Channels-page on/off switch (2026-08-03) as
+        # a real-time reply -- checked before even looking at messages.
+        conversation = MagicMock()
+        message_repo = AsyncMock()
+        channel = MagicMock()
+        channel.ai_enabled = False
+        channel_repo = AsyncMock()
+        channel_repo.get = AsyncMock(return_value=channel)
+
+        result = await _send_follow_up(conversation, message_repo, channel_repo)
+
+        message_repo.get_latest.assert_not_called()
+        message_repo.add.assert_not_called()
+        assert result is None
+
     async def test_no_op_when_conversation_has_no_messages(self) -> None:
         conversation = MagicMock()
         message_repo = AsyncMock()
         message_repo.get_latest = AsyncMock(return_value=None)
+        channel = MagicMock()
         channel_repo = AsyncMock()
+        channel_repo.get = AsyncMock(return_value=channel)
 
         result = await _send_follow_up(conversation, message_repo, channel_repo)
 
         message_repo.add.assert_not_called()
-        channel_repo.get.assert_not_called()
+        channel_repo.get.assert_called_once()
         assert result is None
 
     async def test_generates_logs_and_sends_a_follow_up(self) -> None:
@@ -341,7 +421,9 @@ class TestSendFollowUp:
         last_message.text = "We ship worldwide via DHL."
         message_repo = AsyncMock()
         message_repo.get_latest = AsyncMock(return_value=last_message)
+        channel = MagicMock()
         channel_repo = AsyncMock()
+        channel_repo.get = AsyncMock(return_value=channel)
 
         with patch(
             "app.pipeline.tasks.generate_text", side_effect=ValueError("no text content")
@@ -349,7 +431,6 @@ class TestSendFollowUp:
             result = await _send_follow_up(conversation, message_repo, channel_repo)
 
         message_repo.add.assert_not_called()
-        channel_repo.get.assert_not_called()
         assert result is None
 
     async def test_delivery_failure_does_not_raise_and_still_marks_followed_up(self) -> None:

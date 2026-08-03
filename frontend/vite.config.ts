@@ -26,11 +26,18 @@ export default defineConfig({
     // (backend/app/*/api.py): `/conversations` and `/escalations` each
     // have a real bare `@router.get("")` (docs/ARCHITECTURE.md §9), so
     // those must still match with nothing after the prefix but a query
-    // string. None of the others do -- `/auth`, `/channels`,
-    // `/knowledge`, `/leads`, `/dashboard`, `/test` are always called
+    // string -- safe for them specifically because neither is also a
+    // frontend page route. `/channels` deliberately avoids a bare
+    // collection-root GET for exactly that reason: it's now also a real
+    // page route (Channels.tsx, 2026-08-03), so its real-channel-list
+    // endpoint lives at `/channels/connected` instead (same reasoning
+    // `/knowledge/sources` already established for `/knowledge`'s own
+    // page-route collision) -- a plain trailing-slash requirement is
+    // enough, no special-casing needed here. `/auth`, `/channels`,
+    // `/knowledge`, `/leads`, `/dashboard`, `/test` are all always called
     // with a further path segment, so those require a trailing slash,
     // which is what keeps a frontend page route of the same bare name
-    // (`/knowledge`) from colliding with the proxy.
+    // from colliding with the proxy.
     proxy: {
       '^/auth(/|\\?)': 'http://localhost:8000',
       '^/channels(/|\\?)': 'http://localhost:8000',

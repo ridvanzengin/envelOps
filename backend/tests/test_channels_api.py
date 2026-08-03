@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 
+from app.auth.security import create_access_token
 from app.core.db import get_session
 from app.main import app
 
@@ -13,8 +14,11 @@ def _fake_channel(**overrides: object) -> MagicMock:
     channel.id = uuid.uuid4()
     channel.tenant_id = uuid.uuid4()
     channel.type = "telegram"
+    channel.status = "connected"
     channel.webhook_secret = "test-secret"
     channel.bot_token = "test-bot-token"
+    channel.is_test = False
+    channel.ai_enabled = True
     for key, value in overrides.items():
         setattr(channel, key, value)
     return channel
@@ -25,6 +29,12 @@ def _override_session() -> object:
     app.dependency_overrides[get_session] = lambda: AsyncMock()
     yield
     app.dependency_overrides.pop(get_session, None)
+
+
+def _token(tenant_id: uuid.UUID | None = None) -> str:
+    return create_access_token(
+        user_id=uuid.uuid4(), tenant_id=tenant_id or uuid.uuid4(), role="owner"
+    )
 
 
 async def _post_update(
@@ -177,3 +187,69 @@ class TestTelegramWebhookHandling:
             str(inbound_message.id),
             "Do you ship internationally?",
         )
+
+
+async def _list_channels(token: str | None) -> httpx.Response:
+    headers = {"Authorization": f"Bearer {token}"} if token else {}
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        return await client.get("/channels/connected", headers=headers)
+
+
+async def _update_channel_ai(
+    channel_id: uuid.UUID, ai_enabled: bool, token: str | None
+) -> httpx.Response:
+    headers = {"Authorization": f"Bearer {token}"} if token else {}
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        return await client.patch(
+            f"/channels/{channel_id}", json={"ai_enabled": ai_enabled}, headers=headers
+        )
+
+
+class TestListChannels:
+    async def test_rejects_missing_token(self) -> None:
+        response = await _list_channels(None)
+        assert response.status_code == 401
+
+    async def test_returns_the_tenants_non_test_channels(self) -> None:
+        tenant_id = uuid.uuid4()
+        token = _token(tenant_id)
+        channel = _fake_channel(tenant_id=tenant_id, ai_enabled=False)
+        with patch("app.channels.api.ChannelRepository") as mock_repo_cls:
+            mock_repo_cls.return_value.list_non_test = AsyncMock(return_value=[channel])
+            response = await _list_channels(token)
+
+        assert response.status_code == 200
+        body = response.json()
+        assert len(body) == 1
+        assert body[0]["id"] == str(channel.id)
+        assert body[0]["type"] == "telegram"
+        assert body[0]["status"] == "connected"
+        assert body[0]["ai_enabled"] is False
+        mock_repo_cls.return_value.list_non_test.assert_called_once_with(tenant_id)
+
+
+class TestUpdateChannelAI:
+    async def test_rejects_missing_token(self) -> None:
+        response = await _update_channel_ai(uuid.uuid4(), False, None)
+        assert response.status_code == 401
+
+    async def test_404_when_not_found_or_wrong_tenant(self) -> None:
+        with patch("app.channels.api.ChannelRepository") as mock_repo_cls:
+            mock_repo_cls.return_value.get = AsyncMock(return_value=None)
+            response = await _update_channel_ai(uuid.uuid4(), False, _token())
+        assert response.status_code == 404
+
+    async def test_toggles_ai_enabled_and_persists(self) -> None:
+        tenant_id = uuid.uuid4()
+        token = _token(tenant_id)
+        channel = _fake_channel(tenant_id=tenant_id, ai_enabled=True)
+        with patch("app.channels.api.ChannelRepository") as mock_repo_cls:
+            mock_repo_cls.return_value.get = AsyncMock(return_value=channel)
+            response = await _update_channel_ai(channel.id, False, token)
+
+        assert response.status_code == 200
+        assert response.json()["ai_enabled"] is False
+        assert channel.ai_enabled is False
+        mock_repo_cls.return_value.get.assert_called_once_with(tenant_id, channel.id)

@@ -31,3 +31,16 @@ class ChannelRepository(TenantScopedRepository[Channel]):
             Channel.is_test.is_(True),
         )
         return await self.session.scalar(stmt)
+
+    async def list_non_test(self, tenant_id: uuid.UUID) -> list[Channel]:
+        """The Channels page's real channel list (2026-08-03) -- Test
+        Console channels (is_test=True) are a separate, always-manual
+        mechanism with their own UI and don't belong in a "manage your
+        real channels" list. Filtered in the query itself, not
+        post-filtered in Python, same reasoning as every other scoped
+        query here."""
+        stmt = select(Channel).where(
+            Channel.tenant_id == tenant_id, Channel.is_test.is_(False)
+        )
+        result = await self.session.scalars(stmt)
+        return list(result)

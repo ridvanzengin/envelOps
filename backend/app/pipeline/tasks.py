@@ -100,8 +100,14 @@ async def _process_incoming_message(
         # second message on an already-escalated conversation would
         # silently re-send the first run's cover reply verbatim as if it
         # were a fresh one.
+        # ai_enabled gates only this block -- the pipeline run above (and
+        # its trace/escalation/lead side effects) always happens
+        # regardless, so the rail/dashboard stay populated even while a
+        # channel's AI is switched off (docs/ROADMAP.md, Channels page
+        # 2026-08-03). Only the customer-facing reply is suppressed.
         draft_text = result.get("draft_text")
-        if draft_text and not already_escalated:
+        ai_enabled = channel is not None and channel.ai_enabled
+        if draft_text and not already_escalated and ai_enabled:
             message_repo = MessageRepository(session)
             await message_repo.add(
                 Message(
@@ -190,6 +196,16 @@ async def _send_follow_up(
     (docs/ROADMAP.md §3.5 -- lets the caller publish a live-update event
     only when a message really was added), or None on any of the early-
     return paths where nothing was written."""
+    channel = await channel_repo.get(conversation.tenant_id, conversation.channel_id)
+    if channel is None or not channel.ai_enabled:
+        # A follow-up nudge is itself an AI-generated auto-reply, so a
+        # channel with AI switched off (Channels page, 2026-08-03) stays
+        # fully silent here too, not just non-responsive to new inbound
+        # messages. Checked before the LLM call below, not after, so
+        # disabled channels don't spend a Gemini call on text nobody will
+        # see.
+        return None
+
     last_message = await message_repo.get_latest(conversation.tenant_id, conversation.id)
     if last_message is None:
         return None
@@ -220,8 +236,7 @@ async def _send_follow_up(
     )
     conversation.followed_up_at = datetime.now(UTC)
 
-    channel = await channel_repo.get(conversation.tenant_id, conversation.channel_id)
-    if channel is not None and channel.bot_token:
+    if channel.bot_token:
         try:
             await send_message(
                 channel.bot_token, conversation.external_contact_id, follow_up_text
@@ -235,4 +250,4 @@ async def _send_follow_up(
                 "Failed to deliver follow-up for conversation %s", conversation.id
             )
 
-    return channel.type if channel is not None else "telegram"
+    return channel.type

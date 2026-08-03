@@ -367,3 +367,44 @@ export function ChatIcon(props: SVGProps<SVGSVGElement>) {
     </Icon>
   );
 }
+
+// Nav icon for the Channels page (frontend/src/pages/Channels.tsx) --
+// a broadcast/signal glyph, distinct from the per-platform icons
+// (TelegramIcon etc.) used inside that page's own rows.
+export function ChannelsIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <Icon {...props}>
+      <circle cx="12" cy="12" r="2" />
+      <path d="M8.5 8.5a5 5 0 0 0 0 7" />
+      <path d="M15.5 8.5a5 5 0 0 1 0 7" />
+      <path d="M5.5 5.5a9 9 0 0 0 0 13" />
+      <path d="M18.5 5.5a9 9 0 0 1 0 13" />
+    </Icon>
+  );
+}
+
+// Nav icon for the Integrations page (frontend/src/pages/Integrations.tsx).
+export function PlugIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <Icon {...props}>
+      <path d="M9 2v5" />
+      <path d="M15 2v5" />
+      <path d="M6 9h12v3a6 6 0 0 1-6 6 6 6 0 0 1-6-6Z" />
+      <path d="M12 18v4" />
+    </Icon>
+  );
+}
+
+// Generic store glyph for Integrations.tsx's e-commerce-platform rows --
+// deliberately abstract, not a lookalike of any real platform's brand
+// mark (this app's whole icon set is line-art, never brand logos).
+export function StoreIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <Icon {...props}>
+      <path d="M3 8 4.5 4h15L21 8" />
+      <path d="M3 8a2 2 0 0 0 4 0 2 2 0 0 0 4 0 2 2 0 0 0 4 0 2 2 0 0 0 4 0" />
+      <path d="M5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8" />
+      <path d="M9 20v-5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v5" />
+    </Icon>
+  );
+}

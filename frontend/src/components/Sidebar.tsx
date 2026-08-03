@@ -1,7 +1,15 @@
 import { NavLink } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 
-import { DashboardIcon, FlaskIcon, KnowledgeIcon, LogoMark, SettingsIcon } from "./icons";
+import {
+  ChannelsIcon,
+  DashboardIcon,
+  FlaskIcon,
+  KnowledgeIcon,
+  LogoMark,
+  PlugIcon,
+  SettingsIcon,
+} from "./icons";
 import "./Sidebar.css";
 
 interface NavItem {
@@ -16,6 +24,8 @@ export function Sidebar() {
 
   const navItems: NavItem[] = [
     { label: t("nav.dashboard"), to: "/", icon: DashboardIcon, end: true },
+    { label: t("nav.channels"), to: "/channels", icon: ChannelsIcon },
+    { label: t("nav.integrations"), to: "/integrations", icon: PlugIcon },
     { label: t("nav.knowledge"), to: "/knowledge", icon: KnowledgeIcon },
     { label: t("nav.testConsole"), to: "/test-console", icon: FlaskIcon },
     { label: t("nav.settings"), to: "/settings", icon: SettingsIcon },
