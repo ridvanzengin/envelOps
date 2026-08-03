@@ -1,4 +1,5 @@
 import uuid
+from datetime import datetime
 from typing import Any
 
 from sqlalchemy import func, select
@@ -71,3 +72,20 @@ class PipelineTraceRepository(TenantScopedRepository[PipelineTrace]):
         )
         result = await self.session.scalars(stmt)
         return {trace.conversation_id: trace for trace in result}
+
+    async def list_in_range(
+        self, tenant_id: uuid.UUID, start: datetime, end: datetime
+    ) -> list[PipelineTrace]:
+        """Dashboard aggregates (app/dashboard/service.py) -- one row per
+        inbound message processed in [start, end), for the intent-breakdown
+        chart. Deliberately every message's trace, not "latest per
+        conversation" like get_latest_by_conversation_ids above -- a
+        breakdown over what the pipeline actually classified, not a
+        per-conversation snapshot."""
+        stmt = select(PipelineTrace).where(
+            PipelineTrace.tenant_id == tenant_id,
+            PipelineTrace.created_at >= start,
+            PipelineTrace.created_at < end,
+        )
+        result = await self.session.scalars(stmt)
+        return list(result)
