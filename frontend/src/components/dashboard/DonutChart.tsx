@@ -4,39 +4,44 @@ interface IntentBreakdownItem {
   percentage: number;
 }
 
-const SIZE = 176;
-const STROKE = 30;
+const SIZE = 232;
+const STROKE = 38;
 const RADIUS = (SIZE - STROKE) / 2;
 const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
 // 2px surface gap between segments (dataviz skill's mark spec) --
 // converted from px to an arc-length subtracted off each segment's dash.
 const GAP = 2;
 
-// Fixed slot order, one per app/pipeline/graph.py's five detected_intent
-// values -- these five CSS custom properties (Dashboard.css) are a
-// dedicated categorical palette, deliberately NOT this app's existing
-// --accent/--success/--warning/--danger/--info tokens. Running the
-// dataviz skill's six-checks validator on those five status tokens as a
-// categorical set hard-FAILs CVD separation (danger<->success ΔE ~2.2
-// under deuteranopia -- they were only ever designed to be used one at a
-// time, paired with an icon+label, never side by side as series
-// identity). These five hues instead come from the skill's own
-// documented reference palette (slots 1-5: blue/orange/aqua/yellow/
-// magenta) -- validated directly against this exact fixed order,
-// including the donut's circular wraparound pair (slot 5 back to slot
-// 1), in both light and dark mode, before use.
-const SEGMENT_COLOR_VARS = [
-  "var(--dashboard-chart-1)",
-  "var(--dashboard-chart-2)",
-  "var(--dashboard-chart-3)",
-  "var(--dashboard-chart-4)",
-  "var(--dashboard-chart-5)",
-];
+// Purchase intent and complaint/problem reuse the exact same tokens
+// DiagnosticsBadges.tsx already uses for these two intents (--accent,
+// --info) -- direct instruction, so this donut reads as the same
+// category everywhere it appears in the app (rail badges, filter chips,
+// this chart), not a second, differently-colored encoding of the same
+// data. knowledge_question/small_talk/other have no existing badge
+// color (DiagnosticsBadges leaves them the neutral default), so those
+// three keep the dedicated chart palette from the dataviz skill's
+// reference instance (slots 3-5: aqua/yellow/magenta) -- validated
+// against this exact fixed order, including adjacency to --accent/
+// --info and the donut's circular wraparound back to --accent, in both
+// light and dark mode, before use. One caveat found and accepted, not
+// unsafe: --accent's own light-mode step sits just under the palette's
+// chroma floor (0.091 vs 0.10) and its dark-mode step sits above the
+// lightness band -- both cosmetic (this hue reads slightly washed-out/
+// bright next to its neighbors), not a CVD-separation failure, which is
+// the check that actually matters for telling segments apart.
+const INTENT_COLOR_VARS: Record<string, string> = {
+  purchase_intent: "var(--accent)",
+  complaint_or_problem: "var(--info)",
+  knowledge_question: "var(--dashboard-chart-3)",
+  small_talk: "var(--dashboard-chart-4)",
+  other: "var(--dashboard-chart-5)",
+};
+const FALLBACK_COLOR_VAR = "var(--dashboard-chart-3)";
 
-// Light-mode slots 3/4/5 sit below 3:1 contrast against the surface (the
-// palette's own documented trade-off) -- the legend's direct labels are
-// the required relief channel, not optional polish, so identity never
-// rides on the fill color alone.
+// Light-mode aqua/yellow/magenta sit below 3:1 contrast against the
+// surface (the palette's own documented trade-off) -- the legend's
+// direct labels are the required relief channel, not optional polish,
+// so identity never rides on the fill color alone.
 export function DonutChart({
   items,
   labelFor,
@@ -57,7 +62,7 @@ export function DonutChart({
           aria-label="Conversations by intent"
         >
           <g transform={`rotate(-90 ${SIZE / 2} ${SIZE / 2})`}>
-            {items.map((item, i) => {
+            {items.map((item) => {
               const dash = Math.max((item.percentage / 100) * CIRCUMFERENCE - GAP, 0);
               const offset = -cumulative;
               cumulative += (item.percentage / 100) * CIRCUMFERENCE;
@@ -68,7 +73,7 @@ export function DonutChart({
                   cy={SIZE / 2}
                   r={RADIUS}
                   fill="none"
-                  stroke={SEGMENT_COLOR_VARS[i % SEGMENT_COLOR_VARS.length]}
+                  stroke={INTENT_COLOR_VARS[item.intent] ?? FALLBACK_COLOR_VAR}
                   strokeWidth={STROKE}
                   strokeLinecap="round"
                   strokeDasharray={`${dash} ${CIRCUMFERENCE - dash}`}
@@ -84,11 +89,11 @@ export function DonutChart({
         </div>
       </div>
       <ul className="dashboard-donut__legend">
-        {items.map((item, i) => (
+        {items.map((item) => (
           <li key={item.intent} className="dashboard-donut__legend-row">
             <span
               className="dashboard-donut__legend-dot"
-              style={{ background: SEGMENT_COLOR_VARS[i % SEGMENT_COLOR_VARS.length] }}
+              style={{ background: INTENT_COLOR_VARS[item.intent] ?? FALLBACK_COLOR_VAR }}
               aria-hidden="true"
             />
             <span className="dashboard-donut__legend-label">{labelFor(item.intent)}</span>

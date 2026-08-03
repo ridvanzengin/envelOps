@@ -20,13 +20,13 @@
   background: var(--bg-subtle);
   border: 1px solid var(--border);
   border-radius: 8px;
-  padding: 3px;
+  padding: 2px;
 }
 
 .dashboard__range-option {
   border: none;
   border-radius: 6px;
-  padding: 6px 12px;
+  padding: 4px 12px;
   background: transparent;
   color: var(--text);
   font: inherit;
@@ -225,25 +225,24 @@
   font-size: 14px;
 }
 
-/* Dedicated categorical palette for the intent donut only -- see
-   DonutChart.tsx's own comment for why this isn't the app's existing
-   status tokens. Values are the dataviz skill's documented reference
-   palette, slots 1-5 (references/palette.md): blue/orange/aqua/yellow/
-   magenta, each with its dark-mode step. Declared at both scopes the
-   same way index.css's own tokens are (this app's ThemeContext stamps
-   data-theme on <html>, no OS-media-query path needed here since every
-   other token in this app follows the same convention). */
+/* Categorical palette for the three intent-donut segments that have no
+   existing badge color (purchase_intent/complaint_or_problem instead
+   reuse --accent/--info directly, DonutChart.tsx's own comment). Values
+   are the dataviz skill's documented reference palette, slots 3-5
+   (references/palette.md): aqua/yellow/magenta, each with its dark-mode
+   step -- validated for CVD separation against --accent/--info as their
+   neighbors before use, not just against each other. Declared at both
+   scopes the same way index.css's own tokens are (this app's
+   ThemeContext stamps data-theme on <html>, no OS-media-query path
+   needed here since every other token in this app follows the same
+   convention). */
 :root {
-  --dashboard-chart-1: #3987e5;
-  --dashboard-chart-2: #d95926;
   --dashboard-chart-3: #199e70;
   --dashboard-chart-4: #c98500;
   --dashboard-chart-5: #d55181;
 }
 
 :root[data-theme="light"] {
-  --dashboard-chart-1: #2a78d6;
-  --dashboard-chart-2: #eb6834;
   --dashboard-chart-3: #1baf7a;
   --dashboard-chart-4: #eda100;
   --dashboard-chart-5: #e87ba4;
@@ -259,8 +258,8 @@
 .dashboard-donut__chart {
   position: relative;
   flex-shrink: 0;
-  width: 176px;
-  height: 176px;
+  width: 232px;
+  height: 232px;
 }
 
 .dashboard-donut__svg {
@@ -278,7 +277,7 @@
 }
 
 .dashboard-donut__center-value {
-  font-size: 24px;
+  font-size: 30px;
   font-weight: 600;
   color: var(--text-h);
   font-variant-numeric: proportional-nums;

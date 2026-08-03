@@ -56,6 +56,16 @@ class DashboardSummary(BaseModel):
     messages_sent_prev: int
     hot_leads: int
     hot_leads_prev: int
+    # Currently-*unresolved* escalations created in range, not a running
+    # total of everything that was ever escalated -- resolving one drops
+    # this number, since it's meant to answer "how many need attention
+    # right now," not "how many happened." Direct feedback: the total-
+    # count version didn't move when an escalation was resolved, which
+    # read as a bug for a tile with an alert-triangle icon sitting next
+    # to hot-leads/response-time (both now-facing, actionable numbers).
+    # The "Top Channels" resolution-rate column is the other reading
+    # (resolved / total created) -- that one still needs the full set,
+    # computed separately in _channel_stats below.
     escalated: int
     escalated_prev: int
     # None when no inbound message in range was ever followed by an
@@ -216,6 +226,13 @@ async def compute_summary(
 
     outbound_messages = [m for m in messages if m.direction == "outbound"]
     hot_leads = [lead for lead in leads if lead.score == "hot"]
+    # Filtered to current status, not "as it stood when created" (this
+    # data model has no resolved_at to reconstruct a past snapshot from,
+    # CLAUDE.md) -- so this reads as "of what was escalated in range,
+    # how much is still unresolved right now," which is what makes the
+    # number actually drop when a human resolves one.
+    unresolved_escalations = [e for e, _ in escalations if e.status == "pending"]
+    prev_unresolved_escalations = [e for e, _ in prev_escalations if e.status == "pending"]
 
     return DashboardSummary(
         range_days=days,
@@ -225,8 +242,8 @@ async def compute_summary(
         messages_sent_prev=sum(1 for m in prev_messages if m.direction == "outbound"),
         hot_leads=len(hot_leads),
         hot_leads_prev=sum(1 for lead in prev_leads if lead.score == "hot"),
-        escalated=len(escalations),
-        escalated_prev=len(prev_escalations),
+        escalated=len(unresolved_escalations),
+        escalated_prev=len(prev_unresolved_escalations),
         avg_response_minutes=_avg_response_minutes(messages),
         conversations_trend=_daily_counts(
             [c.created_at.date() for c, _ in conversations], now, days
@@ -238,7 +255,7 @@ async def compute_summary(
             [lead.created_at.date() for lead in hot_leads], now, days
         ),
         escalated_trend=_daily_counts(
-            [escalation.created_at.date() for escalation, _ in escalations], now, days
+            [e.created_at.date() for e in unresolved_escalations], now, days
         ),
         intent_breakdown=_intent_breakdown(traces),
         channels=_channel_stats(conversations, escalations),

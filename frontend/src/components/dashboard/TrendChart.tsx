@@ -130,23 +130,30 @@ export function TrendChart({
         </div>
       )}
 
-      <table className="sr-only">
-        <caption>Conversations per day</caption>
-        <thead>
-          <tr>
-            <th scope="col">Date</th>
-            <th scope="col">Conversations</th>
-          </tr>
-        </thead>
-        <tbody>
-          {points.map((p) => (
-            <tr key={p.date}>
-              <td>{p.date}</td>
-              <td>{p.count}</td>
+      {/* Wrapped in a plain div, not applied to the table itself -- a
+          table's own intrinsic content-based sizing ignores a tiny
+          explicit width/height (unlike a div), so at a 90-day range
+          this rendered at full size and inflated the page's scrollable
+          area instead of actually being clipped to 1x1. Found live. */}
+      <div className="sr-only">
+        <table>
+          <caption>Conversations per day</caption>
+          <thead>
+            <tr>
+              <th scope="col">Date</th>
+              <th scope="col">Conversations</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {points.map((p) => (
+              <tr key={p.date}>
+                <td>{p.date}</td>
+                <td>{p.count}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
