@@ -17,7 +17,7 @@
 
 ---
 
-## Current state (as of 2026-08-03)
+## Current state (as of 2026-08-04)
 
 EnvelOps is a solo portfolio project demonstrating AI behavior
 orchestration/safety/configuration — **not** a product being shipped to a
@@ -51,17 +51,16 @@ scope-pivot reasoning. Concretely, right now:
 - A public, read-only demo mode exists (`ENVELOPS_DEMO_MODE_ENABLED`,
   `app/core/demo_mode.py`) — every mutating endpoint 403s, Test Console
   stays real but persistence-free, and the frontend skips login entirely
-  in favor of an open tenant dropdown. The old, separate
-  `dev_auth_bypass_enabled` flag and Login page's own dev-only tenant
-  switcher are gone (decided 2026-08-04) — demo mode is now the single
-  no-password-login mechanism, at `/auth/demo-tenants` +
+  in favor of a real dropdown-menu tenant switcher on the Dashboard. The
+  old, separate `dev_auth_bypass_enabled` flag and Login page's own
+  dev-only tenant switcher are gone (decided 2026-08-04) — demo mode is
+  now the single no-password-login mechanism, at `/auth/demo-tenants` +
   `/auth/demo-login` (renamed from `/auth/dev-tenants`/`/auth/dev-login`).
-  See the changelog entries below for the full shape. On its own branch
-  (`demo`), not yet a PR as of this writing.
-- All PRs through #49 are merged into `main` (confirmed via `gh pr list`
-  2026-08-04) — **check this**: verify the actual PR number/state with
-  `gh pr list`/`gh pr view <N> --json state` rather than trusting this
-  file, which goes stale between sessions.
+  See the changelog entries below for the full shape.
+- All PRs through #50 are merged into `main` (confirmed via `gh pr view
+  50 --json state` 2026-08-04) — **check this**: verify the actual PR
+  number/state with `gh pr list`/`gh pr view <N> --json state` rather
+  than trusting this file, which goes stale between sessions.
 
 ## Open items
 
