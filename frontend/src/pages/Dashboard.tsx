@@ -199,18 +199,15 @@ export default function Dashboard() {
             <button
               type="button"
               className="dashboard__tenant-switch-trigger"
-              aria-label={t("demoMode.tenantLabel")}
+              aria-label={`${t("demoMode.tenantLabel")}: ${currentTenant?.tenant_name ?? t("app.loading")}`}
               aria-expanded={tenantMenuOpen}
               onClick={() => setTenantMenuOpen((value) => !value)}
             >
               <span className="dashboard__tenant-switch-icon">
                 <StoreIcon />
               </span>
-              <span className="dashboard__tenant-switch-text">
-                <span className="dashboard__tenant-switch-label">{t("demoMode.tenantLabel")}</span>
-                <span className="dashboard__tenant-switch-name">
-                  {currentTenant?.tenant_name ?? t("app.loading")}
-                </span>
+              <span className="dashboard__tenant-switch-name">
+                {currentTenant?.tenant_name ?? t("app.loading")}
               </span>
               <ChevronIcon
                 className={`chevron dashboard__tenant-switch-chevron${

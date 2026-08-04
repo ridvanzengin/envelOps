@@ -56,25 +56,11 @@
   height: 17px;
 }
 
-.dashboard__tenant-switch-text {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-}
-
-.dashboard__tenant-switch-label {
-  font-size: 11px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--text);
-}
-
 .dashboard__tenant-switch-name {
   font-size: 19px;
   font-weight: 700;
   color: var(--text-h);
-  line-height: 1.2;
+  line-height: 1;
 }
 
 .dashboard__tenant-switch-chevron {
