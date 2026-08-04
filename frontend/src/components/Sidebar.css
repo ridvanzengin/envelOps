@@ -133,36 +133,3 @@
 .sidebar__icon {
   flex-shrink: 0;
 }
-
-/* Persistent, not a one-time toast -- App.tsx never shows a login screen
-   in demo mode at all, so this is the one always-visible reminder that
-   nothing here gets saved (every disabled button's own title tooltip is
-   the other half, but only shows up on hover/focus). Sits at the bottom
-   of the nav column via .sidebar__nav's own flex:1 above pushing it down,
-   not its own positioning. */
-.sidebar__demo-badge {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-top: 12px;
-  padding: 8px 10px;
-  border-radius: 6px;
-  background: var(--accent-bg);
-  border: 1px solid var(--accent-border);
-  color: var(--accent-h);
-  font-size: 12px;
-  font-weight: 600;
-}
-
-.sidebar__demo-badge--collapsed {
-  justify-content: center;
-  padding: 8px;
-}
-
-.sidebar__demo-badge-dot {
-  width: 8px;
-  height: 8px;
-  flex-shrink: 0;
-  border-radius: 999px;
-  background: var(--accent);
-}

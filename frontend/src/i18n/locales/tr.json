@@ -3,7 +3,6 @@
     "loading": "Yükleniyor…"
   },
   "demoMode": {
-    "banner": "Canlı demo — değişiklikler kaydedilmez",
     "disabledTooltip": "Demo modu — değişiklikler kaydedilmez",
     "tenantLabel": "Kiracı"
   },

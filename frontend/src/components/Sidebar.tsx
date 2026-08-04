@@ -2,7 +2,6 @@ import { useEffect, useState } from "react";
 import { NavLink } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 
-import { useDemoModeContext } from "../context/demoMode/useDemoModeContext";
 import {
   ChannelsIcon,
   ChevronIcon,
@@ -32,7 +31,6 @@ function loadStoredCollapsed(): boolean {
 
 export function Sidebar() {
   const { t } = useTranslation();
-  const { enabled: demoModeEnabled } = useDemoModeContext();
   const [collapsed, setCollapsed] = useState(loadStoredCollapsed);
 
   useEffect(() => {
@@ -87,15 +85,6 @@ export function Sidebar() {
           );
         })}
       </nav>
-      {demoModeEnabled && (
-        <div
-          className={`sidebar__demo-badge${collapsed ? " sidebar__demo-badge--collapsed" : ""}`}
-          title={collapsed ? t("demoMode.banner") : undefined}
-        >
-          <span className="sidebar__demo-badge-dot" />
-          {!collapsed && <span>{t("demoMode.banner")}</span>}
-        </div>
-      )}
     </aside>
   );
 }

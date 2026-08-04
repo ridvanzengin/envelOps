@@ -3,7 +3,6 @@
     "loading": "Loading…"
   },
   "demoMode": {
-    "banner": "Live demo — changes aren't saved",
     "disabledTooltip": "Demo mode — changes aren't saved",
     "tenantLabel": "Tenant"
   },
