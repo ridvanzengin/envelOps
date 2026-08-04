@@ -164,17 +164,54 @@ CALIBRATION_TENANTS: list[TenantSpec] = [
         behavior_config=TenantBehaviorConfig(
             complaint=ComplaintConfig(empathetic_acknowledgment=True),
             book_or_checkout=BookOrCheckoutConfig(cta_style="direct_cta"),
+            tool_calling=ToolCallingConfig(inventory_check_enabled=True),
             general_context=(
                 "Wildroot Apparel Co is an online-only streetwear brand; "
                 "no physical retail locations, ships from a single US "
                 "warehouse."
             ),
         ).model_dump(),
+        # Found live (2026-08-04): with no catalog at all, a hot "do you
+        # have x icon in stock?" got book_or_checkout's ungrounded "Yes,
+        # we do!" -- the exact fabrication bug the fake-commerce-platform
+        # work exists to close, just never wired up for this tenant.
+        # Oversized Hoodie matches the sizing-quirk knowledge chunk above
+        # verbatim, so a calibration reviewer can cross-check the two.
+        catalog=[
+            CatalogItemSpec(
+                name="Oversized Hoodie", size="S", in_stock=True, quantity_available=18
+            ),
+            CatalogItemSpec(
+                name="Oversized Hoodie", size="M", in_stock=True, quantity_available=25
+            ),
+            CatalogItemSpec(
+                name="Oversized Hoodie", size="L", in_stock=True, quantity_available=14
+            ),
+            CatalogItemSpec(
+                name="Oversized Hoodie", size="XL", in_stock=False, restock_eta_days=7
+            ),
+            CatalogItemSpec(
+                name="Graphic Tee", size="S", in_stock=True, quantity_available=40
+            ),
+            CatalogItemSpec(
+                name="Graphic Tee", size="M", in_stock=True, quantity_available=52
+            ),
+            CatalogItemSpec(
+                name="Graphic Tee", size="L", in_stock=True, quantity_available=31
+            ),
+            CatalogItemSpec(
+                name="Cargo Joggers", size="M", in_stock=False, restock_eta_days=12
+            ),
+            CatalogItemSpec(
+                name="Bucket Hat", size=None, in_stock=True, quantity_available=22
+            ),
+        ],
     ),
     # Tenant #2 -- a different product category (electronics, not apparel)
-    # to prove the config system genuinely varies per business, and the
-    # first tenant with tool_calling enabled: order-status/inventory
-    # questions are common and natural for an electronics retailer, so
+    # to prove the config system genuinely varies per business, the
+    # second tenant with tool_calling enabled (Wildroot above is the
+    # first as of 2026-08-04): order-status/inventory questions are
+    # common and natural for an electronics retailer, so
     # this is a real exercise of the new fake-connector capability, not a
     # contrived one. Also the first tenant seeded on the new simulated
     # Instagram channel rather than Telegram.

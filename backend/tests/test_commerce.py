@@ -259,12 +259,14 @@ class TestFormatResult:
     def test_not_carried_inventory(self) -> None:
         # The actual regression case (docs/plans/
         # fake-commerce-platform-integration.md): an off-catalog product
-        # must read as "we don't carry that", not a fabricated stock answer.
+        # must read as a plain "we do not have that in stock", not a
+        # fabricated stock answer. Wording simplified 2026-08-04 (direct
+        # instruction) from an earlier "we don't carry X -- no matching
+        # product in our catalog" phrasing.
         result = InventoryResult(
             product_name="AK-47", size=None, carried=False, in_stock=False,
             quantity_available=None, restock_eta_days=None,
         )
         text = format_result("inventory_check", result)
-        assert "don't carry" in text
-        assert "in stock" not in text
+        assert text == "We do not have AK-47 in stock."
         assert "out of stock" not in text

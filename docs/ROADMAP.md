@@ -116,6 +116,40 @@ final, not provisional.
 
 ## Changelog
 
+**2026-08-04, later still, once more** — Reported as "stuck" giving a
+reply, investigated extensively (direct API repro across single/multi-
+turn, hot/warm/cold leads; then a real headless-browser Test Console
+session) — no actual hang found anywhere; requests always completed in
+3-5s. The real finding: the report was on **Wildroot Apparel Co**, which
+had never been given `inventory_check_enabled`/a catalog at all (only
+Voltage Gadgets had, from the original build below) — so it still showed
+the exact pre-fix fabrication (`book_or_checkout`'s "Yes, we do!" for a
+hot lead) and, separately, the pre-existing knowledge-gap escalation for
+any unrecognized product, which reads the same for every off-catalog
+item and can feel "stuck" repeating a non-answer. Direct instruction
+following this: catalog-checking shouldn't ever escalate when a definite
+"not carried" answer is already known — a human would just say the same
+thing.
+- Wildroot given `tool_calling.inventory_check_enabled=True` plus a
+  9-row clothing catalog (`scripts/seed_calibration_tenant.py`'s
+  `TenantSpec.catalog`, matching the "Oversized Hoodie runs one size
+  large" line already in its knowledge base) — applied to both the spec
+  (future fresh seeds) and directly to the already-seeded live tenant.
+  Two tenants with tool-calling now, not one.
+- `format_result`'s not-carried wording simplified (direct instruction):
+  "We don't carry X -- no matching product in our catalog" → "We do not
+  have X in stock" — reads as a plain stock-check answer, not a catalog
+  explanation.
+- No pipeline logic changes needed beyond the config/catalog above — the
+  same-day `[Live lookup result]` fix (below) already makes a negative
+  tool result answer directly instead of escalating; it just needed a
+  tenant with tool-calling enabled to exercise it. Live-verified: hot
+  "do you have the x icon in stock?" and "do you have water filters" on
+  Wildroot now both answer honestly with no escalation, while a hot
+  query about a real catalog item (Oversized Hoodie, size M) still
+  correctly flows through `book_or_checkout` with accurate stock.
+- 361 backend tests pass, `ruff`/`mypy` clean.
+
 **2026-08-04, later still again** — Two more fabrication-class bugs found
 live, testing the fake-commerce-platform work just below, both fixed on
 the same branch/PR:

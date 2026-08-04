@@ -100,7 +100,11 @@ def format_result(name: str, result: BaseModel) -> str:
     if isinstance(result, InventoryResult):
         label = result.product_name + (f" ({result.size})" if result.size else "")
         if not result.carried:
-            return f"We don't carry {label} -- no matching product in our catalog."
+            # Direct instruction (2026-08-04): plain "we do not have that
+            # in stock" reads more like a real stock-check answer than
+            # the earlier "we don't carry X -- no matching product in our
+            # catalog" phrasing.
+            return f"We do not have {label} in stock."
         if result.in_stock:
             return f"{label} is in stock, {result.quantity_available} available."
         return (
