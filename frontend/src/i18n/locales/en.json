@@ -7,6 +7,10 @@
     "channels": "Channels",
     "integrations": "Integrations"
   },
+  "sidebar": {
+    "collapse": "Collapse sidebar",
+    "expand": "Expand sidebar"
+  },
   "pages": {
     "knowledge": "Add (URL/PDF/manual), list, and refresh knowledge sources.",
     "testConsole": "Send a test message through the real pipeline on any platform, to compare how replies differ by channel.",
@@ -51,7 +55,7 @@
     "intent": {
       "knowledge_question": "Knowledge question",
       "purchase_intent": "Purchase intent",
-      "complaint_or_problem": "Complaint/problem",
+      "complaint_or_problem": "Complaint",
       "small_talk": "Small talk",
       "other": "Other"
     },

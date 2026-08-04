@@ -7,6 +7,10 @@
     "channels": "Kanallar",
     "integrations": "Entegrasyonlar"
   },
+  "sidebar": {
+    "collapse": "Kenar çubuğunu daralt",
+    "expand": "Kenar çubuğunu genişlet"
+  },
   "pages": {
     "knowledge": "Bilgi kaynağı ekle (URL/PDF/manuel), listele ve yenile.",
     "testConsole": "Yanıtların platforma göre nasıl farklılaştığını karşılaştırmak için herhangi bir platformda gerçek pipeline üzerinden test mesajı gönderin.",
@@ -51,7 +55,7 @@
     "intent": {
       "knowledge_question": "Bilgi sorusu",
       "purchase_intent": "Satın alma niyeti",
-      "complaint_or_problem": "Şikayet/sorun",
+      "complaint_or_problem": "Şikayet",
       "small_talk": "Sohbet",
       "other": "Diğer"
     },

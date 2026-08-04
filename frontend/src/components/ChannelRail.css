@@ -1,5 +1,5 @@
 .channel-rail {
-  width: 56px;
+  width: 64px;
   flex-shrink: 0;
   background: var(--bg);
   border-left: 1px solid var(--border);
@@ -14,10 +14,10 @@
 
 .channel-rail__icon {
   position: relative;
-  width: 36px;
-  height: 36px;
+  width: 44px;
+  height: 44px;
   flex-shrink: 0;
-  border-radius: 8px;
+  border-radius: 10px;
   border: 1px solid var(--border);
   background: var(--bg-subtle);
   color: var(--text);
@@ -57,8 +57,20 @@
 }
 
 .channel-rail__svg {
-  width: 18px;
-  height: 18px;
+  width: 22px;
+  height: 22px;
+}
+
+/* Platform icons (Telegram/WhatsApp/Facebook/Instagram/Email) keep the
+   same larger-than-.channel-rail__svg treatment as the account-menu
+   "more" icon above, scaled up with the enlarged .channel-rail__icon
+   button (36px -> 44px) -- a full-bleed platform logo needs more of its
+   own button's area than an outlined utility icon like "more" does, so
+   the unread badge (absolutely positioned off the button's own corner)
+   reads as sitting beside the icon rather than covering it. */
+.channel-rail__svg--channel {
+  width: 28px;
+  height: 28px;
 }
 
 .channel-rail__badge {

@@ -4,36 +4,17 @@ import { useTranslation } from "react-i18next";
 import { useAuth } from "../auth/useAuth";
 import { useConversationPanel } from "../context/conversationPanel/useConversationPanel";
 import { useTheme } from "../context/theme/useTheme";
-import { CHANNEL_TYPES, isRealChannel } from "../lib/channels";
-import type { ChannelType } from "../lib/channels";
+import { CHANNEL_ICONS, CHANNEL_TYPES, isRealChannel } from "../lib/channels";
 import {
   CheckIcon,
   ChevronIcon,
-  EmailIcon,
-  FacebookIcon,
   GlobeIcon,
-  InstagramIcon,
   LogoutIcon,
   MoonIcon,
   MoreIcon,
   SunIcon,
-  TelegramIcon,
-  WhatsAppIcon,
 } from "./icons";
 import "./ChannelRail.css";
-
-// Every channel is clickable regardless of real vs. simulated -- Test
-// Console (frontend TestConsole.tsx) and the simulated webhooks
-// (backend/app/channels/api.py) both let a conversation exist for any of
-// them, so they open the panel showing that channel's conversations
-// rather than rendering disabled.
-const CHANNEL_ICONS: Record<ChannelType, typeof TelegramIcon> = {
-  telegram: TelegramIcon,
-  whatsapp: WhatsAppIcon,
-  facebook: FacebookIcon,
-  instagram: InstagramIcon,
-  email: EmailIcon,
-};
 
 export function ChannelRail() {
   const { t, i18n } = useTranslation();
@@ -183,6 +164,11 @@ export function ChannelRail() {
 
       <div className="channel-rail__divider" />
 
+      {/* Every channel is clickable regardless of real vs. simulated --
+          Test Console (frontend TestConsole.tsx) and the simulated
+          webhooks (backend/app/channels/api.py) both let a conversation
+          exist for any of them, so they open the panel showing that
+          channel's conversations rather than rendering disabled. */}
       {CHANNEL_TYPES.map((key) => {
         const ChannelIcon = CHANNEL_ICONS[key];
         const real = isRealChannel(key);
@@ -204,7 +190,7 @@ export function ChannelRail() {
             aria-pressed={isActive}
             onClick={() => (isActive ? closePanel() : openPanel(key))}
           >
-            <ChannelIcon className="channel-rail__svg" />
+            <ChannelIcon className="channel-rail__svg channel-rail__svg--channel" />
             {badgeCount > 0 && <span className="channel-rail__badge">{badgeCount}</span>}
           </button>
         );

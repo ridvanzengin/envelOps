@@ -8,12 +8,24 @@
   height: 100%;
   padding: 20px 12px;
   box-sizing: border-box;
+  transition: width 0.15s ease;
+}
+
+.sidebar--collapsed {
+  width: 68px;
 }
 
 .sidebar__header {
   display: flex;
   align-items: center;
+  justify-content: space-between;
+  gap: 8px;
   margin-bottom: 24px;
+}
+
+.sidebar--collapsed .sidebar__header {
+  flex-direction: column;
+  gap: 10px;
 }
 
 .sidebar__brand {
@@ -24,6 +36,43 @@
   font-size: 16px;
   color: var(--text-h);
   padding: 0 8px;
+  text-decoration: none;
+}
+
+.sidebar--collapsed .sidebar__brand {
+  padding: 0;
+}
+
+.sidebar__collapse-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  flex-shrink: 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: none;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.sidebar__collapse-btn:hover {
+  background: var(--bg-subtle);
+  color: var(--text-h);
+  border-color: var(--accent-border);
+}
+
+.sidebar__collapse-icon {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  transform: rotate(180deg);
+  transition: transform 0.15s ease;
+}
+
+.sidebar--collapsed .sidebar__collapse-icon {
+  transform: rotate(0deg);
 }
 
 .sidebar__brand-mark {
@@ -38,8 +87,13 @@
 }
 
 .sidebar__brand-icon {
-  width: 15px;
-  height: 15px;
+  /* 16, not the visually-similar 15 -- .sidebar__brand-mark is 24px, and
+     odd icon sizes leave a fractional (24-15)/2 = 4.5px centering offset
+     that Chrome snaps to a physical pixel asymmetrically, rendering the
+     glyph measurably (and visibly) off-center despite the flex box
+     itself being centered. 16 keeps the offset a whole number. */
+  width: 16px;
+  height: 16px;
 }
 
 .sidebar__nav {
@@ -59,6 +113,11 @@
   text-decoration: none;
   font-size: 14px;
   font-weight: 500;
+}
+
+.sidebar--collapsed .sidebar__link {
+  justify-content: center;
+  padding: 8px;
 }
 
 .sidebar__link:hover {
