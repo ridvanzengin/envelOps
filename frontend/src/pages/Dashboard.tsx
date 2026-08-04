@@ -9,15 +9,19 @@ import { TrendChart } from "../components/dashboard/TrendChart";
 import {
   AlertTriangleIcon,
   ChatIcon,
+  CheckIcon,
+  ChevronIcon,
   ClockIcon,
   EmailIcon,
   FacebookIcon,
   InstagramIcon,
   SendIcon,
+  StoreIcon,
   TargetIcon,
   TelegramIcon,
   WhatsAppIcon,
 } from "../components/icons";
+import { useConversationPanel } from "../context/conversationPanel/useConversationPanel";
 import { useDemoModeContext } from "../context/demoMode/useDemoModeContext";
 import { useDemoTenants } from "../hooks/useDemoTenants";
 import { decodeJwtPayload } from "../lib/jwt";
@@ -101,19 +105,41 @@ export default function Dashboard() {
   const { token, logout, loginWithToken } = useAuth();
   const { enabled: demoModeEnabled } = useDemoModeContext();
   const demoTenants = useDemoTenants();
+  const { closePanel } = useConversationPanel();
   const currentTenantId = token
     ? (decodeJwtPayload<{ tenant_id: string }>(token)?.tenant_id ?? null)
     : null;
+  const currentTenant = demoTenants.find((option) => option.tenant_id === currentTenantId);
+  const [tenantMenuOpen, setTenantMenuOpen] = useState(false);
+
+  // Same click-outside convention as every other .dropdown-menu consumer
+  // (ChannelRail.tsx) -- a mousedown anywhere outside the menu's own DOM
+  // subtree closes it.
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (!(event.target instanceof Element) || !event.target.closest(".dropdown-menu")) {
+        setTenantMenuOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
   async function handleTenantSwitch(tenantId: string) {
+    setTenantMenuOpen(false);
     const tenant = demoTenants.find((option) => option.tenant_id === tenantId);
-    if (!tenant) return;
+    if (!tenant || tenantId === currentTenantId) return;
     const response = await apiPost<DemoLoginResponse>(
       "/auth/demo-login",
       { user_id: tenant.user_id },
       null,
     );
     loginWithToken(response.access_token);
+    // The conversation rail's own conversations/channels belong to
+    // whichever tenant it was opened under -- left open across a switch,
+    // it would keep showing the previous tenant's data under the new
+    // one's identity until manually closed and reopened.
+    closePanel();
   }
 
   const [days, setDays] = useState<RangeDays>(30);
@@ -169,20 +195,50 @@ export default function Dashboard() {
     <section className="page">
       <div className="page__header">
         {demoModeEnabled ? (
-          <label className="dashboard__tenant-select">
-            {t("demoMode.tenantLabel")}
-            <select
-              value={currentTenantId ?? ""}
-              onChange={(event) => void handleTenantSwitch(event.target.value)}
+          <div className="dashboard__tenant-switch dropdown-menu">
+            <button
+              type="button"
+              className="dashboard__tenant-switch-trigger"
+              aria-label={t("demoMode.tenantLabel")}
+              aria-expanded={tenantMenuOpen}
+              onClick={() => setTenantMenuOpen((value) => !value)}
             >
-              {currentTenantId === null && <option value="">{t("app.loading")}</option>}
-              {demoTenants.map((tenant) => (
-                <option key={tenant.tenant_id} value={tenant.tenant_id}>
-                  {tenant.tenant_name}
-                </option>
-              ))}
-            </select>
-          </label>
+              <span className="dashboard__tenant-switch-icon">
+                <StoreIcon />
+              </span>
+              <span className="dashboard__tenant-switch-text">
+                <span className="dashboard__tenant-switch-label">{t("demoMode.tenantLabel")}</span>
+                <span className="dashboard__tenant-switch-name">
+                  {currentTenant?.tenant_name ?? t("app.loading")}
+                </span>
+              </span>
+              <ChevronIcon
+                className={`chevron dashboard__tenant-switch-chevron${
+                  tenantMenuOpen ? " chevron--expanded" : ""
+                }`}
+              />
+            </button>
+            {tenantMenuOpen && (
+              <div className="dropdown-menu__list dashboard__tenant-switch-list">
+                {demoTenants.map((tenant) => (
+                  <button
+                    key={tenant.tenant_id}
+                    type="button"
+                    className="dropdown-menu__item"
+                    onClick={() => void handleTenantSwitch(tenant.tenant_id)}
+                  >
+                    <span className="dashboard__tenant-switch-item-text">
+                      <span>{tenant.tenant_name}</span>
+                      <span className="dashboard__tenant-switch-item-email">{tenant.email}</span>
+                    </span>
+                    {tenant.tenant_id === currentTenantId && (
+                      <CheckIcon className="dropdown-menu__item-icon" />
+                    )}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         ) : (
           <h1>{t("nav.dashboard")}</h1>
         )}
