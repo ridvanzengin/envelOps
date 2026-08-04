@@ -6,7 +6,9 @@ import {
   ChannelsIcon,
   ChevronIcon,
   DashboardIcon,
+  DocumentationIcon,
   FlaskIcon,
+  GithubIcon,
   KnowledgeIcon,
   LogoMark,
   PlugIcon,
@@ -21,6 +23,12 @@ interface NavItem {
   end?: boolean;
 }
 
+interface ExternalNavItem {
+  label: string;
+  href: string;
+  icon: typeof DashboardIcon;
+}
+
 // Same key shape/prefix convention as the sibling reference project's own
 // collapsed-sidebar persistence (iotops-workspace/IoTOps's Sidebar.tsx).
 const COLLAPSED_STORAGE_KEY = "envelops:sidebar-collapsed";
@@ -28,6 +36,12 @@ const COLLAPSED_STORAGE_KEY = "envelops:sidebar-collapsed";
 function loadStoredCollapsed(): boolean {
   return typeof window !== "undefined" && window.localStorage.getItem(COLLAPSED_STORAGE_KEY) === "1";
 }
+
+// Source Code leaves the app entirely -- a plain external link, not a
+// route, same "Reference" grouping as the sibling reference project's
+// own Sidebar (iotops-workspace/IoTOps).
+const SOURCE_CODE_URL = "https://github.com/ridvanzengin/envelOps";
+const ATTRIBUTION_URL = "https://ridvanzengin.github.io/";
 
 export function Sidebar() {
   const { t } = useTranslation();
@@ -44,6 +58,17 @@ export function Sidebar() {
     { label: t("nav.knowledge"), to: "/knowledge", icon: KnowledgeIcon },
     { label: t("nav.testConsole"), to: "/test-console", icon: FlaskIcon },
     { label: t("nav.settings"), to: "/settings", icon: SettingsIcon },
+  ];
+
+  // Documentation is a real in-app route (renders inside the same app
+  // shell), so it's a NavLink like the primary nav items above, just
+  // grouped visually under "Reference".
+  const referenceNavItems: NavItem[] = [
+    { label: t("nav.documentation"), to: "/docs", icon: DocumentationIcon },
+  ];
+
+  const externalLinks: ExternalNavItem[] = [
+    { label: t("nav.sourceCode"), href: SOURCE_CODE_URL, icon: GithubIcon },
   ];
 
   return (
@@ -84,7 +109,53 @@ export function Sidebar() {
             </NavLink>
           );
         })}
+
+        {!collapsed && <p className="sidebar__section-label">{t("sidebar.reference")}</p>}
+        {referenceNavItems.map((item) => {
+          const ItemIcon = item.icon;
+          return (
+            <NavLink
+              key={item.to}
+              to={item.to}
+              end={item.end}
+              className={({ isActive }) =>
+                `sidebar__link${isActive ? " sidebar__link--active" : ""}`
+              }
+              title={collapsed ? item.label : undefined}
+            >
+              <ItemIcon className="sidebar__icon" />
+              {!collapsed && item.label}
+            </NavLink>
+          );
+        })}
+        {externalLinks.map((item) => {
+          const ItemIcon = item.icon;
+          return (
+            <a
+              key={item.label}
+              href={item.href}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="sidebar__link"
+              title={collapsed ? item.label : undefined}
+            >
+              <ItemIcon className="sidebar__icon" />
+              {!collapsed && item.label}
+            </a>
+          );
+        })}
       </nav>
+      <div className="sidebar__footer">
+        <a
+          href={ATTRIBUTION_URL}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="sidebar__attribution"
+          title={collapsed ? t("sidebar.attribution") : undefined}
+        >
+          {collapsed ? "RZ" : t("sidebar.attribution")}
+        </a>
+      </div>
     </aside>
   );
 }
