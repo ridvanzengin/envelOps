@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import CurrentUser, get_current_user
 from app.core.db import get_session
+from app.core.demo_mode import block_in_demo_mode
 from app.core.llm import embed_text
 from app.knowledge.chunking import chunk_text
 from app.knowledge.html_text import extract_text
@@ -100,6 +101,7 @@ async def create_knowledge_source(
     body: CreateKnowledgeSourceRequest,
     current_user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
+    _: None = Depends(block_in_demo_mode),
 ) -> KnowledgeSourceResponse:
     text, source_uri = await _fetch_source_text(body)
     if not text.strip():
@@ -132,6 +134,7 @@ async def create_pdf_knowledge_source(
     file: UploadFile = File(...),
     current_user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
+    _: None = Depends(block_in_demo_mode),
 ) -> KnowledgeSourceResponse:
     """Separate endpoint from POST /sources above, not a third branch of
     CreateKnowledgeSourceRequest -- a PDF is a binary file upload
@@ -208,6 +211,7 @@ async def refresh_knowledge_source(
     source_id: uuid.UUID,
     current_user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
+    _: None = Depends(block_in_demo_mode),
 ) -> KnowledgeSourceResponse:
     source_repo = KnowledgeSourceRepository(session)
     source = await source_repo.get(current_user.tenant_id, source_id)
@@ -257,6 +261,7 @@ async def update_knowledge_source(
     body: UpdateKnowledgeSourceRequest,
     current_user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
+    _: None = Depends(block_in_demo_mode),
 ) -> KnowledgeSourceResponse:
     """Added 2026-07-29, alongside delete -- the other half of the "can't
     see or edit" gap found via live use: a manual entry's actual text was
@@ -303,6 +308,7 @@ async def delete_knowledge_source(
     source_id: uuid.UUID,
     current_user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
+    _: None = Depends(block_in_demo_mode),
 ) -> None:
     """Added 2026-07-29 -- previously the only way to correct a bad manual
     entry was refresh's own error message ("delete and re-add instead"),

@@ -51,9 +51,15 @@ class DevLoginRequest(BaseModel):
 
 
 def _require_dev_bypass_enabled() -> None:
-    # 404, not 403 -- a real deployment with this correctly left off
+    # 404, not 403 -- a real deployment with both flags correctly off
     # shouldn't even reveal the feature exists, not just refuse it.
-    if not settings.dev_auth_bypass_enabled:
+    # demo_mode_enabled ORs in here too: a public demo needs the same
+    # no-password tenant switch (now surfaced as the Dashboard's tenant
+    # dropdown, not this dev-only login screen widget), and is safe to
+    # open up specifically because demo mode's own write-blocking means
+    # there's nothing an anonymous visitor could do with it beyond
+    # picking which showcase tenant to look at.
+    if not settings.dev_auth_bypass_enabled and not settings.demo_mode_enabled:
         raise HTTPException(status.HTTP_404_NOT_FOUND)
 
 

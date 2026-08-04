@@ -8,6 +8,7 @@ from app.pipeline.tasks import (
     _follow_up_check,
     _process_incoming_message,
     _send_follow_up,
+    follow_up_check,
     process_incoming_message,
 )
 
@@ -459,6 +460,29 @@ class TestSendFollowUp:
         # Still returns the channel type -- the message really was written
         # (and is worth a live-update event) even though delivery failed.
         assert result == channel.type
+
+
+class TestFollowUpCheckDemoMode:
+    # No background job writes to a public demo's database on its own --
+    # this path isn't reachable through the API at all (unlike every other
+    # write path, gated by app/core/demo_mode.py's dependency), so
+    # follow_up_check needs its own check before even starting the async
+    # scan.
+    def test_skips_entirely_when_demo_mode_enabled(self) -> None:
+        with (
+            patch("app.pipeline.tasks.settings.demo_mode_enabled", True),
+            patch("app.pipeline.tasks._follow_up_check") as mock_inner,
+        ):
+            follow_up_check()
+        mock_inner.assert_not_called()
+
+    def test_runs_normally_when_demo_mode_disabled(self) -> None:
+        with (
+            patch("app.pipeline.tasks.settings.demo_mode_enabled", False),
+            patch("app.pipeline.tasks.asyncio.run") as mock_run,
+        ):
+            follow_up_check()
+        mock_run.assert_called_once()
 
 
 class TestFollowUpCheck:

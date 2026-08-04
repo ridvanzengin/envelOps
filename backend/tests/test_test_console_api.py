@@ -105,3 +105,93 @@ class TestSendTestMessagePublishesLiveUpdateEvents:
         published_state = mock_publish_pipeline.call_args.args[0]
         assert published_state.tenant_id == tenant_id
         assert published_state.conversation_id == conversation.id
+
+
+class TestSendTestMessageDemoMode:
+    # demo_mode_enabled runs the real pipeline (mocked here, same as every
+    # other test in this file) but must never touch a Channel/Conversation/
+    # Message/PipelineTrace repository at all -- app/test_console/api.py's
+    # _send_test_message_demo, a completely separate code path from the
+    # one exercised above.
+    @pytest.fixture(autouse=True)
+    def _clear_demo_state(self) -> object:
+        from app.test_console.api import _demo_conversation_messages
+
+        _demo_conversation_messages.clear()
+        yield
+        _demo_conversation_messages.clear()
+
+    async def test_runs_pipeline_without_touching_any_repository(self) -> None:
+        tenant_id = uuid.uuid4()
+        session = AsyncMock()
+        with (
+            patch("app.test_console.api.settings.demo_mode_enabled", True),
+            patch("app.core.db.get_session", return_value=session),
+            patch("app.test_console.api.ChannelRepository") as mock_channel_repo_cls,
+            patch("app.test_console.api.ConversationRepository") as mock_conv_repo_cls,
+            patch("app.test_console.api.MessageRepository") as mock_message_repo_cls,
+            patch("app.test_console.api.PipelineTraceRepository") as mock_trace_repo_cls,
+            patch(
+                "app.test_console.api.run_pipeline",
+                AsyncMock(
+                    return_value={
+                        "decision": "keep_chatting",
+                        "draft_text": "Sure, we ship worldwide!",
+                        "detected_intent": "knowledge_question",
+                        "lead_score": "warm",
+                    }
+                ),
+            ) as mock_run_pipeline,
+        ):
+            app.dependency_overrides[get_session] = lambda: session
+            try:
+                response = await _send_message(_token(tenant_id), "telegram", "Do you ship?")
+            finally:
+                app.dependency_overrides[get_session] = lambda: AsyncMock()
+
+        assert response.status_code == 200
+        body = response.json()
+        assert len(body["messages"]) == 2
+        assert body["messages"][0]["direction"] == "inbound"
+        assert body["messages"][0]["diagnostics"]["detected_intent"] == "knowledge_question"
+        assert body["messages"][1]["direction"] == "outbound"
+        assert body["messages"][1]["text"] == "Sure, we ship worldwide!"
+
+        # The real pipeline genuinely ran...
+        mock_run_pipeline.assert_called_once()
+        # ...but nothing was persisted: no repository was ever touched, and
+        # the only session.commit() is the pre-pipeline hygiene one
+        # CLAUDE.md's checkpointer gotcha requires -- never a second one
+        # afterward, which is what would flush the Lead/Escalation rows
+        # graph.py's own nodes staged on this same session during the run.
+        mock_channel_repo_cls.assert_not_called()
+        mock_conv_repo_cls.assert_not_called()
+        mock_message_repo_cls.assert_not_called()
+        mock_trace_repo_cls.assert_not_called()
+        assert session.commit.call_count == 1
+
+    async def test_second_message_in_same_session_continues_the_conversation(self) -> None:
+        tenant_id = uuid.uuid4()
+        session = AsyncMock()
+        with (
+            patch("app.test_console.api.settings.demo_mode_enabled", True),
+            patch(
+                "app.test_console.api.run_pipeline",
+                AsyncMock(return_value={"decision": "keep_chatting", "draft_text": "Hi!"}),
+            ),
+        ):
+            app.dependency_overrides[get_session] = lambda: session
+            try:
+                token = _token(tenant_id)
+                first = await _send_message(token, "telegram", "Hello")
+                second = await _send_message(token, "telegram", "Still there?")
+            finally:
+                app.dependency_overrides[get_session] = lambda: AsyncMock()
+
+        assert first.status_code == second.status_code == 200
+        # Same (tenant, channel_type, session) -> same deterministic
+        # thread_id, and the second response's history includes both
+        # exchanges, not just its own -- proving conversation continuity
+        # comes from the in-memory store, not a persisted Conversation row.
+        assert first.json()["conversation_id"] == second.json()["conversation_id"]
+        assert len(second.json()["messages"]) == 4

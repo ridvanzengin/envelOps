@@ -31,6 +31,16 @@ class Settings(BaseSettings):
     # off, so a real deployment doesn't even reveal the feature exists.
     # MUST stay false outside a local/throwaway environment.
     dev_auth_bypass_enabled: bool = False
+    # Public, read-only showcase mode: every mutating endpoint (knowledge
+    # source CRUD, settings, escalation resolve/trigger-phrases, the
+    # channel AI toggle, inbound channel webhooks) rejects with a 403
+    # instead of writing anything, and the Celery follow_up_check job
+    # no-ops entirely. Also implies open tenant switching -- see
+    # dev_auth_bypass_enabled's own gate in auth/api.py, which this flag
+    # ORs into so a demo visitor never needs a real login. Safe to combine
+    # with an open auth bypass specifically BECAUSE nothing can be
+    # mutated once this is on.
+    demo_mode_enabled: bool = False
 
     model_config = SettingsConfigDict(env_file=_ENV_FILE, env_prefix="ENVELOPS_")
 

@@ -141,3 +141,35 @@ class TestDevAuthBypassEnabled:
             mock_repo_cls.return_value.get_by_id_unscoped = AsyncMock(return_value=None)
             response = await _dev_login(uuid.uuid4())
         assert response.status_code == 404
+
+
+class TestDevAuthBypassOpenedByDemoMode:
+    # demo_mode_enabled ORs into the same gate (app/auth/api.py's
+    # _require_dev_bypass_enabled) even with dev_auth_bypass_enabled left
+    # False -- a public demo needs the no-password tenant switch (now the
+    # Dashboard's own tenant dropdown) without also being a general local-
+    # dev auth bypass.
+    async def test_dev_tenants_reachable_with_only_demo_mode_enabled(self) -> None:
+        tenant = type("Tenant", (), {"id": uuid.uuid4(), "name": "Honey Co"})()
+        user = _fake_user(tenant_id=tenant.id)
+        with (
+            patch("app.auth.api.settings.dev_auth_bypass_enabled", False),
+            patch("app.auth.api.settings.demo_mode_enabled", True),
+            patch("app.auth.api.TenantRepository") as mock_repo_cls,
+        ):
+            mock_repo_cls.return_value.list_with_owner_unscoped = AsyncMock(
+                return_value=[(tenant, user)]
+            )
+            response = await _get_dev_tenants()
+        assert response.status_code == 200
+
+    async def test_dev_login_reachable_with_only_demo_mode_enabled(self) -> None:
+        user = _fake_user()
+        with (
+            patch("app.auth.api.settings.dev_auth_bypass_enabled", False),
+            patch("app.auth.api.settings.demo_mode_enabled", True),
+            patch("app.auth.api.UserRepository") as mock_repo_cls,
+        ):
+            mock_repo_cls.return_value.get_by_id_unscoped = AsyncMock(return_value=user)
+            response = await _dev_login(user.id)
+        assert response.status_code == 200

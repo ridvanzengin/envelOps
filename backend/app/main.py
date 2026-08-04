@@ -3,6 +3,7 @@ from fastapi import FastAPI
 from app.auth.api import router as auth_router
 from app.channels.api import router as channels_router
 from app.conversations.api import router as conversations_router
+from app.core.config import settings
 from app.dashboard.api import router as dashboard_router
 from app.escalation.api import router as escalation_router
 from app.events.api import router as events_router
@@ -28,3 +29,12 @@ app.include_router(tenants_router)
 @app.get("/healthz")
 async def healthz() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.get("/system/demo-mode")
+async def demo_mode_status() -> dict[str, bool]:
+    """Unauthenticated on purpose -- the frontend needs this before it
+    even knows whether to show a login screen (App.tsx skips Login
+    entirely and auto-authenticates as a showcase tenant when this is
+    true, see auth/api.py's dev-login endpoints)."""
+    return {"enabled": settings.demo_mode_enabled}

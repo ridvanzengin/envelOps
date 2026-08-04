@@ -16,6 +16,7 @@ from app.channels.telegram_client import TelegramUpdate
 from app.conversations.models import Conversation, Message
 from app.conversations.repository import ConversationRepository, MessageRepository
 from app.core.db import get_session
+from app.core.demo_mode import block_in_demo_mode
 from app.core.events import publish_event
 from app.pipeline.tasks import process_incoming_message
 
@@ -59,6 +60,7 @@ async def update_channel_ai(
     body: UpdateChannelAIRequest,
     current_user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
+    _: None = Depends(block_in_demo_mode),
 ) -> ChannelResponse:
     """The Channels page's AI on/off switch -- direct field mutation +
     commit, the same shape resolve_escalation (app/escalation/api.py)
@@ -149,6 +151,7 @@ async def telegram_webhook(
     update: TelegramUpdate,
     session: AsyncSession = Depends(get_session),
     x_telegram_bot_api_secret_token: str | None = Header(default=None),
+    _: None = Depends(block_in_demo_mode),
 ) -> dict[str, str]:
     channel_repo = ChannelRepository(session)
     channel = await channel_repo.get_by_id_unscoped(channel_id)
@@ -198,6 +201,7 @@ async def instagram_webhook(
     payload: MetaMessagingEvent,
     session: AsyncSession = Depends(get_session),
     secret: str | None = Header(default=None, alias=_SIMULATED_SECRET_HEADER),
+    _: None = Depends(block_in_demo_mode),
 ) -> dict[str, str]:
     text = payload.message.text if payload.message else None
     return await _simulated_webhook(
@@ -211,6 +215,7 @@ async def facebook_webhook(
     payload: MetaMessagingEvent,
     session: AsyncSession = Depends(get_session),
     secret: str | None = Header(default=None, alias=_SIMULATED_SECRET_HEADER),
+    _: None = Depends(block_in_demo_mode),
 ) -> dict[str, str]:
     text = payload.message.text if payload.message else None
     return await _simulated_webhook(
@@ -224,6 +229,7 @@ async def whatsapp_webhook(
     payload: WhatsAppMessage,
     session: AsyncSession = Depends(get_session),
     secret: str | None = Header(default=None, alias=_SIMULATED_SECRET_HEADER),
+    _: None = Depends(block_in_demo_mode),
 ) -> dict[str, str]:
     text = payload.text.body if payload.text else None
     return await _simulated_webhook(
@@ -237,6 +243,7 @@ async def email_webhook(
     payload: EmailWebhookPayload,
     session: AsyncSession = Depends(get_session),
     secret: str | None = Header(default=None, alias=_SIMULATED_SECRET_HEADER),
+    _: None = Depends(block_in_demo_mode),
 ) -> dict[str, str]:
     return await _simulated_webhook(
         channel_id, "email", payload.from_address, payload.text, session, secret
