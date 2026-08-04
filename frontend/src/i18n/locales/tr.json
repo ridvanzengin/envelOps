@@ -1,4 +1,11 @@
 {
+  "app": {
+    "loading": "Yükleniyor…"
+  },
+  "demoMode": {
+    "disabledTooltip": "Demo modu — değişiklikler kaydedilmez",
+    "tenantLabel": "Kiracı"
+  },
   "nav": {
     "knowledge": "Bilgi Kaynakları",
     "testConsole": "Test Konsolu",
@@ -99,10 +106,7 @@
     "login": "Giriş yap",
     "loggingIn": "Giriş yapılıyor…",
     "logout": "Çıkış yap",
-    "invalidCredentials": "E-posta veya şifre hatalı.",
-    "devBadge": "Sadece geliştirme",
-    "devTenantSwitch": "Kiracı değiştir (şifresiz)",
-    "devTenantSwitchPlaceholder": "Bir kiracı seçin…"
+    "invalidCredentials": "E-posta veya şifre hatalı."
   },
   "escalations": {
     "resolveError": "Bu yükseltme çözülemedi. Tekrar deneyin.",

@@ -14,6 +14,95 @@
   border: 0;
 }
 
+/* Replaces the plain "Dashboard" <h1> in demo mode (App.tsx skips the
+   real login screen entirely there, so this dropdown is the only way a
+   visitor picks which showcase tenant to look at). A real dropdown-menu
+   (App.css's shared .dropdown-menu/.dropdown-menu__list/__item classes,
+   same pattern as ChannelRail's own account menu), not a plain <select>
+   -- picking a tenant is closer in weight to a real navigation action
+   than a form field. */
+.dashboard__tenant-switch-trigger {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 8px 4px 4px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: none;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+.dashboard__tenant-switch-trigger:hover {
+  border-color: var(--border);
+  background: var(--bg-subtle);
+}
+
+.dashboard__tenant-switch-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  flex-shrink: 0;
+  border-radius: 8px;
+  background: var(--accent);
+  color: white;
+}
+
+.dashboard__tenant-switch-icon svg {
+  width: 17px;
+  height: 17px;
+}
+
+.dashboard__tenant-switch-name {
+  font-size: 19px;
+  font-weight: 700;
+  color: var(--text-h);
+  line-height: 1;
+}
+
+.dashboard__tenant-switch-chevron {
+  width: 15px;
+  height: 15px;
+  flex-shrink: 0;
+  margin-left: 2px;
+  color: var(--text);
+  transform: rotate(90deg);
+}
+
+.dashboard__tenant-switch-chevron.chevron--expanded {
+  transform: rotate(-90deg);
+}
+
+/* Overrides .dropdown-menu__list's default right:0 -- this trigger sits
+   at the far left of the page header, so aligning the list's right edge
+   to the trigger would push it off-screen to the left instead of
+   opening safely into the header's own open space to the right. */
+.dashboard__tenant-switch-list {
+  left: 0;
+  right: auto;
+  min-width: 240px;
+}
+
+.dashboard__tenant-switch-item-text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  flex: 1;
+  min-width: 0;
+}
+
+.dashboard__tenant-switch-item-email {
+  font-size: 11px;
+  color: var(--text);
+}
+
+.dropdown-menu__item:has(.dashboard__tenant-switch-item-text) {
+  padding: 8px 10px;
+}
+
 .dashboard__range {
   display: flex;
   gap: 4px;

@@ -164,6 +164,13 @@ def follow_up_check() -> None:
     that, it's a normal inbound message through the usual channel-ingestion
     path, re-entering the pipeline at step 2 same as any other reply.
     """
+    if settings.demo_mode_enabled:
+        # No background job writes to a public demo's database on its own
+        # -- every other write path in demo mode is blocked at the API
+        # layer (app/core/demo_mode.py), but this one isn't reachable
+        # through the API at all, so it needs its own check.
+        logger.info("Skipping follow_up_check: demo_mode_enabled is on")
+        return
     asyncio.run(_follow_up_check())
 
 

@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import CurrentUser, get_current_user
 from app.core.db import get_session
+from app.core.demo_mode import block_in_demo_mode
 from app.tenants.behavior_config import (
     BookOrCheckoutConfig,
     ChannelToneConfig,
@@ -99,6 +100,7 @@ async def patch_tenant_settings(
     body: TenantSettingsPatch,
     current_user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
+    _: None = Depends(block_in_demo_mode),
 ) -> TenantSettingsResponse:
     tenant = await TenantRepository(session).get(current_user.tenant_id)
     if tenant is None:

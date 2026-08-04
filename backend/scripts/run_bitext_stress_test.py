@@ -10,9 +10,13 @@ Prerequisites:
 - The dataset CSV downloaded to `backend/data/bitext_customer_support_27k.csv`
   (not checked in -- fetch from
   https://huggingface.co/datasets/bitext/Bitext-customer-support-llm-chatbot-training-dataset)
-- `ENVELOPS_DEV_AUTH_BYPASS_ENABLED=true` in `.env` (dev-login, no password)
 - Meadow & Jar Honey Co already seeded (scripts/seed_showcase_tenants.py)
-  with its 26-entry FAQ knowledge base
+  with its 26-entry FAQ knowledge base -- this script logs in through the
+  real POST /auth/login with that seed script's own known DEMO_PASSWORD,
+  not any no-password bypass, so it has no dependency on
+  ENVELOPS_DEMO_MODE_ENABLED (deliberately: that flag also makes Test
+  Console stop persisting messages, which would silently defeat this
+  script's whole point -- see its own docstring below)
 
 Only 14 of Bitext's 27 intents are used -- ORDER/CANCEL/SHIPPING/DELIVERY/
 REFUND/PAYMENT, the categories that actually match what a small DM seller's
@@ -45,7 +49,12 @@ from pathlib import Path
 import httpx
 
 BASE_URL = "http://localhost:8000"
-DEV_USER_ID = "1748dab3-872d-47b6-b08d-724d0b9da17b"  # Meadow & Jar Honey Co owner
+OWNER_EMAIL = "owner@meadow-jar-honey.demo"
+# scripts/seed_showcase_tenants.py/seed_calibration_tenant.py's own
+# constant, duplicated here rather than imported -- this script predates
+# neither depending on the other, and a shared constants module would be
+# more machinery than three files agreeing on one literal string needs.
+DEMO_PASSWORD = "EnvelOpsDemo!1"
 CSV_PATH = Path(__file__).resolve().parents[1] / "data" / "bitext_customer_support_27k.csv"
 
 # ORDER, CANCEL, SHIPPING, DELIVERY, REFUND, PAYMENT categories only --
@@ -106,8 +115,8 @@ def load_samples() -> list[SampledMessage]:
     return samples
 
 
-def dev_login(client: httpx.Client) -> str:
-    resp = client.post("/auth/dev-login", json={"user_id": DEV_USER_ID})
+def login(client: httpx.Client) -> str:
+    resp = client.post("/auth/login", json={"email": OWNER_EMAIL, "password": DEMO_PASSWORD})
     resp.raise_for_status()
     return resp.json()["access_token"]
 
@@ -125,7 +134,7 @@ def main() -> None:
     print(f"Sampled {len(samples)} messages across {len(RELEVANT_INTENTS)} intents.\n")
 
     with httpx.Client(base_url=BASE_URL, timeout=60) as client:
-        token = dev_login(client)
+        token = login(client)
         client.headers["Authorization"] = f"Bearer {token}"
 
         results = []

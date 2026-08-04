@@ -15,9 +15,10 @@ reply, and there's no webhook needing a fast response to hand off from.
 """
 
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from langgraph.checkpoint.memory import MemorySaver
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -26,6 +27,7 @@ from app.channels.models import Channel
 from app.channels.repository import ChannelRepository
 from app.conversations.models import Conversation, Message
 from app.conversations.repository import ConversationRepository, MessageRepository
+from app.core.config import settings
 from app.core.db import get_session
 from app.core.events import publish_event
 from app.pipeline.models import PipelineTrace
@@ -121,6 +123,50 @@ class SendTestMessageResponse(BaseModel):
     escalation_reason: str | None
 
 
+# Demo mode's counterpart to everything below -- runs the exact same real
+# pipeline (real Gemini calls, real knowledge search), and (see
+# _send_test_message_demo's own docstring) does insert real Channel/
+# Conversation/Lead/Escalation/Message rows on the request's session, same
+# as the real flow -- Postgres' own foreign keys leave no way around that.
+# The guarantee is that none of it is ever committed, so a public
+# read-only demo leaves nothing durable in Postgres from Test Console use
+# once the request ends, matching every other write path's
+# demo_mode_enabled gate (app/core/demo_mode.py) even though this one
+# can't just 403 -- the point of Test Console is that it still runs.
+#
+# Two process-local (not per-request) stores, deliberately not Postgres/
+# Redis: a demo's whole point is that this is throwaway, so losing it on
+# restart is a feature, not a gap.
+#   - _demo_checkpointer: one shared in-memory LangGraph checkpointer.
+#     Using MemorySaver here instead of get_checkpointer()'s
+#     AsyncPostgresSaver also sidesteps the checkpointer/session
+#     cross-driver hang CLAUDE.md documents (psycopg vs asyncpg) --
+#     there's no second real DB connection involved at all.
+#   - _demo_conversation_messages: per (tenant, channel_type, session)
+#     accumulated message list, keyed the same way a real Conversation
+#     row would be looked up (ConversationRepository.get_by_external_contact),
+#     just never persisted.
+_demo_checkpointer = MemorySaver()
+_demo_conversation_messages: dict[tuple[uuid.UUID, str, str], list[TestMessageResponse]] = {}
+
+
+def _demo_key(
+    tenant_id: uuid.UUID, channel_type: str, external_contact_id: str
+) -> tuple[uuid.UUID, str, str]:
+    return (tenant_id, channel_type, external_contact_id)
+
+
+def _demo_thread_id(
+    tenant_id: uuid.UUID, channel_type: str, external_contact_id: str
+) -> uuid.UUID:
+    # Deterministic, not random -- the same (tenant, channel_type, session)
+    # must map to the same LangGraph thread_id on every call, or a second
+    # message in the same Test Console session would start a fresh thread
+    # instead of continuing the conversation (escalation pause/resume,
+    # multi-turn context) the way a real persisted Conversation.id would.
+    return uuid.uuid5(uuid.NAMESPACE_URL, f"{tenant_id}:{channel_type}:{external_contact_id}")
+
+
 @router.get("/conversations")
 async def get_test_conversation(
     channel_type: str,
@@ -128,6 +174,18 @@ async def get_test_conversation(
     current_user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> TestConversationResponse:
+    if settings.demo_mode_enabled:
+        key = _demo_key(current_user.tenant_id, channel_type, external_contact_id)
+        history = _demo_conversation_messages.get(key, [])
+        if not history:
+            return TestConversationResponse(conversation_id=None, messages=[])
+        return TestConversationResponse(
+            conversation_id=_demo_thread_id(
+                current_user.tenant_id, channel_type, external_contact_id
+            ),
+            messages=list(history),
+        )
+
     channel_repo = ChannelRepository(session)
     channel = await channel_repo.get_test_channel(current_user.tenant_id, channel_type)
     conversation = (
@@ -159,6 +217,11 @@ async def send_test_message(
     if not external_contact_id:
         raise HTTPException(
             status.HTTP_400_BAD_REQUEST, "external_contact_id must not be blank"
+        )
+
+    if settings.demo_mode_enabled:
+        return await _send_test_message_demo(
+            body, stripped, external_contact_id, current_user, session
         )
 
     channel_repo = ChannelRepository(session)
@@ -272,6 +335,120 @@ async def send_test_message(
     return SendTestMessageResponse(
         conversation_id=conversation.id,
         messages=messages,
+        escalated=escalated,
+        escalation_reason=escalation_reason,
+    )
+
+
+async def _send_test_message_demo(
+    body: SendTestMessageRequest,
+    stripped: str,
+    external_contact_id: str,
+    current_user: CurrentUser,
+    session: AsyncSession,
+) -> SendTestMessageResponse:
+    """Demo-mode counterpart to send_test_message above -- see the module
+    docstring near _demo_checkpointer for the persistence story. graph.py's
+    own nodes (log_lead_and_notify, escalate_to_human, _write_internal_note)
+    still insert real Lead/Escalation/internal-note-Message rows on
+    `session` as they always do -- Postgres enforces their foreign keys
+    against conversation_id at INSERT time, not deferred to commit, so a
+    conversation_id with nothing behind it in this transaction made every
+    one of those inserts fail outright with an IntegrityError (found live
+    testing this, not anticipated). Fix: insert real Channel/Conversation
+    rows for this transaction to reference -- session.flush() (not
+    commit()) makes them visible to those later inserts within this same
+    transaction without ever making them durable. This function never
+    calls session.commit() at all, so the whole transaction (Channel,
+    Conversation, Lead, Escalation, Message, everything) is discarded when
+    the request's session closes, the same "nothing written" outcome every
+    other demo-mode-gated endpoint gets via an outright 403 -- just via
+    rollback instead of never having tried the write.
+
+    Also, deliberately no pre-pipeline session.commit() the way the real
+    flow above has (CLAUDE.md's "commit before invoking a checkpointed
+    run" gotcha): that hang was specifically about the Postgres
+    checkpointer's psycopg connection contending with an open transaction
+    on this session's separate asyncpg one. _demo_checkpointer is a
+    MemorySaver -- pure in-process memory, no second database connection
+    involved at all -- so that whole class of hang can't happen here.
+    """
+    key = _demo_key(current_user.tenant_id, body.channel_type, external_contact_id)
+    conversation_id = _demo_thread_id(
+        current_user.tenant_id, body.channel_type, external_contact_id
+    )
+    history = _demo_conversation_messages.setdefault(key, [])
+
+    channel = Channel(
+        tenant_id=current_user.tenant_id,
+        type=body.channel_type,
+        external_account_id="demo",
+        is_test=True,
+    )
+    session.add(channel)
+    await session.flush()
+    session.add(
+        Conversation(
+            id=conversation_id,
+            tenant_id=current_user.tenant_id,
+            channel_id=channel.id,
+            external_contact_id=external_contact_id,
+        )
+    )
+    await session.flush()
+
+    state = PipelineState(
+        tenant_id=current_user.tenant_id,
+        conversation_id=conversation_id,
+        incoming_text=stripped,
+        channel_type=body.channel_type,
+    )
+    result = await run_pipeline(state, session, _demo_checkpointer)
+
+    escalated = "__interrupt__" in result
+    escalation_reason = None
+    if escalated:
+        interrupt = result["__interrupt__"][0]
+        escalation_reason = interrupt.value.get("escalation_reason")
+
+    already_escalated = bool(result.get("already_escalated"))
+    diagnostics = (
+        MessageDiagnostics(
+            detected_intent=result.get("detected_intent"),
+            lead_score=result.get("lead_score"),
+            decision=result.get("decision"),
+        )
+        if not already_escalated
+        else None
+    )
+    history.append(
+        TestMessageResponse(
+            id=uuid.uuid4(),
+            direction="inbound",
+            text=stripped,
+            created_at=datetime.now(UTC),
+            audience="customer",
+            escalation_id=None,
+            diagnostics=diagnostics,
+        )
+    )
+
+    draft_text = result.get("draft_text")
+    if draft_text and not already_escalated:
+        history.append(
+            TestMessageResponse(
+                id=uuid.uuid4(),
+                direction="outbound",
+                text=draft_text,
+                created_at=datetime.now(UTC),
+                audience="customer",
+                escalation_id=None,
+            )
+        )
+
+    return SendTestMessageResponse(
+        conversation_id=conversation_id,
+        messages=list(history),
         escalated=escalated,
         escalation_reason=escalation_reason,
     )

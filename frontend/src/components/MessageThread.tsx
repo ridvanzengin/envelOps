@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { useTick } from "../hooks/useTick";
 import { formatRelativeTime } from "../utils/relativeTime";
 import type { Escalation, Message } from "../context/conversationPanel/context";
+import { useDemoModeContext } from "../context/demoMode/useDemoModeContext";
 import { CheckIcon } from "./icons";
 import { DiagnosticsBadges } from "./DiagnosticsBadges";
 
@@ -27,6 +28,7 @@ export function MessageThread({
   resolvingEscalationId,
 }: MessageThreadProps) {
   const { t, i18n } = useTranslation();
+  const { enabled: demoModeEnabled } = useDemoModeContext();
   // Re-renders every 60s so relative timestamps ("5m ago") don't go stale
   // while the thread stays open -- the tick value itself is unused, its
   // only job is to force this component to re-evaluate formatRelativeTime.
@@ -61,7 +63,8 @@ export function MessageThread({
                   <button
                     type="button"
                     className="button button--primary conversation-panel__internal-note-resolve"
-                    disabled={resolvingEscalationId === escalation.id}
+                    disabled={demoModeEnabled || resolvingEscalationId === escalation.id}
+                    title={demoModeEnabled ? t("demoMode.disabledTooltip") : undefined}
                     onClick={() => onResolveEscalation(escalation.id)}
                   >
                     <CheckIcon />

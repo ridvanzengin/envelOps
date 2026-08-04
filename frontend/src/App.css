@@ -56,34 +56,6 @@
   margin-bottom: 24px;
 }
 
-/* Dev-only tenant switcher (docs/ROADMAP.md) -- only ever rendered when
-   GET /auth/dev-tenants actually returns rows, i.e. never in a real
-   deployment. Visually separated from the real login form, not just
-   appended, so it reads as a distinct, temporary affordance. */
-.login-page__dev-switch {
-  margin-top: 20px;
-  padding-top: 20px;
-  border-top: 1px solid var(--border);
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.dev-badge {
-  align-self: flex-start;
-  display: inline-flex;
-  align-items: center;
-  padding: 2px 8px;
-  border-radius: 999px;
-  font-size: 11px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  background: var(--danger-bg);
-  color: var(--danger);
-  border: 1px solid var(--danger);
-}
-
 .app-shell { display: flex; height: 100svh; overflow: hidden; }
 .app-content { flex: 1; min-width: 0; overflow-y: auto; }
 .page { width: 100%; padding: 32px 24px; box-sizing: border-box; }

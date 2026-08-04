@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 
 import { apiGet, apiPatch, ApiError } from "../api/client";
 import { useAuth } from "../auth/useAuth";
+import { useDemoModeContext } from "../context/demoMode/useDemoModeContext";
 import {
   EmailIcon,
   FacebookIcon,
@@ -40,6 +41,7 @@ interface ApiChannel {
 export default function Channels() {
   const { t } = useTranslation();
   const { token, logout } = useAuth();
+  const { enabled: demoModeEnabled } = useDemoModeContext();
 
   const [channels, setChannels] = useState<ApiChannel[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -176,7 +178,13 @@ export default function Channels() {
                       <td>
                         <label
                           className="toggle-switch"
-                          title={channel ? undefined : t("channels.notSetUp")}
+                          title={
+                            !channel
+                              ? t("channels.notSetUp")
+                              : demoModeEnabled
+                                ? t("demoMode.disabledTooltip")
+                                : undefined
+                          }
                         >
                           <input
                             type="checkbox"
@@ -188,7 +196,7 @@ export default function Channels() {
                             // channel is set up: it starts enabled, it
                             // doesn't need switching on.
                             checked={channel ? channel.ai_enabled : true}
-                            disabled={!channel || togglingId === channel.id}
+                            disabled={!channel || demoModeEnabled === true || togglingId === channel.id}
                             onChange={() => channel && void handleToggle(channel)}
                             aria-label={t("channels.autoReplyToggleLabel")}
                           />

@@ -48,12 +48,20 @@ scope-pivot reasoning. Concretely, right now:
   tenant's actual channels with a **working per-channel AI auto-reply
   on/off switch** (`GET /channels/connected`/`PATCH /channels/{id}`) —
   real channel *creation* is still script-only.
-- All PRs through #47 are merged into `main` (confirmed via `gh pr view
-  47 --json state` 2026-08-03). The Celery worker asyncpg fix below is on
-  its own branch, not yet a PR as of this writing — **check this**:
-  verify the actual PR number/state with `gh pr list`/`gh pr view <N>
-  --json state` rather than trusting this file, which goes stale between
-  sessions.
+- A public, read-only demo mode exists (`ENVELOPS_DEMO_MODE_ENABLED`,
+  `app/core/demo_mode.py`) — every mutating endpoint 403s, Test Console
+  stays real but persistence-free, and the frontend skips login entirely
+  in favor of an open tenant dropdown. The old, separate
+  `dev_auth_bypass_enabled` flag and Login page's own dev-only tenant
+  switcher are gone (decided 2026-08-04) — demo mode is now the single
+  no-password-login mechanism, at `/auth/demo-tenants` +
+  `/auth/demo-login` (renamed from `/auth/dev-tenants`/`/auth/dev-login`).
+  See the changelog entries below for the full shape. On its own branch
+  (`demo`), not yet a PR as of this writing.
+- All PRs through #49 are merged into `main` (confirmed via `gh pr list`
+  2026-08-04) — **check this**: verify the actual PR number/state with
+  `gh pr list`/`gh pr view <N> --json state` rather than trusting this
+  file, which goes stale between sessions.
 
 ## Open items
 
@@ -95,6 +103,84 @@ auto-send + safety-floor-escalation-only gate (ARCHITECTURE §5) stays
 final, not provisional.
 
 ## Changelog
+
+**2026-08-04, later same day** — Removed the separate `dev_auth_bypass_enabled`
+flag and Login page's own dev-only tenant switcher entirely, direct
+instruction, now that demo mode covers the same no-password-login need:
+- Backend: `dev_auth_bypass_enabled` deleted from `config.py`.
+  `/auth/dev-tenants`/`/auth/dev-login` renamed to `/auth/demo-tenants`/
+  `/auth/demo-login` (`DevTenantOption`→`DemoTenantOption` etc.), gated
+  solely by `demo_mode_enabled` now — the OR-condition is gone since
+  there's only one flag left.
+- Two calibration/stress-test scripts (`seed_calibration_tenant.py`,
+  `run_bitext_stress_test.py`) used the old dev-login purely as a
+  no-password auth convenience, unrelated to demo mode as a product
+  feature — switched to logging in for real via `POST /auth/login` with
+  the known `DEMO_PASSWORD` each seeded tenant's owner already gets, so
+  neither script depends on `demo_mode_enabled` at all. Deliberate: that
+  flag also makes Test Console stop persisting messages
+  (`_send_test_message_demo`), which would have silently defeated both
+  scripts' actual purpose (real, inspectable seeded message history) if
+  left depending on it.
+- Found via this: the test suite reads the same real `.env` file as the
+  dev server, so turning `demo_mode_enabled` on there to actually view
+  the demo locally 403'd 57 unrelated tests. Fixed with a new
+  `tests/conftest.py` autouse fixture forcing `settings.demo_mode_enabled
+  = False` before every test (individual demo-mode tests still patch it
+  True within their own scope) — the suite no longer depends on whatever
+  a developer's local `.env` happens to be set to.
+- Frontend: `Login.tsx` back to a plain email/password form, no dev
+  dropdown, no `useDevTenants` import. `useDevTenants` renamed
+  `useDemoTenants` (`/auth/demo-tenants`), consumed by `App.tsx`'s
+  auto-login and `Dashboard.tsx`'s tenant dropdown only — Login.tsx isn't
+  a consumer anymore. Removed now-unused `auth.devBadge`/
+  `auth.devTenantSwitch*` i18n keys and `.login-page__dev-switch`/
+  `.dev-badge` CSS in both locales.
+- `.claude/skills/run/SKILL.md` updated to match: no more manual
+  `<select>`/`selectOption` login step to drive a session (demo mode
+  auto-logs in on page load now) — the Dashboard's own tenant dropdown
+  is how a driven session switches tenants, keyed by `tenant_id`, not
+  `user_id` like the old Login dropdown was.
+- 337 backend tests pass (7 dev-bypass tests consolidated into 5
+  demo-mode-only ones, since the OR-condition scenario no longer exists
+  to test separately). Frontend build/lint clean.
+
+**2026-08-04** — Public read-only demo mode (`demo` branch, not yet a
+PR), direct instruction: a single `ENVELOPS_DEMO_MODE_ENABLED` flag turns
+the whole app into a safe-to-share showcase.
+- Backend: every mutating endpoint (knowledge source CRUD, `PATCH
+  /tenants/settings`, escalation resolve + trigger-phrase add/delete, the
+  channel AI toggle, all 5 inbound channel webhooks) 403s via a shared
+  `app/core/demo_mode.py` dependency — enforced at the API layer, not
+  just a frontend disable, per direct instruction. `follow_up_check`
+  (Celery Beat) skips entirely, since it isn't reachable through the API
+  gate at all. `demo_mode_enabled` also ORs into the existing dev-auth-
+  bypass gate (`auth/api.py`), opening the no-password tenant switcher.
+- Test Console is the deliberate exception: still runs the real pipeline
+  (real Gemini calls, real knowledge search) but never creates a
+  Channel/Conversation row or writes a Message/PipelineTrace row —
+  swaps the Postgres checkpointer for an in-memory one and keeps
+  per-session history in a process-local dict instead, keyed the same
+  way a real Conversation lookup would be. Response shape unchanged, so
+  the frontend needed no changes there specifically.
+- Frontend: `App.tsx` skips the login screen entirely in demo mode
+  (auto dev-logs-in as the first showcase tenant via `GET
+  /system/demo-mode` + `GET /auth/dev-tenants`); the Dashboard's own
+  `<h1>` becomes a "Tenant: [dropdown]" selector in its place, reading
+  the current tenant from the JWT itself (`src/lib/jwt.ts`, client-side
+  decode, no new endpoint needed). Every mutating control across
+  Knowledge/Settings/Channels/escalation-resolve gets `disabled` (not
+  hidden — direct instruction: full functionality stays visible, only
+  alterations are cut) plus a `title` tooltip, and a persistent sidebar
+  badge reminds a visitor throughout, not just per-button on hover.
+  `CHANNEL_ICONS` (`ChannelRail.tsx`'s dev-tenants list, now also needed
+  by `App.tsx` and `Dashboard.tsx`) got pulled into shared hooks
+  (`useDevTenants`, `useDemoMode`) and a `DemoModeProvider` context
+  rather than fetched independently per page.
+- 339 backend tests pass (22 new, covering the 403 gate across every
+  route, the dev-auth-bypass OR, `follow_up_check`'s skip, and Test
+  Console's persistence-free path including multi-turn continuity across
+  two messages in the same session). Frontend build/lint clean.
 
 **2026-08-03, later same day** — Fixed the Celery worker asyncpg
 cross-event-loop bug (found live during PR #47, filed not fixed there —

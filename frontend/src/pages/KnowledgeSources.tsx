@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 
 import { apiDelete, apiGet, apiPost, apiPostFile, apiPut, ApiError } from "../api/client";
 import { useAuth } from "../auth/useAuth";
+import { useDemoModeContext } from "../context/demoMode/useDemoModeContext";
 import {
   ChevronIcon,
   CheckIcon,
@@ -96,6 +97,7 @@ const TYPE_LABEL_KEYS: Record<SourceType, string> = {
 export default function KnowledgeSources() {
   const { t, i18n } = useTranslation();
   const { token, logout } = useAuth();
+  const { enabled: demoModeEnabled } = useDemoModeContext();
   const [sources, setSources] = useState<KnowledgeSource[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [refreshingId, setRefreshingId] = useState<string | null>(null);
@@ -370,9 +372,9 @@ export default function KnowledgeSources() {
         <button
           type="button"
           className="button"
-          disabled={refreshingAll || refreshableCount === 0}
+          disabled={demoModeEnabled || refreshingAll || refreshableCount === 0}
           onClick={() => void handleRefreshAll()}
-          title={t("knowledgeSources.refreshAllHint")}
+          title={demoModeEnabled ? t("demoMode.disabledTooltip") : t("knowledgeSources.refreshAllHint")}
         >
           <RefreshIcon />
           {refreshingAll ? t("knowledgeSources.refreshing") : t("knowledgeSources.refreshAll")}
@@ -497,7 +499,12 @@ export default function KnowledgeSources() {
                 ? t("knowledgeSources.estimatedChunks", { count: estimatedChunks })
                 : " "}
             </span>
-            <button type="submit" className="button button--primary" disabled={submitting}>
+            <button
+              type="submit"
+              className="button button--primary"
+              disabled={demoModeEnabled || submitting}
+              title={demoModeEnabled ? t("demoMode.disabledTooltip") : undefined}
+            >
               {submitting ? t("knowledgeSources.adding") : t("knowledgeSources.add")}
             </button>
           </div>
@@ -627,7 +634,8 @@ export default function KnowledgeSources() {
                           <button
                             type="button"
                             className="dropdown-menu__item"
-                            disabled={refreshingId === source.id}
+                            disabled={demoModeEnabled || refreshingId === source.id}
+                            title={demoModeEnabled ? t("demoMode.disabledTooltip") : undefined}
                             onClick={() => {
                               setOpenMenuId(null);
                               void handleRefresh(source.id);
@@ -642,7 +650,8 @@ export default function KnowledgeSources() {
                         <button
                           type="button"
                           className="dropdown-menu__item dropdown-menu__item--danger"
-                          disabled={deletingId === source.id}
+                          disabled={demoModeEnabled || deletingId === source.id}
+                          title={demoModeEnabled ? t("demoMode.disabledTooltip") : undefined}
                           onClick={() => {
                             setOpenMenuId(null);
                             void handleDelete(source.id);
@@ -669,7 +678,8 @@ export default function KnowledgeSources() {
                           <button
                             type="button"
                             className="button button--primary"
-                            disabled={savingId === source.id}
+                            disabled={demoModeEnabled || savingId === source.id}
+                            title={demoModeEnabled ? t("demoMode.disabledTooltip") : undefined}
                             onClick={() => void handleSaveEdit(source.id)}
                           >
                             {savingId === source.id

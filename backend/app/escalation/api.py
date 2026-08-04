@@ -10,6 +10,7 @@ from app.channels.models import Channel
 from app.channels.repository import ChannelRepository
 from app.conversations.repository import ConversationRepository
 from app.core.db import get_session
+from app.core.demo_mode import block_in_demo_mode
 from app.escalation.models import Escalation, TenantTriggerPhrase
 from app.escalation.repository import EscalationRepository, TenantTriggerPhraseRepository
 from app.pipeline.runner import get_checkpointer, resume_pipeline
@@ -72,6 +73,7 @@ async def resolve_escalation(
     escalation_id: uuid.UUID,
     current_user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
+    _: None = Depends(block_in_demo_mode),
 ) -> EscalationResponse:
     """No request body: resolving here only clears the queue and unpauses
     the checkpointed pipeline thread (docs/ARCHITECTURE.md §5) so the
@@ -149,6 +151,7 @@ async def add_trigger_phrase(
     body: CreateTriggerPhraseRequest,
     current_user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
+    _: None = Depends(block_in_demo_mode),
 ) -> TriggerPhraseResponse:
     stripped = body.phrase.strip()
     if not stripped:
@@ -167,6 +170,7 @@ async def delete_trigger_phrase(
     phrase_id: uuid.UUID,
     current_user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
+    _: None = Depends(block_in_demo_mode),
 ) -> None:
     """Deletable as of 2026-07-29 -- a deliberate reversal of the original
     additive-only design (REQUIREMENTS.md §6 has the full reasoning, both
