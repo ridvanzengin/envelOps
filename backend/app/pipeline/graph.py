@@ -22,6 +22,7 @@ from langgraph.graph import END, StateGraph
 from langgraph.runtime import Runtime
 from langgraph.types import interrupt
 
+from app.commerce.schemas import InventoryResult, OrderStatusResult
 from app.commerce.tools import enabled_tools, execute, format_result
 from app.conversations.models import Message
 from app.conversations.repository import MessageRepository
@@ -433,6 +434,33 @@ async def decide_next_step(
         or not lead_handling.hot_lead_requires_purchase_intent
     )
     if state.lead_score == "hot" and intent_matches_hot_lead:
+        # Ground the hot-lead fast path in real inventory/order data
+        # first, when checkable -- found live (2026-08-04): this branch
+        # used to route straight to book_or_checkout/escalate_to_human
+        # with no grounding at all, so book_or_checkout's own prompt (which
+        # has no context block, just "give them the checkout link") could
+        # confidently say "Yes, we do!" about a product the tenant never
+        # carried -- the exact fabrication class this project's
+        # fake-commerce-platform work exists to close, just reached via a
+        # different route than check_inventory's old hash-seeded logic.
+        # Only spends the extra tool-decision call when the intent is one
+        # call_tools would ground anyway and the tenant has a fake
+        # connector enabled -- inert otherwise, same zero-extra-Gemini-
+        # calls-when-not-opted-in guarantee call_tools already makes for
+        # its normal (post-decision) callers.
+        if state.detected_intent in _INTENTS_NEEDING_GROUNDING and enabled_tools(
+            behavior_config.tool_calling
+        ):
+            await call_tools(state)
+            if state.tool_call_found_nothing:
+                # A real, just-checked "we don't carry/have that" beats a
+                # hot lead score -- fall through to keep_chatting's honest
+                # answer (grounded via the same tool_call_results this
+                # just populated) instead of confidently offering a
+                # checkout link or escalating as a live sale.
+                state.decision = "keep_chatting"
+                return state
+
         tenant_repo = TenantRepository(runtime.context.session)
         tenant = await tenant_repo.get(state.tenant_id)
         # A missing tenant row shouldn't be possible in practice (state.tenant_id
@@ -494,16 +522,19 @@ def route_after_decision(state: PipelineState) -> str:
 
 
 async def call_tools(state: PipelineState) -> PipelineState:
-    """Runs on the decide_next_step -> keep_chatting edge only (never on
-    the escalation/book_or_checkout branches, which don't need live data
-    for a holding reply or a checkout handoff). DB-free itself -- the
-    fake connectors it calls into (app/commerce/connectors.py) make their
-    own real HTTP call to this backend's own fake-commerce-platform
-    endpoint, async for that reason, not because this node touches the
-    database. Fully inert -- zero extra Gemini calls, zero HTTP calls --
-    for every tenant that hasn't opted into a fake connector
-    (app/tenants/behavior_config.py's ToolCallingConfig), which is every
-    tenant today.
+    """Normally runs on the decide_next_step -> keep_chatting edge. Also
+    called directly, once, from inside decide_next_step's hot-lead branch
+    (see tool_call_found_nothing's own docstring in state.py for why) --
+    the tool_calls_attempted guard below is what stops that from also
+    running a second time via the graph's own edge for the same message.
+
+    DB-free itself -- the fake connectors it calls into (app/commerce/
+    connectors.py) make their own real HTTP call to this backend's own
+    fake-commerce-platform endpoint, async for that reason, not because
+    this node touches the database. Fully inert -- zero extra Gemini
+    calls, zero HTTP calls -- for every tenant that hasn't opted into a
+    fake connector (app/tenants/behavior_config.py's ToolCallingConfig),
+    which is every tenant today.
 
     Deliberately a single decision call, not a two-turn function-calling
     loop: the fake connector's result is folded into keep_chatting's own
@@ -511,6 +542,8 @@ async def call_tools(state: PipelineState) -> PipelineState:
     Gemini for a second turn, to avoid a second sequential Gemini call per
     tool-using message and to keep keep_chatting's already-hardened
     STATUS-tag/escalation logic completely untouched."""
+    if state.tool_calls_attempted:
+        return state
     if state.detected_intent not in _INTENTS_NEEDING_GROUNDING:
         return state
     behavior_config = load_tenant_behavior_config(state.tenant_behavior_config)
@@ -532,11 +565,18 @@ async def call_tools(state: PipelineState) -> PipelineState:
     _text, tool_calls = generate_with_tools(prompt, declarations)
 
     results = []
+    found_nothing = False
     for call in tool_calls:
         result = await execute(call.name, call.args, state.tenant_id)
         if result is not None:
             results.append(format_result(call.name, result))
+            if isinstance(result, InventoryResult) and not result.carried:
+                found_nothing = True
+            elif isinstance(result, OrderStatusResult) and result.status == "not_found":
+                found_nothing = True
     state.tool_call_results = results
+    state.tool_call_found_nothing = found_nothing
+    state.tool_calls_attempted = True
     return state
 
 
@@ -571,12 +611,26 @@ async def keep_chatting(
     # (search_knowledge), this instruction wording is the second layer.
     if state.detected_intent in _INTENTS_NEEDING_GROUNDING:
         # tool_call_results (call_tools, right before this node) folds in
-        # here alongside retrieved_chunks -- same context block, so the
-        # CLARIFY/ANSWERED/NOT_FOUND mechanism below never needs to know
-        # whether a given fact came from the knowledge base or a fake
-        # live-data tool call.
+        # here alongside retrieved_chunks, in the same context block --
+        # but labeled distinctly (not the original design here) so
+        # render_knowledge_query_instruction's CLARIFY/ANSWERED/NOT_FOUND
+        # mechanism can tell the model a given fact is a live,
+        # authoritative lookup result, not a knowledge-base snippet it
+        # might reasonably second-guess.
+        #
+        # Found live (2026-08-04): a warm purchase-intent "do you have
+        # macbook in stock?" got a correct tool_call_results answer ("we
+        # don't carry macbook -- no matching product in our catalog") but
+        # the model still tagged its own reply NOT_FOUND and escalated to
+        # a human with a generic cover reply instead of relaying that
+        # answer -- it read "not carried" as "the knowledge below doesn't
+        # cover this topic" (render_knowledge_query_instruction's case 3)
+        # rather than "a complete, negative answer to the question asked"
+        # (case 2). The [Live lookup result] label plus the explicit
+        # instruction added there closes that gap at the prompt level,
+        # without touching the CLARIFY/ANSWERED/NOT_FOUND mechanism itself.
         context_lines = [f"- {chunk}" for chunk in state.retrieved_chunks] + [
-            f"- {result}" for result in state.tool_call_results
+            f"- [Live lookup result] {result}" for result in state.tool_call_results
         ]
         context_block = (
             "\n".join(context_lines)

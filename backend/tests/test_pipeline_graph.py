@@ -3,7 +3,7 @@ from unittest.mock import AsyncMock, patch
 
 from langgraph.runtime import Runtime
 
-from app.commerce.schemas import OrderStatusResult
+from app.commerce.schemas import InventoryResult, OrderStatusResult
 from app.core.llm import ToolCallRequest
 from app.pipeline.context import PipelineContext
 from app.pipeline.graph import (
@@ -630,6 +630,169 @@ class TestCallTools:
         declarations = mock_gen.call_args.args[1]
         assert [d.name for d in declarations] == ["order_status_lookup"]
 
+    async def test_skips_when_already_attempted_this_turn(self) -> None:
+        # decide_next_step's hot-lead branch may call this directly before
+        # the graph's own decide_next_step -> call_tools edge would
+        # otherwise run it again for the same message -- the guard must
+        # stop the second call from spending another Gemini call.
+        state = _make_state("Where's my order #12345?")
+        state.detected_intent = "knowledge_question"
+        state.tenant_behavior_config = {
+            "tool_calling": {"order_status_lookup_enabled": True}
+        }
+        state.tool_calls_attempted = True
+        state.tool_call_results = ["already computed"]
+        with patch("app.pipeline.graph.generate_with_tools") as mock_gen:
+            result = await call_tools(state)
+        mock_gen.assert_not_called()
+        assert result.tool_call_results == ["already computed"]
+
+    async def test_found_nothing_true_for_not_carried_inventory(self) -> None:
+        state = _make_state("do you have macbook in stock?")
+        state.detected_intent = "purchase_intent"
+        state.tenant_behavior_config = {
+            "tool_calling": {"inventory_check_enabled": True}
+        }
+        tool_call = ToolCallRequest(name="inventory_check", args={"product_name": "macbook"})
+        not_carried = InventoryResult(
+            product_name="macbook", size=None, carried=False,
+            in_stock=False, quantity_available=None, restock_eta_days=None,
+        )
+        with (
+            patch(
+                "app.pipeline.graph.generate_with_tools", return_value=(None, [tool_call])
+            ),
+            patch("app.pipeline.graph.execute", AsyncMock(return_value=not_carried)),
+        ):
+            result = await call_tools(state)
+        assert result.tool_call_found_nothing is True
+        assert result.tool_calls_attempted is True
+
+    async def test_found_nothing_true_for_order_not_found(self) -> None:
+        state = _make_state("where's order ###?")
+        state.detected_intent = "knowledge_question"
+        state.tenant_behavior_config = {
+            "tool_calling": {"order_status_lookup_enabled": True}
+        }
+        tool_call = ToolCallRequest(name="order_status_lookup", args={"order_number": "###"})
+        not_found = OrderStatusResult(
+            order_number="###", status="not_found", carrier=None,
+            tracking_number=None, days_to_delivery=None,
+        )
+        with (
+            patch(
+                "app.pipeline.graph.generate_with_tools", return_value=(None, [tool_call])
+            ),
+            patch("app.pipeline.graph.execute", AsyncMock(return_value=not_found)),
+        ):
+            result = await call_tools(state)
+        assert result.tool_call_found_nothing is True
+
+    async def test_found_nothing_false_for_a_normal_result(self) -> None:
+        state = _make_state("Where's my order #12345?")
+        state.detected_intent = "knowledge_question"
+        state.tenant_behavior_config = {
+            "tool_calling": {"order_status_lookup_enabled": True}
+        }
+        tool_call = ToolCallRequest(name="order_status_lookup", args={"order_number": "12345"})
+        shipped = OrderStatusResult(
+            order_number="12345", status="shipped", carrier="UPS",
+            tracking_number="UP1", days_to_delivery=2,
+        )
+        with (
+            patch(
+                "app.pipeline.graph.generate_with_tools", return_value=(None, [tool_call])
+            ),
+            patch("app.pipeline.graph.execute", AsyncMock(return_value=shipped)),
+        ):
+            result = await call_tools(state)
+        assert result.tool_call_found_nothing is False
+
+
+class TestDecideNextStepToolGrounding:
+    """decide_next_step's hot-lead branch calling call_tools itself before
+    committing to book_or_checkout/escalate_to_human -- found live
+    (2026-08-04): that branch used to route straight there with zero
+    grounding, so a hot "do you have macbook in stock?" got book_or_
+    checkout's ungrounded "Yes, we do!" for a product never carried at
+    all."""
+
+    async def test_falls_back_to_keep_chatting_when_tool_lookup_finds_nothing(
+        self,
+    ) -> None:
+        state = _make_state("do you have macbook in stock?")
+        state.detected_intent = "purchase_intent"
+        state.lead_score = "hot"
+        state.tenant_behavior_config = {"tool_calling": {"inventory_check_enabled": True}}
+        tool_call = ToolCallRequest(name="inventory_check", args={"product_name": "macbook"})
+        not_carried = InventoryResult(
+            product_name="macbook", size=None, carried=False,
+            in_stock=False, quantity_available=None, restock_eta_days=None,
+        )
+        with (
+            patch("app.pipeline.graph.TenantTriggerPhraseRepository") as mock_phrase_repo_cls,
+            patch(
+                "app.pipeline.graph.generate_with_tools", return_value=(None, [tool_call])
+            ),
+            patch("app.pipeline.graph.execute", AsyncMock(return_value=not_carried)),
+            patch("app.pipeline.graph.TenantRepository") as mock_tenant_repo_cls,
+        ):
+            mock_phrase_repo_cls.return_value.list = AsyncMock(return_value=[])
+            result = await decide_next_step(state, _make_runtime())
+        assert result.decision == "keep_chatting"
+        assert result.tool_call_found_nothing is True
+        assert len(result.tool_call_results) == 1
+        # Never even reached the tenant.closing_action lookup -- the
+        # override returns before that, not just after overwriting it.
+        mock_tenant_repo_cls.assert_not_called()
+
+    async def test_proceeds_to_hot_lead_routing_when_tool_lookup_finds_something(
+        self,
+    ) -> None:
+        state = _make_state("do you have the SmartHome Hub in stock?")
+        state.detected_intent = "purchase_intent"
+        state.lead_score = "hot"
+        state.tenant_behavior_config = {"tool_calling": {"inventory_check_enabled": True}}
+        tool_call = ToolCallRequest(
+            name="inventory_check", args={"product_name": "SmartHome Hub"}
+        )
+        carried = InventoryResult(
+            product_name="SmartHome Hub", size=None, carried=True,
+            in_stock=True, quantity_available=5, restock_eta_days=None,
+        )
+        fake_tenant = type("Tenant", (), {"closing_action": "book_or_checkout"})()
+        with (
+            patch("app.pipeline.graph.TenantTriggerPhraseRepository") as mock_phrase_repo_cls,
+            patch(
+                "app.pipeline.graph.generate_with_tools", return_value=(None, [tool_call])
+            ),
+            patch("app.pipeline.graph.execute", AsyncMock(return_value=carried)),
+            patch("app.pipeline.graph.TenantRepository") as mock_tenant_repo_cls,
+        ):
+            mock_phrase_repo_cls.return_value.list = AsyncMock(return_value=[])
+            mock_tenant_repo_cls.return_value.get = AsyncMock(return_value=fake_tenant)
+            result = await decide_next_step(state, _make_runtime())
+        assert result.decision == "book_or_checkout"
+        assert result.tool_call_found_nothing is False
+
+    async def test_skips_tool_check_when_tool_calling_not_enabled(self) -> None:
+        # Every tenant at defaults today -- must stay byte-identical to
+        # pre-fix behavior: zero extra Gemini calls, same routing.
+        state = _make_state("I want to order 5 jars right now, how do I pay?")
+        state.detected_intent = "purchase_intent"
+        state.lead_score = "hot"
+        fake_tenant = type("Tenant", (), {"closing_action": "book_or_checkout"})()
+        with (
+            patch("app.pipeline.graph.TenantTriggerPhraseRepository") as mock_phrase_repo_cls,
+            patch("app.pipeline.graph.generate_with_tools") as mock_gen_tools,
+            patch("app.pipeline.graph.TenantRepository") as mock_tenant_repo_cls,
+        ):
+            mock_phrase_repo_cls.return_value.list = AsyncMock(return_value=[])
+            mock_tenant_repo_cls.return_value.get = AsyncMock(return_value=fake_tenant)
+            result = await decide_next_step(state, _make_runtime())
+        mock_gen_tools.assert_not_called()
+        assert result.decision == "book_or_checkout"
+
 
 class TestKeepChatting:
     async def test_sets_draft_text_from_model_response(self) -> None:
@@ -658,6 +821,30 @@ class TestKeepChatting:
         prompt = mock_gen.call_args.args[0]
         assert "We ship worldwide via DHL." in prompt
         assert "Order 12345 status: shipped." in prompt
+
+    async def test_labels_tool_results_as_live_lookups_distinct_from_knowledge(
+        self,
+    ) -> None:
+        # Found live (2026-08-04): a warm "do you have macbook in stock?"
+        # got a correct tool_call_results answer ("we don't carry
+        # macbook") but the model still escalated with NOT_FOUND instead
+        # of relaying it -- it read the negative tool answer as "topic not
+        # covered" rather than "a complete answer". The [Live lookup
+        # result] label (plus the matching instruction in
+        # render_knowledge_query_instruction) is what tells the model
+        # these are different kinds of context lines.
+        state = _make_state("Where's my order and do you ship worldwide?")
+        state.detected_intent = "knowledge_question"
+        state.retrieved_chunks = ["We ship worldwide via DHL."]
+        state.tool_call_results = ["Order 12345 status: shipped."]
+        with patch(
+            "app.pipeline.graph.generate_text", return_value="ANSWERED\nx"
+        ) as mock_gen:
+            await keep_chatting(state, _make_runtime())
+        prompt = mock_gen.call_args.args[0]
+        assert "- [Live lookup result] Order 12345 status: shipped." in prompt
+        assert "- We ship worldwide via DHL." in prompt
+        assert "- [Live lookup result] We ship worldwide via DHL." not in prompt
 
     async def test_handles_no_retrieved_chunks_without_erroring(self) -> None:
         state = _make_state("Do you ship internationally?")

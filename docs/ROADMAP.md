@@ -116,6 +116,45 @@ final, not provisional.
 
 ## Changelog
 
+**2026-08-04, later still again** — Two more fabrication-class bugs found
+live, testing the fake-commerce-platform work just below, both fixed on
+the same branch/PR:
+- **`keep_chatting` mis-tagging a correct tool answer as `NOT_FOUND`**: a
+  warm "do you have macbook in stock?" got a correct
+  `tool_call_results` answer ("we don't carry macbook") but the model
+  still escalated with a generic cover reply instead of relaying it — it
+  read a negative live-lookup result as "topic not covered"
+  (`render_knowledge_query_instruction`'s case 3) rather than "a complete
+  answer" (case 2). Fixed at the prompt level only: `keep_chatting`
+  labels tool-sourced context lines `[Live lookup result]`
+  (`app/pipeline/graph.py`), and the instruction
+  (`app/pipeline/behavior.py`) now explicitly says that label means
+  answer directly, even when the answer is negative, never `NOT_FOUND`.
+- **`decide_next_step`'s hot-lead branch skipping grounding entirely**:
+  the deeper of the two — a *hot* purchase-intent "do you have macbook in
+  stock?" was routed straight to `book_or_checkout` before `call_tools`
+  ever ran, so `book_or_checkout`'s own prompt (no grounding data at all)
+  confidently replied "Yes, we do! Grab yours right here: ..." for a
+  product not in the tenant's catalog — the exact fabrication class this
+  whole feature exists to close, just reached via a different route than
+  `check_inventory`'s old hash-seeded logic. Fixed by having
+  `decide_next_step` call `call_tools` itself, once, right before
+  committing to the hot-lead fast path (only when the intent needs
+  grounding and the tenant has a fake connector enabled — inert
+  otherwise); a definitive negative result
+  (`PipelineState.tool_call_found_nothing`, new field) falls back to
+  `keep_chatting`'s now-honest answer instead of book_or_checkout/
+  escalate_to_human. A new `tool_calls_attempted` guard on `call_tools`
+  stops the graph's own `decide_next_step -> call_tools` edge from
+  re-running it a second time for the same message.
+- Live-verified across several real runs, not just unit tests: two
+  differently-worded hot "macbook" queries both now correctly answer "We
+  do not carry macbook..." instead of fabricating or vaguely escalating,
+  while a hot query about a real catalog item (SmartHome Hub X1) still
+  correctly flows through `book_or_checkout` with an accurate "Yes, we've
+  got it in stock!"
+- 361 backend tests pass (9 new), `ruff`/`mypy` clean.
+
 **2026-08-04, later still** — Built the real-HTTP fake commerce platform
 planned earlier the same day
 ([`docs/plans/fake-commerce-platform-integration.md`](plans/fake-commerce-platform-integration.md)),
