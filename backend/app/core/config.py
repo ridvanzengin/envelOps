@@ -39,6 +39,22 @@ class Settings(BaseSettings):
     # public demo deployment.
     demo_mode_enabled: bool = False
 
+    # app/commerce/fake_platform_api.py: a new-in-name-only "commerce
+    # platform" endpoint mounted by this same backend, called only by
+    # app/commerce/connectors.py -- never reachable from outside, never a
+    # real platform (docs/plans/fake-commerce-platform-integration.md).
+    # localhost is correct for host-based dev (backend/worker both bind
+    # there); docker-compose.yml overrides this to the `backend` service
+    # name for the containers, same pattern as ENVELOPS_DATABASE_URL/
+    # ENVELOPS_REDIS_URL above.
+    internal_api_base_url: str = "http://localhost:8000"
+    # Shared bearer token the connectors must present to the endpoint
+    # above -- not real security (nothing outside this backend can reach
+    # it either way), just enough that the connector code has to build a
+    # real Authorization header and handle a real 401, the way it would
+    # for an actual platform integration.
+    fake_commerce_internal_token: str = "change-me"
+
     model_config = SettingsConfigDict(env_file=_ENV_FILE, env_prefix="ENVELOPS_")
 
 

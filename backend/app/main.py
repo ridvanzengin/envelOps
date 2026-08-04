@@ -2,6 +2,7 @@ from fastapi import FastAPI
 
 from app.auth.api import router as auth_router
 from app.channels.api import router as channels_router
+from app.commerce.fake_platform_api import router as fake_commerce_router
 from app.conversations.api import router as conversations_router
 from app.core.config import settings
 from app.dashboard.api import router as dashboard_router
@@ -24,6 +25,7 @@ app.include_router(dashboard_router)
 app.include_router(test_console_router)
 app.include_router(events_router)
 app.include_router(tenants_router)
+app.include_router(fake_commerce_router)
 
 
 @app.get("/healthz")

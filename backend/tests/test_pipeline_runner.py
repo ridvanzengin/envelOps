@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, patch
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.types import Interrupt
 
+from app.commerce.schemas import OrderStatusResult
 from app.core.llm import ToolCallRequest
 from app.pipeline.runner import publish_pipeline_events, resume_pipeline, run_pipeline
 from app.pipeline.state import PipelineState
@@ -237,6 +238,14 @@ class TestRunPipelineToolCalling:
             },
         )()
         tool_call = ToolCallRequest(name="order_status_lookup", args={"order_number": "12345"})
+        # execute() is mocked, not the real connector -- the connector now
+        # makes a real HTTP call to the fake commerce platform (app/
+        # commerce/connectors.py), which has no live server to hit here;
+        # covered directly in tests/test_commerce.py instead.
+        fake_result = OrderStatusResult(
+            order_number="12345", status="shipped", carrier="UPS",
+            tracking_number="UP123", days_to_delivery=2,
+        )
         with (
             patch(
                 "app.pipeline.graph.generate_text",
@@ -245,6 +254,7 @@ class TestRunPipelineToolCalling:
             patch(
                 "app.pipeline.graph.generate_with_tools", return_value=(None, [tool_call])
             ) as mock_tools,
+            patch("app.pipeline.graph.execute", AsyncMock(return_value=fake_result)),
             patch("app.pipeline.graph.embed_text", return_value=[0.1]),
             patch("app.pipeline.graph.KnowledgeChunkRepository") as mock_knowledge_repo_cls,
             patch("app.pipeline.graph.TenantTriggerPhraseRepository") as mock_phrase_repo_cls,

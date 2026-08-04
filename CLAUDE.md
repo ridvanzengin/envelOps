@@ -16,9 +16,13 @@ scope-cut decision and reasoning. Concretely, as of that decision:
   same real pipeline, a webhook-shaped entry point, no real platform ever
   contacted.
 - Order-status/inventory lookup use **real** Gemini tool-calling (the model
-  genuinely decides whether to call a tool) backed by **fake**,
-  deterministic connectors (`app/commerce/`), not a real Shopify/
-  WooCommerce integration.
+  genuinely decides whether to call a tool), which makes a **real**
+  internal HTTP call (`app/commerce/connectors.py`) to a **fake**
+  commerce-platform endpoint this same backend also mounts
+  (`app/commerce/fake_platform_api.py`, added 2026-08-04), backed by a
+  real, bounded per-tenant catalog (`FakeCommerceProduct`) — not a real
+  Shopify/WooCommerce integration, and never reachable from outside this
+  backend.
 - **Turkish/bilingual pipeline support has been cut** — see the Working
   conventions section below.
 
@@ -205,10 +209,12 @@ all three share this one Dockerfile.
   if pytest ever isn't available)
 - Migrations: `alembic revision --autogenerate -m "..."` then `alembic
   upgrade head` — needs a reachable Postgres (`docker compose up -d db`).
-  Seven migrations exist (initial schema; embedding dim 1536→768 for
+  Twelve migrations exist (initial schema; embedding dim 1536→768 for
   Gemini; tenant closing_action; tenant closing_link; channel telegram
-  fields; users.email unique; conversation followed_up_at), all applied,
-  all downgrade→upgrade round-trip verified.
+  fields; users.email unique; conversation followed_up_at; channel
+  is_test flag; message audience/escalation_id; tenant behavior_config;
+  channel ai_enabled; fake_commerce_products), all applied, all
+  downgrade→upgrade round-trip verified.
 - LangGraph's own checkpoint tables (`checkpoints`, `checkpoint_blobs`,
   `checkpoint_writes` — the safety-gate pause/resume state, ARCHITECTURE
   §5) are **not** Alembic-managed. `app/pipeline/runner.get_checkpointer()`

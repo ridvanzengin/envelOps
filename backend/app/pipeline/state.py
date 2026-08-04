@@ -44,14 +44,33 @@ class PipelineState(BaseModel):
     already_escalated: bool = False
     detected_intent: str | None = None
     retrieved_chunks: list[str] = []
-    # Populated by call_tools (right before keep_chatting) when the tenant
-    # has opted into a fake connector (app/commerce/) and the model decides
-    # a tool call is actually needed -- one formatted fact string per
-    # successful call, same shape/spirit as retrieved_chunks (plain list of
-    # primitives, checkpointer-safe) and folded into keep_chatting's same
-    # context block. Empty for every tenant that hasn't opted in, which is
-    # every tenant today.
+    # Populated by call_tools (normally right before keep_chatting) when
+    # the tenant has opted into a fake connector (app/commerce/) and the
+    # model decides a tool call is actually needed -- one formatted fact
+    # string per successful call, same shape/spirit as retrieved_chunks
+    # (plain list of primitives, checkpointer-safe) and folded into
+    # keep_chatting's same context block. Empty for every tenant that
+    # hasn't opted in, which is every tenant today.
     tool_call_results: list[str] = []
+    # True when at least one tool call this run came back definitively
+    # negative (InventoryResult.carried=False, or OrderStatusResult.status
+    # =="not_found") -- found live (2026-08-04): a hot purchase-intent
+    # lead used to skip call_tools entirely (decide_next_step routed
+    # straight to book_or_checkout/escalate_to_human before any grounding
+    # ever ran), so book_or_checkout's ungrounded prompt could confidently
+    # say "Yes, we do!" about a product the tenant never carried at all --
+    # the exact fabrication class this project's fake-commerce-platform
+    # work exists to close, just reached via a different route.
+    # decide_next_step now calls call_tools itself before committing to
+    # the hot-lead fast path, and reads this flag to fall back to
+    # keep_chatting's honest answer instead when it's True.
+    tool_call_found_nothing: bool = False
+    # Guards against call_tools running twice in the same turn -- set when
+    # decide_next_step calls it directly (see tool_call_found_nothing
+    # above) to decide whether to still take the hot-lead fast path; the
+    # graph's own decide_next_step -> call_tools edge would otherwise run
+    # it again for the same message, wasting a second Gemini call.
+    tool_calls_attempted: bool = False
     lead_score: str | None = None
     decision: str | None = None
     draft_text: str | None = None

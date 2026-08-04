@@ -122,12 +122,14 @@ themselves:
    `keep_chatting` branch specifically, a `call_tools` node (2026-07-31)
    runs first — real Gemini tool-calling (`app.core.llm.generate_with_tools`):
    if the tenant has a fake connector enabled (`ToolCallingConfig`, §6) and
-   the model decides the message needs one, it calls a fake, deterministic
-   order-status/inventory connector (`app/commerce/`) and folds the result
-   into `keep_chatting`'s existing knowledge-context block, alongside
-   `retrieved_chunks` — same downstream STATUS-tag/escalation machinery
-   either way, no parallel reply path. Inert (zero extra Gemini calls) for
-   every tenant that hasn't opted in.
+   the model decides the message needs one, it calls the order-status/
+   inventory connector (`app/commerce/connectors.py`), which makes a real
+   HTTP call to this backend's own internal fake-commerce-platform endpoint
+   (`app/commerce/fake_platform_api.py`, 2026-08-04 — see below) and folds
+   the result into `keep_chatting`'s existing knowledge-context block,
+   alongside `retrieved_chunks` — same downstream STATUS-tag/escalation
+   machinery either way, no parallel reply path. Inert (zero extra Gemini
+   calls, zero HTTP calls) for every tenant that hasn't opted in.
 7. Log lead & notify team
 8. Follow up after delay (Celery job scans quiet conversations, re-enters at
    step 2 if the lead replies)
@@ -271,12 +273,28 @@ bundled with the zero-new-dependency `manual`/`url` work above.
 REQUIREMENTS §5's original reasoning either way. **A simulated version now
 exists (2026-07-31), a real platform connector still doesn't and isn't
 planned to.** Real Gemini tool-calling (`app.core.llm.generate_with_tools`,
-§4's `call_tools` node) backed by fake, deterministic connectors
-(`app/commerce/connectors.py` — hash-seeded, same input always the same
-fake output, no DB table, no real network call) for order-status and
-inventory lookups. REQUIREMENTS §5's "connect your store" real-platform
-path and manual-CSV fallback are both still exactly as undesigned as
-before.
+§4's `call_tools` node) for order-status and inventory lookups, backed as
+of 2026-08-04 by a real internal HTTP call
+(`app/commerce/connectors.py`, async, `httpx`) to a fake
+commerce-platform endpoint this same backend also mounts
+(`app/commerce/fake_platform_api.py`, prefix `/internal/fake-commerce`,
+bearer-token-gated, never reachable from outside this backend). Inventory
+is grounded in a real, bounded per-tenant catalog table
+(`FakeCommerceProduct`, `app/commerce/models.py`) — a query with no
+matching row genuinely comes back "not carried" instead of a fabricated
+answer, the actual fix for a live-found bug (asking a tenant's AI "do you
+have ak47 in stock?" got a confident, ordinary in-stock answer regardless
+of what the tenant actually sells; full root-cause writeup in
+`docs/plans/fake-commerce-platform-integration.md`). Order-status stays
+hash-seeded and deterministic (same order number always the same fake
+result) — computed server-side inside the fake-platform endpoint now
+rather than in-process, but still no fake-orders table, since an
+arbitrary-looking order number is a normal thing for a real customer to
+type, not the same unbounded-fabrication problem inventory had.
+REQUIREMENTS §5's "connect your store" real-platform path and manual-CSV
+fallback are both still exactly as undesigned as before — this is still
+fully inside the simulation boundary (§12), not a step toward a real
+Shopify/WooCommerce integration.
 
 **Retrieval at reply-time:** embed the incoming question, pgvector cosine-
 similarity search scoped to tenant, top-k chunks into the generation prompt.

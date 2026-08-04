@@ -1,83 +1,78 @@
-"""Fake commerce connectors -- deliberately stateless, DB-free, and
-network-free. This project simulates commerce-platform integrations
-(order tracking, inventory) on purpose: a real Shopify/WooCommerce/etc.
-connector needs real credentials and an external account, which is out of
-scope for what this project demonstrates (AI behavior orchestration and
-safe tool-calling, not third-party API integration work). The real part
-is the tool-calling mechanism itself (app/core/llm.py's
-generate_with_tools) -- only the data these functions return is fake.
+"""Fake commerce connectors -- each makes a real HTTP call to
+app/commerce/fake_platform_api.py, a "commerce platform" endpoint mounted
+by this same backend and never reachable from outside it. This project
+simulates commerce-platform integrations (order tracking, inventory) on
+purpose: a real Shopify/WooCommerce/etc. connector needs real credentials
+and an external account, out of scope for what this project demonstrates
+(AI behavior orchestration and safe tool-calling, not third-party API
+integration work). The real parts are the tool-calling mechanism itself
+(app/core/llm.py's generate_with_tools) and, as of this module, the actual
+HTTP round-trip and its failure handling -- only the platform on the other
+end of the call is fake. See docs/plans/fake-commerce-platform-integration.md
+for the full design.
 
-Hash-seeded and deterministic, not random per call: the same order_number
-(or product_name+size pair) always returns the same result. This is
-deliberate, not incidental -- it makes a calibration review reproducible
-(the same test DM always gets the same fake order data back) and lets
-tests assert exact values instead of "looks plausible."
+app/commerce/tools.py's execute() guarantees it never raises -- a
+hallucinated tool name or a malformed arg degrades to "no result" there.
+These functions extend that same guarantee through to real I/O: a
+timeout, connection failure, or unexpected non-2xx from the fake endpoint
+returns None here too, exactly the kind of failure handling a real
+integration would need, worth writing for real rather than assuming the
+fake endpoint never fails.
 """
 
-import hashlib
-import random
+import logging
+import uuid
+from urllib.parse import quote
 
-from app.commerce.schemas import InventoryResult, OrderStatus, OrderStatusResult
+import httpx
 
-_ORDER_STATUSES: list[OrderStatus] = [
-    "processing",
-    "shipped",
-    "out_for_delivery",
-    "delivered",
-    "cancelled",
-]
-_CARRIERS = ["USPS", "UPS", "FedEx", "DHL"]
+from app.commerce.schemas import InventoryResult, OrderStatusResult
+from app.core.config import settings
 
+logger = logging.getLogger(__name__)
 
-def _seeded_random(*parts: str) -> random.Random:
-    digest = hashlib.sha256("|".join(parts).encode()).hexdigest()
-    return random.Random(int(digest[:16], 16))
+_TIMEOUT_SECONDS = 5.0
 
 
-def get_order_status(order_number: str) -> OrderStatusResult:
-    cleaned = order_number.strip()
-    if not any(c.isalnum() for c in cleaned):
-        return OrderStatusResult(
-            order_number=order_number,
-            status="not_found",
-            carrier=None,
-            tracking_number=None,
-            days_to_delivery=None,
-        )
+def _auth_headers() -> dict[str, str]:
+    return {"Authorization": f"Bearer {settings.fake_commerce_internal_token}"}
 
-    rng = _seeded_random("order", cleaned.lower())
-    status = rng.choice(_ORDER_STATUSES)
 
-    if status in ("processing", "cancelled"):
-        carrier = None
-        tracking_number = None
-    else:
-        carrier = rng.choice(_CARRIERS)
-        tracking_number = f"{carrier[:2].upper()}{rng.randint(10**8, 10**9 - 1)}"
-
-    days_to_delivery = (
-        rng.randint(1, 7) if status in ("processing", "shipped", "out_for_delivery") else None
+async def get_order_status(
+    tenant_id: uuid.UUID, order_number: str
+) -> OrderStatusResult | None:
+    # order_number is customer-supplied and deliberately unvalidated
+    # (a garbage string is a legitimate "not found" case, computed
+    # server-side) -- URL-quoted so it's always a single, unambiguous
+    # path segment regardless of what characters it contains.
+    url = (
+        f"{settings.internal_api_base_url}/internal/fake-commerce/orders/"
+        f"{quote(order_number, safe='')}"
     )
+    try:
+        async with httpx.AsyncClient(timeout=_TIMEOUT_SECONDS) as client:
+            response = await client.get(
+                url, params={"tenant_id": str(tenant_id)}, headers=_auth_headers()
+            )
+        response.raise_for_status()
+    except httpx.HTTPError:
+        logger.warning("Fake commerce platform order lookup failed", exc_info=True)
+        return None
+    return OrderStatusResult.model_validate(response.json())
 
-    return OrderStatusResult(
-        order_number=order_number,
-        status=status,
-        carrier=carrier,
-        tracking_number=tracking_number,
-        days_to_delivery=days_to_delivery,
-    )
 
-
-def check_inventory(product_name: str, size: str | None = None) -> InventoryResult:
-    rng = _seeded_random(
-        "inventory", product_name.strip().lower(), (size or "").strip().lower()
-    )
-    in_stock = rng.random() < 0.7
-
-    return InventoryResult(
-        product_name=product_name,
-        size=size,
-        in_stock=in_stock,
-        quantity_available=rng.randint(1, 50) if in_stock else None,
-        restock_eta_days=None if in_stock else rng.randint(3, 21),
-    )
+async def check_inventory(
+    tenant_id: uuid.UUID, product_name: str, size: str | None = None
+) -> InventoryResult | None:
+    url = f"{settings.internal_api_base_url}/internal/fake-commerce/products"
+    params: dict[str, str] = {"tenant_id": str(tenant_id), "query": product_name}
+    if size is not None:
+        params["size"] = size
+    try:
+        async with httpx.AsyncClient(timeout=_TIMEOUT_SECONDS) as client:
+            response = await client.get(url, params=params, headers=_auth_headers())
+        response.raise_for_status()
+    except httpx.HTTPError:
+        logger.warning("Fake commerce platform inventory lookup failed", exc_info=True)
+        return None
+    return InventoryResult.model_validate(response.json())

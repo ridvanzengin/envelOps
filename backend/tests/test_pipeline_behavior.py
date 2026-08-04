@@ -131,6 +131,28 @@ class TestRenderKnowledgeQueryInstruction:
         result = render_knowledge_query_instruction(KnowledgeQueryConfig(), "ctx")
         assert "Never invent a next step, workflow, contact email" in result
 
+    def test_treats_live_lookup_results_as_definite_answers(self) -> None:
+        # Found live (2026-08-04): a warm "do you have macbook in stock?"
+        # got a correct tool_call_results answer ("we don't carry
+        # macbook") but the model still escalated with NOT_FOUND instead
+        # of relaying it -- a negative live-lookup result ("not carried")
+        # was being read as "topic not covered" rather than a complete
+        # answer. graph.py's keep_chatting labels tool-sourced context
+        # lines "[Live lookup result]"; this instruction is what tells the
+        # model that label means "answer with it, don't escalate."
+        result = render_knowledge_query_instruction(KnowledgeQueryConfig(), "ctx")
+        assert "[Live lookup result]" in result
+        assert "never say NOT_FOUND" in result
+
+    def test_forbids_repeating_the_live_lookup_label_verbatim(self) -> None:
+        # Found live (2026-08-04): a reply leaked the raw "[Live lookup
+        # result]" tag itself to the customer ("[Live lookup result] We do
+        # not have oversized tshirts in stock.") -- the model followed the
+        # "answer with it directly" instruction but didn't know the label
+        # prefix itself wasn't part of the fact to relay.
+        result = render_knowledge_query_instruction(KnowledgeQueryConfig(), "ctx")
+        assert "Never repeat the literal" in result
+
 
 class TestRenderComplaintAddendum:
     def test_default_is_empty(self) -> None:

@@ -24,6 +24,11 @@ services:
       # localhost, which is the backend's own network namespace here
       ENVELOPS_DATABASE_URL: postgresql+asyncpg://envelops:envelops@db:5432/envelops
       ENVELOPS_REDIS_URL: redis://redis:6379/0
+      # app/commerce/connectors.py calls this backend's own
+      # fake-commerce-platform endpoint over real HTTP -- `backend` (the
+      # service name) resolves back to this same container on the compose
+      # network, same reasoning as db/redis above.
+      ENVELOPS_INTERNAL_API_BASE_URL: http://backend:8000
     ports:
       - "8000:8000"
     depends_on:
@@ -38,6 +43,7 @@ services:
     environment:
       ENVELOPS_DATABASE_URL: postgresql+asyncpg://envelops:envelops@db:5432/envelops
       ENVELOPS_REDIS_URL: redis://redis:6379/0
+      ENVELOPS_INTERNAL_API_BASE_URL: http://backend:8000
     command: celery -A app.core.celery_app worker --loglevel=info
     depends_on:
       - db

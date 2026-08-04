@@ -28,9 +28,12 @@ scope-pivot reasoning. Concretely, right now:
 - **Telegram** is the one real channel integration. Instagram/WhatsApp/
   Facebook/Email are simulated (`app/channels/simulated_client.py`) — real
   pipeline, webhook-shaped entry points, no real platform contacted.
-- Order-status/inventory lookup use **real** Gemini tool-calling over
-  **fake**, deterministic connectors (`app/commerce/`) — not a real
-  Shopify/WooCommerce integration.
+- Order-status/inventory lookup use **real** Gemini tool-calling over a
+  **real** internal HTTP call (`app/commerce/connectors.py`) to a
+  **fake** commerce-platform endpoint this same backend also mounts
+  (`app/commerce/fake_platform_api.py`, 2026-08-04), grounded in a real,
+  bounded per-tenant catalog — not a real Shopify/WooCommerce
+  integration, never reachable from outside this backend.
 - Turkish/bilingual pipeline support is cut, fully, including
   `escalation/safety_gate.py`'s own pattern lists. Frontend i18n UI chrome
   (`react-i18next`) is untouched and unrelated.
@@ -73,25 +76,14 @@ Real, not yet designed in detail, not currently being worked:
 - **A "Markdown" knowledge-source type** — deliberately excluded from the
   knowledge-sources redesign (PR #43) since it isn't real backend
   capability yet; would need a small ingestion addition, not a redesign.
-- **Fake commerce connectors will fabricate a plausible answer for *any*
-  product string**, found live 2026-08-04 via Test Console (asking a
-  tenant's AI "do you have ak47 in stock?" got a confident, ordinary
-  in-stock/restock-ETA answer, regardless of tenant or business type) —
-  `check_inventory`'s hash-seeded logic has no concept of what a tenant
-  actually sells. Planned fix: **not yet built**, full design at
-  [`docs/plans/fake-commerce-platform-integration.md`](plans/fake-commerce-platform-integration.md)
-  — routes the connector through a real internal HTTP call to a new fake
-  platform endpoint backed by a bounded per-tenant product catalog, so an
-  off-catalog query genuinely comes back "not found" instead of a
-  fabrication. Still fully simulated throughout — doesn't reopen the
-  cancelled real-Shopify/WooCommerce-integration decision (§12).
 - **Safety floor has no weapons/regulated-goods pattern category**, found
-  the same session as the item above — `escalation/safety_gate.py`'s
-  Layer 1 only covers contraindication/symptom/outcome-guarantee language
-  (all health-adjacent), so a weapons query never has a chance to trip it
-  regardless of phrasing. Complementary to, not overlapping with, the
-  bounded-catalog fix above — that only protects against *off-catalog*
-  queries, not a tenant whose real catalog legitimately contains something
+  2026-08-04 the same session as the bounded-commerce-catalog fix below
+  (see that changelog entry) — `escalation/safety_gate.py`'s Layer 1 only
+  covers contraindication/symptom/outcome-guarantee language (all
+  health-adjacent), so a weapons query never has a chance to trip it
+  regardless of phrasing. Complementary to, not overlapping with, that
+  fix — the bounded catalog only protects against *off-catalog* queries,
+  not a tenant whose real catalog legitimately contains something
   regulated. Not yet designed in detail; likely shape is a new pattern
   category alongside the existing three, platform-enforced the same way.
 
@@ -123,6 +115,200 @@ auto-send + safety-floor-escalation-only gate (ARCHITECTURE §5) stays
 final, not provisional.
 
 ## Changelog
+
+**2026-08-04, later still, another round** — The singular/plural-only
+fix from the round below turned out insufficient once tested further:
+"do you sell hoodies" still didn't match "Oversized Hoodie" (missing the
+whole word "Oversized", not just a trailing "s" difference). Presented
+the same widen-vs-stay-bounded tradeoff again with this new evidence
+(direct instruction: move to whole-word containment) rather than
+re-deciding it unilaterally, since it's the same safety-critical
+decision, just with fuller information this time.
+- `app/commerce/repository.py` rewritten: matching moved from a SQL
+  `WHERE ... IN (...)` clause to Python-side word-set comparison
+  (`_significant_words`/`_is_match`) -- word containment doesn't map
+  cleanly onto simple SQL equality/IN matching, and this project's
+  catalogs are small enough (a handful of rows per tenant) that fetching
+  and filtering in Python is far more readable than the Postgres array/
+  full-text-search machinery an equivalent SQL version would need.
+  `_is_match` requires one full word-set to wholly contain the other
+  (either direction) -- "hoodies" ({hoodie}) matches "Oversized Hoodie"
+  ({oversized, hoodie}) since the query's words are a subset, but an
+  off-catalog query ("ak47") still can't coincidentally match a real
+  product just by partial text overlap, preserving the bounded-catalog
+  safety property.
+- Also fixed, found in the same testing pass: a reply leaked the raw
+  "[Live lookup result]" tag itself to the customer verbatim ("[Live
+  lookup result] We do not have oversized tshirts in stock.") -- the
+  model followed "answer with it directly" but didn't know the label
+  prefix wasn't part of the fact to relay. `render_knowledge_query_instruction`
+  now explicitly says never to repeat that literal label.
+- Live-verified: "do you sell hoodies"/"bucket hats" now correctly
+  resolve with real stock counts and no leaked tag; "ak47" and a
+  genuinely unrelated "oversized tshirts" (Wildroot's actual tee is
+  named "Graphic Tee", shares no words) still correctly come back not
+  carried. One known, accepted remaining gap: a literal spelling typo
+  ("hodies" for "hoodies", not just a missing word) still under-matches
+  -- earlier-observed typo tolerance (macbook, vacuum cleaner) came from
+  the model's own spelling normalization when extracting the tool
+  argument, not from server-side matching, so it isn't reliable across
+  every typo. Fixing that deterministically would mean fuzzy/edit-
+  distance matching, which reopens the exact off-catalog false-positive
+  risk this design exists to avoid -- left as a deliberate limitation,
+  not chased further this round.
+- 372 backend tests pass (11 new), `ruff`/`mypy` clean.
+
+**2026-08-04, later still, one more round** — Two more findings from
+continued live testing on Wildroot (now that it has tool-calling, see
+below), both fixed:
+- **`INVENTORY_CHECK_TOOL`'s description was too narrow**: "do you sell
+  hats?" reliably (2/2) never called the tool at all -- only "do you
+  have X in stock"-shaped phrasing did -- so it fell through to a
+  knowledge-gap escalation instead of answering. The tool's description
+  only said "is currently in stock," which the model apparently read as
+  scoped to literal stock-check phrasing, not "do you sell/carry X"
+  general-catalog questions that mean the same thing to a customer.
+  Broadened the description (`app/commerce/tools.py`) to say so
+  explicitly. Live-verified 2/2 "do you sell hats?" now calls the tool
+  and answers directly.
+- **Worse, found while verifying the above**: `FakeCommerceProductRepository
+  .find_matching`'s exact-match-only design meant "do you sell bucket
+  hats?" (plural) didn't match a real "Bucket Hat" catalog row at all --
+  the model confidently said *not carried* about a product Wildroot
+  genuinely sells. A false negative about a real product, arguably worse
+  than the original fabrication bug this whole feature exists to
+  prevent. Presented the tradeoff directly (exact-only vs. singular/
+  plural-insensitive vs. general substring matching) rather than picking
+  unilaterally, since it's a real widen-the-matching-net-vs-stay-bounded
+  decision central to the feature's safety story; singular/plural-
+  insensitive was chosen (direct instruction) as the narrowest fix that
+  actually closes the gap, without reopening the substring-fuzzy-match
+  risk (e.g. a query must still never coincidentally match an
+  off-catalog weapon term just by word overlap). `_build_match_stmt`
+  (`app/commerce/repository.py`) now also tries the query with a
+  trailing "s" added or stripped. Live-verified: "bucket hats" and
+  "oversized hoodies" now correctly resolve to their real catalog rows
+  with accurate stock counts, while a genuinely off-catalog "x icons"
+  still correctly comes back not carried.
+- 363 backend tests pass (2 new), `ruff`/`mypy` clean.
+
+**2026-08-04, later still, once more** — Reported as "stuck" giving a
+reply, investigated extensively (direct API repro across single/multi-
+turn, hot/warm/cold leads; then a real headless-browser Test Console
+session) — no actual hang found anywhere; requests always completed in
+3-5s. The real finding: the report was on **Wildroot Apparel Co**, which
+had never been given `inventory_check_enabled`/a catalog at all (only
+Voltage Gadgets had, from the original build below) — so it still showed
+the exact pre-fix fabrication (`book_or_checkout`'s "Yes, we do!" for a
+hot lead) and, separately, the pre-existing knowledge-gap escalation for
+any unrecognized product, which reads the same for every off-catalog
+item and can feel "stuck" repeating a non-answer. Direct instruction
+following this: catalog-checking shouldn't ever escalate when a definite
+"not carried" answer is already known — a human would just say the same
+thing.
+- Wildroot given `tool_calling.inventory_check_enabled=True` plus a
+  9-row clothing catalog (`scripts/seed_calibration_tenant.py`'s
+  `TenantSpec.catalog`, matching the "Oversized Hoodie runs one size
+  large" line already in its knowledge base) — applied to both the spec
+  (future fresh seeds) and directly to the already-seeded live tenant.
+  Two tenants with tool-calling now, not one.
+- `format_result`'s not-carried wording simplified (direct instruction):
+  "We don't carry X -- no matching product in our catalog" → "We do not
+  have X in stock" — reads as a plain stock-check answer, not a catalog
+  explanation.
+- No pipeline logic changes needed beyond the config/catalog above — the
+  same-day `[Live lookup result]` fix (below) already makes a negative
+  tool result answer directly instead of escalating; it just needed a
+  tenant with tool-calling enabled to exercise it. Live-verified: hot
+  "do you have the x icon in stock?" and "do you have water filters" on
+  Wildroot now both answer honestly with no escalation, while a hot
+  query about a real catalog item (Oversized Hoodie, size M) still
+  correctly flows through `book_or_checkout` with accurate stock.
+- 361 backend tests pass, `ruff`/`mypy` clean.
+
+**2026-08-04, later still again** — Two more fabrication-class bugs found
+live, testing the fake-commerce-platform work just below, both fixed on
+the same branch/PR:
+- **`keep_chatting` mis-tagging a correct tool answer as `NOT_FOUND`**: a
+  warm "do you have macbook in stock?" got a correct
+  `tool_call_results` answer ("we don't carry macbook") but the model
+  still escalated with a generic cover reply instead of relaying it — it
+  read a negative live-lookup result as "topic not covered"
+  (`render_knowledge_query_instruction`'s case 3) rather than "a complete
+  answer" (case 2). Fixed at the prompt level only: `keep_chatting`
+  labels tool-sourced context lines `[Live lookup result]`
+  (`app/pipeline/graph.py`), and the instruction
+  (`app/pipeline/behavior.py`) now explicitly says that label means
+  answer directly, even when the answer is negative, never `NOT_FOUND`.
+- **`decide_next_step`'s hot-lead branch skipping grounding entirely**:
+  the deeper of the two — a *hot* purchase-intent "do you have macbook in
+  stock?" was routed straight to `book_or_checkout` before `call_tools`
+  ever ran, so `book_or_checkout`'s own prompt (no grounding data at all)
+  confidently replied "Yes, we do! Grab yours right here: ..." for a
+  product not in the tenant's catalog — the exact fabrication class this
+  whole feature exists to close, just reached via a different route than
+  `check_inventory`'s old hash-seeded logic. Fixed by having
+  `decide_next_step` call `call_tools` itself, once, right before
+  committing to the hot-lead fast path (only when the intent needs
+  grounding and the tenant has a fake connector enabled — inert
+  otherwise); a definitive negative result
+  (`PipelineState.tool_call_found_nothing`, new field) falls back to
+  `keep_chatting`'s now-honest answer instead of book_or_checkout/
+  escalate_to_human. A new `tool_calls_attempted` guard on `call_tools`
+  stops the graph's own `decide_next_step -> call_tools` edge from
+  re-running it a second time for the same message.
+- Live-verified across several real runs, not just unit tests: two
+  differently-worded hot "macbook" queries both now correctly answer "We
+  do not carry macbook..." instead of fabricating or vaguely escalating,
+  while a hot query about a real catalog item (SmartHome Hub X1) still
+  correctly flows through `book_or_checkout` with an accurate "Yes, we've
+  got it in stock!"
+- 361 backend tests pass (9 new), `ruff`/`mypy` clean.
+
+**2026-08-04, later still** — Built the real-HTTP fake commerce platform
+planned earlier the same day
+([`docs/plans/fake-commerce-platform-integration.md`](plans/fake-commerce-platform-integration.md)),
+fixing the live-found bug where `check_inventory`'s hash-seeded logic
+fabricated a plausible in-stock answer for *any* product string
+regardless of what a tenant actually sells (found via Test Console: "do
+you have ak47 in stock?" got a confident, ordinary answer).
+- New `FakeCommerceProduct` table (`app/commerce/models.py`,
+  tenant-scoped, one migration) — a bounded per-tenant catalog; a query
+  with no matching row now genuinely comes back "not carried."
+- New internal-only router `app/commerce/fake_platform_api.py`
+  (`/internal/fake-commerce/products`, `/internal/fake-commerce/orders/
+  {order_number}`), bearer-token-gated
+  (`ENVELOPS_FAKE_COMMERCE_INTERNAL_TOKEN`, fail-closed), mounted by this
+  same backend and never reachable from outside it. The order-status
+  endpoint keeps the exact same hash-seeded logic the old in-process
+  connector had (moved server-side, not changed) — no bounded
+  fake-orders table, since an arbitrary-looking order number is a normal
+  thing for a real customer to type, unlike an unbounded product string.
+- `app/commerce/connectors.py` rewritten as real async `httpx` calls to
+  that endpoint (`ENVELOPS_INTERNAL_API_BASE_URL`, `localhost:8000` for
+  host dev, `http://backend:8000` for the backend/worker containers —
+  same override pattern as the database/redis URLs); never raises, a
+  timeout/connection failure/non-2xx degrades to `None` same as
+  `execute()`'s existing hallucinated-tool-name handling.
+  `call_tools`/`tools.execute()` both became `async` to thread this
+  through; `InventoryResult` gained a `carried: bool` field so "off
+  catalog" and "carried but out of stock" render as distinct, honest
+  replies.
+- `scripts/seed_calibration_tenant.py`: new `TenantSpec.catalog` field,
+  seeded for Voltage Gadgets only (the one calibration tenant with
+  `inventory_check_enabled=True`).
+- Live-verified through the real pipeline, not just unit tests: asking
+  Voltage Gadgets' AI about a real catalog item returned the seeded
+  quantity; asking about AK-47 rifles returned "We do not carry AK-47
+  rifles, as there is no matching product in our catalog." Also verified
+  the worker container resolves the internal base URL correctly and can
+  reach the backend container by service name.
+- Does **not** fix the safety-floor weapons/regulated-goods pattern gap
+  (separate, still-open item above) — this closes the *fabrication*
+  path, not the *escalation* path, by design (see the plan doc's own
+  non-goals).
+- 12 migrations now (was 7 in CLAUDE.md's stale count, corrected same
+  session), 352 backend tests pass, `ruff`/`mypy` clean.
 
 **2026-08-04, later same day** — Removed the separate `dev_auth_bypass_enabled`
 flag and Login page's own dev-only tenant switcher entirely, direct

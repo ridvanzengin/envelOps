@@ -4,6 +4,7 @@ dispatches a model's tool call by name, and formats the fake result into
 the plain fact strings app/pipeline/graph.py's call_tools node puts on
 PipelineState.tool_call_results (same shape/spirit as retrieved_chunks)."""
 
+import uuid
 from typing import Any
 
 from pydantic import BaseModel
@@ -36,7 +37,12 @@ INVENTORY_CHECK_TOOL = ToolDeclaration(
     name="inventory_check",
     description=(
         "Check whether a specific product (and size/variant, if relevant) "
-        "is currently in stock."
+        "is something this business sells/carries at all, and if so "
+        "whether it's currently in stock. Call this for any phrasing "
+        "that's really asking the same practical question -- \"do you "
+        "have X in stock\", \"do you sell X\", \"do you carry X\", \"do "
+        "you have X\" all mean the same thing to a customer, not just "
+        "ones that literally say \"in stock\"."
     ),
     parameters={
         "type": "object",
@@ -64,15 +70,20 @@ def enabled_tools(config: ToolCallingConfig) -> list[ToolDeclaration]:
     return tools
 
 
-def execute(name: str, args: dict[str, Any]) -> BaseModel | None:
+async def execute(name: str, args: dict[str, Any], tenant_id: uuid.UUID) -> BaseModel | None:
     """Never raises -- a hallucinated tool name or a malformed/missing arg
     from the model degrades to "no result" (call_tools just skips it),
-    the same posture understand_intent takes on an unrecognized label."""
+    the same posture understand_intent takes on an unrecognized label. The
+    connectors extend this same guarantee through their real HTTP call
+    (app/commerce/connectors.py) -- a timeout or failed request also comes
+    back as None here, not a raised exception. tenant_id comes from
+    PipelineState, never the model's own args -- it scopes the fake
+    platform's catalog lookup, not something to trust the model to supply."""
     try:
         if name == ORDER_STATUS_TOOL.name:
-            return get_order_status(**args)
+            return await get_order_status(tenant_id, **args)
         if name == INVENTORY_CHECK_TOOL.name:
-            return check_inventory(**args)
+            return await check_inventory(tenant_id, **args)
     except TypeError:
         return None
     return None
@@ -93,6 +104,12 @@ def format_result(name: str, result: BaseModel) -> str:
 
     if isinstance(result, InventoryResult):
         label = result.product_name + (f" ({result.size})" if result.size else "")
+        if not result.carried:
+            # Direct instruction (2026-08-04): plain "we do not have that
+            # in stock" reads more like a real stock-check answer than
+            # the earlier "we don't carry X -- no matching product in our
+            # catalog" phrasing.
+            return f"We do not have {label} in stock."
         if result.in_stock:
             return f"{label} is in stock, {result.quantity_available} available."
         return (

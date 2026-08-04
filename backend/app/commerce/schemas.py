@@ -26,6 +26,15 @@ class OrderStatusResult(BaseModel):
 class InventoryResult(BaseModel):
     product_name: str
     size: str | None
+    # False when the tenant's own catalog (app/commerce/models.py's
+    # FakeCommerceProduct) has no matching row at all -- the actual fix
+    # for the old fabrication bug (docs/plans/
+    # fake-commerce-platform-integration.md): an off-catalog query now
+    # genuinely comes back "we don't carry that" instead of a plausible
+    # in-stock/restock-ETA answer. in_stock/quantity_available/
+    # restock_eta_days are all meaningless (False/None/None) when this is
+    # False.
+    carried: bool
     in_stock: bool
     quantity_available: int | None  # None when not in_stock
     restock_eta_days: int | None  # None when in_stock
