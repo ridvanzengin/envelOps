@@ -116,6 +116,48 @@ final, not provisional.
 
 ## Changelog
 
+**2026-08-04, later still, another round** — The singular/plural-only
+fix from the round below turned out insufficient once tested further:
+"do you sell hoodies" still didn't match "Oversized Hoodie" (missing the
+whole word "Oversized", not just a trailing "s" difference). Presented
+the same widen-vs-stay-bounded tradeoff again with this new evidence
+(direct instruction: move to whole-word containment) rather than
+re-deciding it unilaterally, since it's the same safety-critical
+decision, just with fuller information this time.
+- `app/commerce/repository.py` rewritten: matching moved from a SQL
+  `WHERE ... IN (...)` clause to Python-side word-set comparison
+  (`_significant_words`/`_is_match`) -- word containment doesn't map
+  cleanly onto simple SQL equality/IN matching, and this project's
+  catalogs are small enough (a handful of rows per tenant) that fetching
+  and filtering in Python is far more readable than the Postgres array/
+  full-text-search machinery an equivalent SQL version would need.
+  `_is_match` requires one full word-set to wholly contain the other
+  (either direction) -- "hoodies" ({hoodie}) matches "Oversized Hoodie"
+  ({oversized, hoodie}) since the query's words are a subset, but an
+  off-catalog query ("ak47") still can't coincidentally match a real
+  product just by partial text overlap, preserving the bounded-catalog
+  safety property.
+- Also fixed, found in the same testing pass: a reply leaked the raw
+  "[Live lookup result]" tag itself to the customer verbatim ("[Live
+  lookup result] We do not have oversized tshirts in stock.") -- the
+  model followed "answer with it directly" but didn't know the label
+  prefix wasn't part of the fact to relay. `render_knowledge_query_instruction`
+  now explicitly says never to repeat that literal label.
+- Live-verified: "do you sell hoodies"/"bucket hats" now correctly
+  resolve with real stock counts and no leaked tag; "ak47" and a
+  genuinely unrelated "oversized tshirts" (Wildroot's actual tee is
+  named "Graphic Tee", shares no words) still correctly come back not
+  carried. One known, accepted remaining gap: a literal spelling typo
+  ("hodies" for "hoodies", not just a missing word) still under-matches
+  -- earlier-observed typo tolerance (macbook, vacuum cleaner) came from
+  the model's own spelling normalization when extracting the tool
+  argument, not from server-side matching, so it isn't reliable across
+  every typo. Fixing that deterministically would mean fuzzy/edit-
+  distance matching, which reopens the exact off-catalog false-positive
+  risk this design exists to avoid -- left as a deliberate limitation,
+  not chased further this round.
+- 372 backend tests pass (11 new), `ruff`/`mypy` clean.
+
 **2026-08-04, later still, one more round** — Two more findings from
 continued live testing on Wildroot (now that it has tool-calling, see
 below), both fixed:

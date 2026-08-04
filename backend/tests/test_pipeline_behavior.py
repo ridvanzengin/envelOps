@@ -144,6 +144,15 @@ class TestRenderKnowledgeQueryInstruction:
         assert "[Live lookup result]" in result
         assert "never say NOT_FOUND" in result
 
+    def test_forbids_repeating_the_live_lookup_label_verbatim(self) -> None:
+        # Found live (2026-08-04): a reply leaked the raw "[Live lookup
+        # result]" tag itself to the customer ("[Live lookup result] We do
+        # not have oversized tshirts in stock.") -- the model followed the
+        # "answer with it directly" instruction but didn't know the label
+        # prefix itself wasn't part of the fact to relay.
+        result = render_knowledge_query_instruction(KnowledgeQueryConfig(), "ctx")
+        assert "Never repeat the literal" in result
+
 
 class TestRenderComplaintAddendum:
     def test_default_is_empty(self) -> None:
