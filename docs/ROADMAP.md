@@ -73,6 +73,27 @@ Real, not yet designed in detail, not currently being worked:
 - **A "Markdown" knowledge-source type** — deliberately excluded from the
   knowledge-sources redesign (PR #43) since it isn't real backend
   capability yet; would need a small ingestion addition, not a redesign.
+- **Fake commerce connectors will fabricate a plausible answer for *any*
+  product string**, found live 2026-08-04 via Test Console (asking a
+  tenant's AI "do you have ak47 in stock?" got a confident, ordinary
+  in-stock/restock-ETA answer, regardless of tenant or business type) —
+  `check_inventory`'s hash-seeded logic has no concept of what a tenant
+  actually sells. Planned fix: **not yet built**, full design at
+  [`docs/plans/fake-commerce-platform-integration.md`](plans/fake-commerce-platform-integration.md)
+  — routes the connector through a real internal HTTP call to a new fake
+  platform endpoint backed by a bounded per-tenant product catalog, so an
+  off-catalog query genuinely comes back "not found" instead of a
+  fabrication. Still fully simulated throughout — doesn't reopen the
+  cancelled real-Shopify/WooCommerce-integration decision (§12).
+- **Safety floor has no weapons/regulated-goods pattern category**, found
+  the same session as the item above — `escalation/safety_gate.py`'s
+  Layer 1 only covers contraindication/symptom/outcome-guarantee language
+  (all health-adjacent), so a weapons query never has a chance to trip it
+  regardless of phrasing. Complementary to, not overlapping with, the
+  bounded-catalog fix above — that only protects against *off-catalog*
+  queries, not a tenant whose real catalog legitimately contains something
+  regulated. Not yet designed in detail; likely shape is a new pattern
+  category alongside the existing three, platform-enforced the same way.
 
 **Longer-horizon, deferred not cut** (REQUIREMENTS §10/§13 have the full
 reasoning, not duplicated here since these are phase-level, not
