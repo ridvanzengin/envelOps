@@ -102,7 +102,7 @@ const FEATURES: Feature[] = [
   },
   {
     icon: StoreIcon,
-    title: "Tool-Calling & Fake Commerce",
+    title: "Tool-Calling",
     route: "opt-in per tenant",
     body: (
       <p className="docs-p">
@@ -142,18 +142,16 @@ export default function Documentation() {
           <h2 className="docs-section-title">About the Project</h2>
           <p className="docs-p">
             EnvelOps demonstrates AI behavior orchestration, safety gating, and per-tenant
-            configuration for small-business DM handling. Inbound messages across channels go
-            through one fixed pipeline — understand intent, ground in the business's own
-            knowledge (plus real tool-calling for order-status/inventory questions), score the
+            configuration for small/mid-size business DM handling. Inbound messages across
+            channels go through one fixed pipeline — understand intent, ground in the business's
+            own knowledge (plus real tool-calling for order-status/inventory questions), score the
             lead, decide the next step — then either auto-send or pause for a human at a hard
             safety gate.
           </p>
           <p className="docs-p">
-            Originally scoped for a real pilot business; now a solo portfolio project focused on
-            demonstrating the architecture end to end. Two demo tenants ship today (a clothing
-            brand on Telegram, an electronics retailer on Instagram), each with its own bounded
-            product catalog, knowledge base, and behavior configuration — proving the same
-            pipeline adapts per business without hardcoded per-vertical logic.
+            Two demo tenants ship today (a clothing brand and an electronics retailer), each with
+            its own bounded product catalog, knowledge base, and behavior configuration — proving
+            the same pipeline adapts per business without hardcoded per-vertical logic.
           </p>
 
           <div className="docs-stat-grid">
@@ -170,11 +168,11 @@ export default function Documentation() {
               <span className="docs-stat-label">
                 Pipeline steps
                 <br />
-                intent → ground → score → close
+                intake → intent → ground → score → decide → reply → log → follow-up
               </span>
             </div>
             <div className="docs-stat">
-              <span className="docs-stat-value">372</span>
+              <span className="docs-stat-value">370+</span>
               <span className="docs-stat-label">
                 Backend tests
                 <br />
@@ -250,8 +248,8 @@ export default function Documentation() {
               <tr>
                 <td>AI</td>
                 <td>
-                  Google Gemini (free tier) — generation, embeddings, and real function-calling
-                  for order-status/inventory
+                  Google Gemini — generation, embeddings, and real function-calling for
+                  order-status/inventory
                 </td>
               </tr>
               <tr>
