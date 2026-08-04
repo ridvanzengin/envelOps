@@ -116,6 +116,40 @@ final, not provisional.
 
 ## Changelog
 
+**2026-08-04, later still, one more round** — Two more findings from
+continued live testing on Wildroot (now that it has tool-calling, see
+below), both fixed:
+- **`INVENTORY_CHECK_TOOL`'s description was too narrow**: "do you sell
+  hats?" reliably (2/2) never called the tool at all -- only "do you
+  have X in stock"-shaped phrasing did -- so it fell through to a
+  knowledge-gap escalation instead of answering. The tool's description
+  only said "is currently in stock," which the model apparently read as
+  scoped to literal stock-check phrasing, not "do you sell/carry X"
+  general-catalog questions that mean the same thing to a customer.
+  Broadened the description (`app/commerce/tools.py`) to say so
+  explicitly. Live-verified 2/2 "do you sell hats?" now calls the tool
+  and answers directly.
+- **Worse, found while verifying the above**: `FakeCommerceProductRepository
+  .find_matching`'s exact-match-only design meant "do you sell bucket
+  hats?" (plural) didn't match a real "Bucket Hat" catalog row at all --
+  the model confidently said *not carried* about a product Wildroot
+  genuinely sells. A false negative about a real product, arguably worse
+  than the original fabrication bug this whole feature exists to
+  prevent. Presented the tradeoff directly (exact-only vs. singular/
+  plural-insensitive vs. general substring matching) rather than picking
+  unilaterally, since it's a real widen-the-matching-net-vs-stay-bounded
+  decision central to the feature's safety story; singular/plural-
+  insensitive was chosen (direct instruction) as the narrowest fix that
+  actually closes the gap, without reopening the substring-fuzzy-match
+  risk (e.g. a query must still never coincidentally match an
+  off-catalog weapon term just by word overlap). `_build_match_stmt`
+  (`app/commerce/repository.py`) now also tries the query with a
+  trailing "s" added or stripped. Live-verified: "bucket hats" and
+  "oversized hoodies" now correctly resolve to their real catalog rows
+  with accurate stock counts, while a genuinely off-catalog "x icons"
+  still correctly comes back not carried.
+- 363 backend tests pass (2 new), `ruff`/`mypy` clean.
+
 **2026-08-04, later still, once more** — Reported as "stuck" giving a
 reply, investigated extensively (direct API repro across single/multi-
 turn, hot/warm/cold leads; then a real headless-browser Test Console

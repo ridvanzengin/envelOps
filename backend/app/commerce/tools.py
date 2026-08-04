@@ -37,7 +37,12 @@ INVENTORY_CHECK_TOOL = ToolDeclaration(
     name="inventory_check",
     description=(
         "Check whether a specific product (and size/variant, if relevant) "
-        "is currently in stock."
+        "is something this business sells/carries at all, and if so "
+        "whether it's currently in stock. Call this for any phrasing "
+        "that's really asking the same practical question -- \"do you "
+        "have X in stock\", \"do you sell X\", \"do you carry X\", \"do "
+        "you have X\" all mean the same thing to a customer, not just "
+        "ones that literally say \"in stock\"."
     ),
     parameters={
         "type": "object",

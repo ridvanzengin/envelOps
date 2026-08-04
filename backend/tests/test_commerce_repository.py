@@ -34,3 +34,20 @@ class TestBuildMatchStmt:
     def test_orders_by_size_for_determinism(self) -> None:
         sql = _compiled_sql(_build_match_stmt(uuid.uuid4(), "Widget", None))
         assert "ORDER BY fake_commerce_products.size" in sql
+
+    def test_plural_query_also_matches_the_singular_catalog_name(self) -> None:
+        # Found live (2026-08-04): "do you sell bucket hats?" didn't match
+        # a real "Bucket Hat" catalog row under plain exact-match, so the
+        # model confidently said not carried about a product the tenant
+        # genuinely sells -- a false negative, arguably worse than the
+        # fabrication bug this catalog exists to prevent.
+        stmt = _build_match_stmt(uuid.uuid4(), "Bucket Hats", None)
+        sql = str(stmt.compile(compile_kwargs={"literal_binds": True}))
+        assert "'bucket hats'" in sql
+        assert "'bucket hat'" in sql
+
+    def test_singular_query_also_matches_a_plural_catalog_name(self) -> None:
+        stmt = _build_match_stmt(uuid.uuid4(), "Bucket Hat", None)
+        sql = str(stmt.compile(compile_kwargs={"literal_binds": True}))
+        assert "'bucket hat'" in sql
+        assert "'bucket hats'" in sql
