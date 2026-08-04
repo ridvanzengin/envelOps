@@ -1,36 +1,15 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import type { FormEvent } from "react";
 import { useTranslation } from "react-i18next";
 
-import { apiGet, apiPost } from "../api/client";
+import { apiPost } from "../api/client";
 import { useAuth } from "../auth/useAuth";
 import { LanguageSwitcher } from "../components/LanguageSwitcher";
-
-interface DevTenantOption {
-  user_id: string;
-  tenant_id: string;
-  tenant_name: string;
-  email: string;
-}
+import { useDevTenants } from "../hooks/useDevTenants";
 
 interface TokenResponse {
   access_token: string;
   token_type: string;
-}
-
-// Dev-only tenant switcher (docs/ROADMAP.md) -- GET /auth/dev-tenants 404s
-// unless the backend has ENVELOPS_DEV_AUTH_BYPASS_ENABLED set, so in any
-// real deployment this silently fetches nothing and the dropdown below
-// never renders. Never shown as an error to the user either way -- it's
-// an optional convenience, not a feature whose absence is a problem.
-function useDevTenants(): DevTenantOption[] {
-  const [tenants, setTenants] = useState<DevTenantOption[]>([]);
-  useEffect(() => {
-    apiGet<DevTenantOption[]>("/auth/dev-tenants", null)
-      .then(setTenants)
-      .catch(() => setTenants([]));
-  }, []);
-  return tenants;
 }
 
 export default function Login() {

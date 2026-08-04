@@ -124,6 +124,11 @@ class TestSendTestMessageDemoMode:
     async def test_runs_pipeline_without_touching_any_repository(self) -> None:
         tenant_id = uuid.uuid4()
         session = AsyncMock()
+        # session.add() is sync in real SQLAlchemy -- AsyncMock's blanket
+        # auto-mocking would otherwise make it return an unawaited
+        # coroutine (a harmless warning, not a real bug, but worth
+        # matching the real method's shape).
+        session.add = MagicMock()
         with (
             patch("app.test_console.api.settings.demo_mode_enabled", True),
             patch("app.core.db.get_session", return_value=session),
@@ -159,20 +164,25 @@ class TestSendTestMessageDemoMode:
 
         # The real pipeline genuinely ran...
         mock_run_pipeline.assert_called_once()
-        # ...but nothing was persisted: no repository was ever touched, and
-        # the only session.commit() is the pre-pipeline hygiene one
-        # CLAUDE.md's checkpointer gotcha requires -- never a second one
-        # afterward, which is what would flush the Lead/Escalation rows
-        # graph.py's own nodes staged on this same session during the run.
+        # ...but nothing was persisted: no repository class was ever
+        # touched (the demo path inserts a real Channel/Conversation
+        # directly via session.add() + session.flush() -- see
+        # _send_test_message_demo's own docstring for why: graph.py's own
+        # nodes insert Lead/Escalation rows with a real foreign key to
+        # conversation_id, and Postgres enforces that at INSERT time, not
+        # commit time -- but never via commit(), which is what would make
+        # any of it durable.
         mock_channel_repo_cls.assert_not_called()
         mock_conv_repo_cls.assert_not_called()
         mock_message_repo_cls.assert_not_called()
         mock_trace_repo_cls.assert_not_called()
-        assert session.commit.call_count == 1
+        assert session.commit.call_count == 0
+        assert session.flush.call_count == 2
 
     async def test_second_message_in_same_session_continues_the_conversation(self) -> None:
         tenant_id = uuid.uuid4()
         session = AsyncMock()
+        session.add = MagicMock()
         with (
             patch("app.test_console.api.settings.demo_mode_enabled", True),
             patch(

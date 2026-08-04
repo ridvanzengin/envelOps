@@ -48,12 +48,16 @@ scope-pivot reasoning. Concretely, right now:
   tenant's actual channels with a **working per-channel AI auto-reply
   on/off switch** (`GET /channels/connected`/`PATCH /channels/{id}`) —
   real channel *creation* is still script-only.
-- All PRs through #47 are merged into `main` (confirmed via `gh pr view
-  47 --json state` 2026-08-03). The Celery worker asyncpg fix below is on
-  its own branch, not yet a PR as of this writing — **check this**:
-  verify the actual PR number/state with `gh pr list`/`gh pr view <N>
-  --json state` rather than trusting this file, which goes stale between
-  sessions.
+- A public, read-only demo mode exists (`ENVELOPS_DEMO_MODE_ENABLED`,
+  `app/core/demo_mode.py`) — every mutating endpoint 403s, Test Console
+  stays real but persistence-free, and the frontend skips login entirely
+  in favor of an open tenant dropdown. See the changelog entry below for
+  the full shape. On its own branch (`demo`), not yet a PR as of this
+  writing.
+- All PRs through #49 are merged into `main` (confirmed via `gh pr list`
+  2026-08-04) — **check this**: verify the actual PR number/state with
+  `gh pr list`/`gh pr view <N> --json state` rather than trusting this
+  file, which goes stale between sessions.
 
 ## Open items
 
@@ -95,6 +99,43 @@ auto-send + safety-floor-escalation-only gate (ARCHITECTURE §5) stays
 final, not provisional.
 
 ## Changelog
+
+**2026-08-04** — Public read-only demo mode (`demo` branch, not yet a
+PR), direct instruction: a single `ENVELOPS_DEMO_MODE_ENABLED` flag turns
+the whole app into a safe-to-share showcase.
+- Backend: every mutating endpoint (knowledge source CRUD, `PATCH
+  /tenants/settings`, escalation resolve + trigger-phrase add/delete, the
+  channel AI toggle, all 5 inbound channel webhooks) 403s via a shared
+  `app/core/demo_mode.py` dependency — enforced at the API layer, not
+  just a frontend disable, per direct instruction. `follow_up_check`
+  (Celery Beat) skips entirely, since it isn't reachable through the API
+  gate at all. `demo_mode_enabled` also ORs into the existing dev-auth-
+  bypass gate (`auth/api.py`), opening the no-password tenant switcher.
+- Test Console is the deliberate exception: still runs the real pipeline
+  (real Gemini calls, real knowledge search) but never creates a
+  Channel/Conversation row or writes a Message/PipelineTrace row —
+  swaps the Postgres checkpointer for an in-memory one and keeps
+  per-session history in a process-local dict instead, keyed the same
+  way a real Conversation lookup would be. Response shape unchanged, so
+  the frontend needed no changes there specifically.
+- Frontend: `App.tsx` skips the login screen entirely in demo mode
+  (auto dev-logs-in as the first showcase tenant via `GET
+  /system/demo-mode` + `GET /auth/dev-tenants`); the Dashboard's own
+  `<h1>` becomes a "Tenant: [dropdown]" selector in its place, reading
+  the current tenant from the JWT itself (`src/lib/jwt.ts`, client-side
+  decode, no new endpoint needed). Every mutating control across
+  Knowledge/Settings/Channels/escalation-resolve gets `disabled` (not
+  hidden — direct instruction: full functionality stays visible, only
+  alterations are cut) plus a `title` tooltip, and a persistent sidebar
+  badge reminds a visitor throughout, not just per-button on hover.
+  `CHANNEL_ICONS` (`ChannelRail.tsx`'s dev-tenants list, now also needed
+  by `App.tsx` and `Dashboard.tsx`) got pulled into shared hooks
+  (`useDevTenants`, `useDemoMode`) and a `DemoModeProvider` context
+  rather than fetched independently per page.
+- 339 backend tests pass (22 new, covering the 403 gate across every
+  route, the dev-auth-bypass OR, `follow_up_check`'s skip, and Test
+  Console's persistence-free path including multi-turn continuity across
+  two messages in the same session). Frontend build/lint clean.
 
 **2026-08-03, later same day** — Fixed the Celery worker asyncpg
 cross-event-loop bug (found live during PR #47, filed not fixed there —

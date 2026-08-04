@@ -124,12 +124,15 @@ class SendTestMessageResponse(BaseModel):
 
 
 # Demo mode's counterpart to everything below -- runs the exact same real
-# pipeline (real Gemini calls, real knowledge search) but never creates a
-# Channel/Conversation row and never writes a Message/PipelineTrace row,
-# so a public read-only demo leaves nothing in Postgres from Test Console
-# use, matching every other write path's demo_mode_enabled gate
-# (app/core/demo_mode.py) even though this one can't just 403 -- the
-# point of Test Console is that it still runs.
+# pipeline (real Gemini calls, real knowledge search), and (see
+# _send_test_message_demo's own docstring) does insert real Channel/
+# Conversation/Lead/Escalation/Message rows on the request's session, same
+# as the real flow -- Postgres' own foreign keys leave no way around that.
+# The guarantee is that none of it is ever committed, so a public
+# read-only demo leaves nothing durable in Postgres from Test Console use
+# once the request ends, matching every other write path's
+# demo_mode_enabled gate (app/core/demo_mode.py) even though this one
+# can't just 403 -- the point of Test Console is that it still runs.
 #
 # Two process-local (not per-request) stores, deliberately not Postgres/
 # Redis: a demo's whole point is that this is throwaway, so losing it on
@@ -345,20 +348,30 @@ async def _send_test_message_demo(
     session: AsyncSession,
 ) -> SendTestMessageResponse:
     """Demo-mode counterpart to send_test_message above -- see the module
-    docstring near _demo_checkpointer for the persistence story. One real
-    difference from the persisted flow: graph.py's own nodes
-    (log_lead_and_notify, escalate_to_human) still stage real Lead/
-    Escalation/internal-note rows on `session` as they always do -- this
-    function just never calls session.commit() after run_pipeline, so
-    those staged rows are discarded when the request's session closes
-    rather than ever reaching Postgres, the same "nothing written" outcome
-    every other demo-mode-gated endpoint gets via an outright 403. One
-    known gap from that: the internal-note bubble a real escalation writes
-    (app/pipeline/graph.py's _write_internal_note) lives only in that
-    discarded session state, not in this function's own history list --
-    the escalation is still fully visible via this response's own
-    escalated/escalation_reason fields and the inbound message's
-    diagnostics badge, just not as a second chat bubble.
+    docstring near _demo_checkpointer for the persistence story. graph.py's
+    own nodes (log_lead_and_notify, escalate_to_human, _write_internal_note)
+    still insert real Lead/Escalation/internal-note-Message rows on
+    `session` as they always do -- Postgres enforces their foreign keys
+    against conversation_id at INSERT time, not deferred to commit, so a
+    conversation_id with nothing behind it in this transaction made every
+    one of those inserts fail outright with an IntegrityError (found live
+    testing this, not anticipated). Fix: insert real Channel/Conversation
+    rows for this transaction to reference -- session.flush() (not
+    commit()) makes them visible to those later inserts within this same
+    transaction without ever making them durable. This function never
+    calls session.commit() at all, so the whole transaction (Channel,
+    Conversation, Lead, Escalation, Message, everything) is discarded when
+    the request's session closes, the same "nothing written" outcome every
+    other demo-mode-gated endpoint gets via an outright 403 -- just via
+    rollback instead of never having tried the write.
+
+    Also, deliberately no pre-pipeline session.commit() the way the real
+    flow above has (CLAUDE.md's "commit before invoking a checkpointed
+    run" gotcha): that hang was specifically about the Postgres
+    checkpointer's psycopg connection contending with an open transaction
+    on this session's separate asyncpg one. _demo_checkpointer is a
+    MemorySaver -- pure in-process memory, no second database connection
+    involved at all -- so that whole class of hang can't happen here.
     """
     key = _demo_key(current_user.tenant_id, body.channel_type, external_contact_id)
     conversation_id = _demo_thread_id(
@@ -366,12 +379,23 @@ async def _send_test_message_demo(
     )
     history = _demo_conversation_messages.setdefault(key, [])
 
-    # Same "commit before invoking a checkpointed run" hygiene CLAUDE.md
-    # documents for the real flow above -- nothing is actually pending
-    # here (demo mode never session.add()s a Channel/Conversation/Message
-    # itself), but this still clears any open transaction/autoflush state
-    # before the graph runs, the same defensive habit for the same reason.
-    await session.commit()
+    channel = Channel(
+        tenant_id=current_user.tenant_id,
+        type=body.channel_type,
+        external_account_id="demo",
+        is_test=True,
+    )
+    session.add(channel)
+    await session.flush()
+    session.add(
+        Conversation(
+            id=conversation_id,
+            tenant_id=current_user.tenant_id,
+            channel_id=channel.id,
+            external_contact_id=external_contact_id,
+        )
+    )
+    await session.flush()
 
     state = PipelineState(
         tenant_id=current_user.tenant_id,

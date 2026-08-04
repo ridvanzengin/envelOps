@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 
 import { apiDelete, apiGet, apiPatch, apiPost, ApiError } from "../api/client";
 import { useAuth } from "../auth/useAuth";
+import { useDemoModeContext } from "../context/demoMode/useDemoModeContext";
 import {
   AlertTriangleIcon,
   ArrowUpCircleIcon,
@@ -311,6 +312,7 @@ function AdditionalContextField({
 export default function Settings() {
   const { t } = useTranslation();
   const { token, logout } = useAuth();
+  const { enabled: demoModeEnabled } = useDemoModeContext();
   const [phrases, setPhrases] = useState<TriggerPhrase[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -585,10 +587,10 @@ export default function Settings() {
                         <button
                           type="button"
                           className="button button--danger"
-                          disabled={deletingId === phrase.id}
+                          disabled={demoModeEnabled || deletingId === phrase.id}
                           onClick={() => void handleDelete(phrase.id)}
                           aria-label={t("settings.delete")}
-                          title={t("settings.delete")}
+                          title={demoModeEnabled ? t("demoMode.disabledTooltip") : t("settings.delete")}
                         >
                           <TrashIcon />
                         </button>
@@ -610,7 +612,8 @@ export default function Settings() {
                   <button
                     type="submit"
                     className="button button--primary button--fit"
-                    disabled={submitting}
+                    disabled={demoModeEnabled || submitting}
+                    title={demoModeEnabled ? t("demoMode.disabledTooltip") : undefined}
                   >
                     {submitting ? t("settings.adding") : t("settings.add")}
                   </button>
@@ -1059,7 +1062,8 @@ export default function Settings() {
                 <button
                   type="submit"
                   className="button button--primary button--fit"
-                  disabled={savingTab === tab}
+                  disabled={demoModeEnabled || savingTab === tab}
+                  title={demoModeEnabled ? t("demoMode.disabledTooltip") : undefined}
                 >
                   {savingTab === tab
                     ? t("settings.tenantSettings.saving")

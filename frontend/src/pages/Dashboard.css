@@ -14,6 +14,38 @@
   border: 0;
 }
 
+/* Replaces the plain "Dashboard" <h1> in demo mode (App.tsx skips the
+   real login screen entirely there, so this dropdown is the only way a
+   visitor picks which showcase tenant to look at). Sized to read as a
+   page heading, not a form control -- larger font/weight than a normal
+   <select>, no visible border until hovered/focused. */
+.dashboard__tenant-select {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.dashboard__tenant-select select {
+  font: inherit;
+  font-size: 22px;
+  font-weight: 600;
+  color: var(--text-h);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 2px 6px;
+  cursor: pointer;
+}
+
+.dashboard__tenant-select select:hover,
+.dashboard__tenant-select select:focus {
+  border-color: var(--border);
+  background: var(--bg-subtle);
+}
+
 .dashboard__range {
   display: flex;
   gap: 4px;

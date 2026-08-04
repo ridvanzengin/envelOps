@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { apiGet, ApiError } from "../api/client";
+import { apiGet, apiPost, ApiError } from "../api/client";
 import { useAuth } from "../auth/useAuth";
 import { DonutChart } from "../components/dashboard/DonutChart";
 import { StatTile } from "../components/dashboard/StatTile";
@@ -18,8 +18,16 @@ import {
   TelegramIcon,
   WhatsAppIcon,
 } from "../components/icons";
+import { useDemoModeContext } from "../context/demoMode/useDemoModeContext";
+import { useDevTenants } from "../hooks/useDevTenants";
+import { decodeJwtPayload } from "../lib/jwt";
 import { formatRelativeTime } from "../utils/relativeTime";
 import "./Dashboard.css";
+
+interface DevLoginResponse {
+  access_token: string;
+  token_type: string;
+}
 
 interface TrendPoint {
   date: string;
@@ -90,7 +98,23 @@ function sourceTitle(source: KnowledgeSource): string {
 
 export default function Dashboard() {
   const { t, i18n } = useTranslation();
-  const { token, logout } = useAuth();
+  const { token, logout, loginWithToken } = useAuth();
+  const { enabled: demoModeEnabled } = useDemoModeContext();
+  const devTenants = useDevTenants();
+  const currentTenantId = token
+    ? (decodeJwtPayload<{ tenant_id: string }>(token)?.tenant_id ?? null)
+    : null;
+
+  async function handleTenantSwitch(tenantId: string) {
+    const tenant = devTenants.find((option) => option.tenant_id === tenantId);
+    if (!tenant) return;
+    const response = await apiPost<DevLoginResponse>(
+      "/auth/dev-login",
+      { user_id: tenant.user_id },
+      null,
+    );
+    loginWithToken(response.access_token);
+  }
 
   const [days, setDays] = useState<RangeDays>(30);
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
@@ -144,7 +168,24 @@ export default function Dashboard() {
   return (
     <section className="page">
       <div className="page__header">
-        <h1>{t("nav.dashboard")}</h1>
+        {demoModeEnabled ? (
+          <label className="dashboard__tenant-select">
+            {t("demoMode.tenantLabel")}
+            <select
+              value={currentTenantId ?? ""}
+              onChange={(event) => void handleTenantSwitch(event.target.value)}
+            >
+              {currentTenantId === null && <option value="">{t("app.loading")}</option>}
+              {devTenants.map((tenant) => (
+                <option key={tenant.tenant_id} value={tenant.tenant_id}>
+                  {tenant.tenant_name}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : (
+          <h1>{t("nav.dashboard")}</h1>
+        )}
         <div className="dashboard__range" role="group" aria-label={t("dashboard.rangeLabel")}>
           {RANGE_OPTIONS.map((option) => (
             <button
