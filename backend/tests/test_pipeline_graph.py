@@ -3,6 +3,7 @@ from unittest.mock import AsyncMock, patch
 
 from langgraph.runtime import Runtime
 
+from app.commerce.schemas import OrderStatusResult
 from app.core.llm import ToolCallRequest
 from app.pipeline.context import PipelineContext
 from app.pipeline.graph import (
@@ -536,7 +537,7 @@ class TestDecideNextStepRouting:
 
 
 class TestCallTools:
-    def test_skips_when_intent_does_not_need_grounding(self) -> None:
+    async def test_skips_when_intent_does_not_need_grounding(self) -> None:
         for intent in ("small_talk", "other"):
             state = _make_state("hi")
             state.detected_intent = intent
@@ -544,39 +545,48 @@ class TestCallTools:
                 "tool_calling": {"order_status_lookup_enabled": True}
             }
             with patch("app.pipeline.graph.generate_with_tools") as mock_gen:
-                result = call_tools(state)
+                result = await call_tools(state)
             mock_gen.assert_not_called()
             assert result.tool_call_results == []
 
-    def test_skips_when_no_tools_enabled(self) -> None:
+    async def test_skips_when_no_tools_enabled(self) -> None:
         # All-defaults TenantBehaviorConfig (tool_calling off, the actual
         # default for every tenant today) -- zero extra Gemini calls, the
         # required byte-identical-at-defaults guarantee.
         state = _make_state("Where's my order #12345?")
         state.detected_intent = "knowledge_question"
         with patch("app.pipeline.graph.generate_with_tools") as mock_gen:
-            result = call_tools(state)
+            result = await call_tools(state)
         mock_gen.assert_not_called()
         assert result.tool_call_results == []
 
-    def test_populates_tool_call_results_on_a_real_tool_call(self) -> None:
-        # Only generate_with_tools is mocked -- the connector itself is
-        # real and deterministic, matching this module's own "don't mock
-        # the fake data layer" approach.
+    async def test_populates_tool_call_results_on_a_real_tool_call(self) -> None:
+        # execute() is mocked, not the real connector -- the connector now
+        # makes a real HTTP call to the fake commerce platform (app/
+        # commerce/connectors.py), which has no live server to hit in a
+        # graph-node unit test. execute()'s own dispatch/error-handling is
+        # covered directly in tests/test_commerce.py instead.
         state = _make_state("Where's my order #12345?")
         state.detected_intent = "knowledge_question"
         state.tenant_behavior_config = {
             "tool_calling": {"order_status_lookup_enabled": True}
         }
         tool_call = ToolCallRequest(name="order_status_lookup", args={"order_number": "12345"})
-        with patch(
-            "app.pipeline.graph.generate_with_tools", return_value=(None, [tool_call])
+        fake_result = OrderStatusResult(
+            order_number="12345", status="shipped", carrier="UPS",
+            tracking_number="UP123", days_to_delivery=2,
+        )
+        with (
+            patch(
+                "app.pipeline.graph.generate_with_tools", return_value=(None, [tool_call])
+            ),
+            patch("app.pipeline.graph.execute", AsyncMock(return_value=fake_result)),
         ):
-            result = call_tools(state)
+            result = await call_tools(state)
         assert len(result.tool_call_results) == 1
         assert "12345" in result.tool_call_results[0]
 
-    def test_leaves_empty_when_model_calls_no_tool(self) -> None:
+    async def test_leaves_empty_when_model_calls_no_tool(self) -> None:
         state = _make_state("Where's my order #12345?")
         state.detected_intent = "knowledge_question"
         state.tenant_behavior_config = {
@@ -585,10 +595,13 @@ class TestCallTools:
         with patch(
             "app.pipeline.graph.generate_with_tools", return_value=("no tool needed", [])
         ):
-            result = call_tools(state)
+            result = await call_tools(state)
         assert result.tool_call_results == []
 
-    def test_ignores_hallucinated_tool_call_without_raising(self) -> None:
+    async def test_ignores_hallucinated_tool_call_without_raising(self) -> None:
+        # No execute() mock needed -- an unrecognized tool name is
+        # rejected by execute()'s own dispatch before any connector (and
+        # therefore any network call) is ever reached.
         state = _make_state("Where's my order #12345?")
         state.detected_intent = "knowledge_question"
         state.tenant_behavior_config = {
@@ -598,10 +611,10 @@ class TestCallTools:
             "app.pipeline.graph.generate_with_tools",
             return_value=(None, [ToolCallRequest(name="delete_all_orders", args={})]),
         ):
-            result = call_tools(state)
+            result = await call_tools(state)
         assert result.tool_call_results == []
 
-    def test_only_offers_tools_the_tenant_has_enabled(self) -> None:
+    async def test_only_offers_tools_the_tenant_has_enabled(self) -> None:
         state = _make_state("Where's my order #12345?")
         state.detected_intent = "knowledge_question"
         state.tenant_behavior_config = {
@@ -613,7 +626,7 @@ class TestCallTools:
         with patch(
             "app.pipeline.graph.generate_with_tools", return_value=(None, [])
         ) as mock_gen:
-            call_tools(state)
+            await call_tools(state)
         declarations = mock_gen.call_args.args[1]
         assert [d.name for d in declarations] == ["order_status_lookup"]
 

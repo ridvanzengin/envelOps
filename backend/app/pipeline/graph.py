@@ -493,12 +493,15 @@ def route_after_decision(state: PipelineState) -> str:
     return state.decision
 
 
-def call_tools(state: PipelineState) -> PipelineState:
+async def call_tools(state: PipelineState) -> PipelineState:
     """Runs on the decide_next_step -> keep_chatting edge only (never on
     the escalation/book_or_checkout branches, which don't need live data
-    for a holding reply or a checkout handoff). Sync/DB-free, same shape
-    as understand_intent/score_lead. Fully inert -- zero extra Gemini
-    calls -- for every tenant that hasn't opted into a fake connector
+    for a holding reply or a checkout handoff). DB-free itself -- the
+    fake connectors it calls into (app/commerce/connectors.py) make their
+    own real HTTP call to this backend's own fake-commerce-platform
+    endpoint, async for that reason, not because this node touches the
+    database. Fully inert -- zero extra Gemini calls, zero HTTP calls --
+    for every tenant that hasn't opted into a fake connector
     (app/tenants/behavior_config.py's ToolCallingConfig), which is every
     tenant today.
 
@@ -530,7 +533,7 @@ def call_tools(state: PipelineState) -> PipelineState:
 
     results = []
     for call in tool_calls:
-        result = execute(call.name, call.args)
+        result = await execute(call.name, call.args, state.tenant_id)
         if result is not None:
             results.append(format_result(call.name, result))
     state.tool_call_results = results

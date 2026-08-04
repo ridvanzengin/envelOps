@@ -1,8 +1,11 @@
 # Plan: a real-HTTP fake commerce platform, backed by a bounded catalog
 
-**Status: planned, not built.** This is a design doc for future work, not a
-description of current behavior — see `docs/ROADMAP.md`'s open items for
-the live status pointer back to this file.
+**Status: built (2026-08-04, same day as this plan).** Implemented
+substantially as designed below; see `docs/ROADMAP.md`'s changelog entry
+for the build write-up and `docs/ARCHITECTURE.md`'s "Live data" section
+for the current-state description. This doc is kept as the design
+rationale/root-cause writeup, not a live status page — check ROADMAP.md
+for anything that's since changed.
 
 ## Why this exists
 
@@ -187,16 +190,45 @@ calibration review.
   catalog rows seeded before this is useful against them — not automatic
   from the migration alone.
 
-## Open decisions to make when this is actually built (not now)
+## Open decisions -- resolved as built (2026-08-04)
 
-1. Flat `size` string vs. a real variant table (lean flat, see above).
-2. Exact internal-auth mechanism for the fake endpoint (lean static
-   bearer token, see above).
-3. Whether to also route `get_order_status` through a bounded fake-orders
-   table, or keep it hash-seeded-but-server-side (lean the latter, see
-   above — the fabrication problem this plan exists to fix is specific to
-   unbounded product lookups, not order numbers).
-4. Whether `call_tools`'s conversion to async should happen as part of
-   this change or be split out as its own smaller, separately-landable
-   PR first (probably worth doing first, in isolation, since it's a
-   mechanical change with its own blast radius across the graph).
+1. **Flat `size` string, not a variant table** — went with the lean
+   option, `FakeCommerceProduct.size: str | None` exactly matching
+   `check_inventory`'s existing parameter.
+2. **Static internal bearer token** — `ENVELOPS_FAKE_COMMERCE_INTERNAL_TOKEN`,
+   checked fail-closed by `fake_platform_api.require_internal_token`
+   (missing/still-default token → 401), same posture as
+   `app/channels/api.py`'s webhook secret.
+3. **`get_order_status` stayed hash-seeded, not a bounded fake-orders
+   table** — the hash-seeded logic moved server-side into
+   `fake_platform_api._compute_order_status`, unchanged in behavior;
+   `app/commerce/connectors.py`'s `get_order_status` is now a thin HTTP
+   client only.
+4. **`call_tools`'s async conversion landed in this same change**, not
+   split out — in practice the blast radius was contained to
+   `call_tools` itself, `tools.execute()`, and their tests; not worth a
+   separate PR.
+
+Implementation notes beyond the original design:
+- `InventoryResult` gained a `carried: bool` field (`app/commerce/schemas.py`)
+  to distinguish "off-catalog, don't carry it" from "carried but out of
+  stock" — the plan's prose described this state but the original schema
+  had no field for it. `format_result` renders `carried=False` as "We
+  don't carry `<product>` -- no matching product in our catalog."
+- The product-lookup endpoint does an **exact**, case-insensitive match
+  on name (and size, when given), not fuzzy/substring — deliberate, so a
+  near-miss string can't accidentally match a real product and mask the
+  same fabrication risk this plan exists to close.
+- Existing calibration tenants: only Voltage Gadgets (the one tenant with
+  `inventory_check_enabled=True`) got seeded catalog rows
+  (`scripts/seed_calibration_tenant.py`'s new `TenantSpec.catalog` field)
+  — Wildroot Apparel Co has no tool-calling enabled, so a catalog there
+  would never be exercised.
+- Live-verified end to end through the real pipeline (Test Console, real
+  Gemini tool-calling, real HTTP round-trip): "is the SmartHome Hub X1 in
+  stock?" correctly returned the seeded quantity; "do you happen to carry
+  AK-47 rifles?" correctly returned "We do not carry AK-47 rifles, as
+  there is no matching product in our catalog." Also verified the worker
+  container resolves `ENVELOPS_INTERNAL_API_BASE_URL=http://backend:8000`
+  and can reach the backend container by service name, not just the
+  FastAPI-in-process Test Console path.

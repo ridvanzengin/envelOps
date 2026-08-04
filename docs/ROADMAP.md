@@ -28,9 +28,12 @@ scope-pivot reasoning. Concretely, right now:
 - **Telegram** is the one real channel integration. Instagram/WhatsApp/
   Facebook/Email are simulated (`app/channels/simulated_client.py`) — real
   pipeline, webhook-shaped entry points, no real platform contacted.
-- Order-status/inventory lookup use **real** Gemini tool-calling over
-  **fake**, deterministic connectors (`app/commerce/`) — not a real
-  Shopify/WooCommerce integration.
+- Order-status/inventory lookup use **real** Gemini tool-calling over a
+  **real** internal HTTP call (`app/commerce/connectors.py`) to a
+  **fake** commerce-platform endpoint this same backend also mounts
+  (`app/commerce/fake_platform_api.py`, 2026-08-04), grounded in a real,
+  bounded per-tenant catalog — not a real Shopify/WooCommerce
+  integration, never reachable from outside this backend.
 - Turkish/bilingual pipeline support is cut, fully, including
   `escalation/safety_gate.py`'s own pattern lists. Frontend i18n UI chrome
   (`react-i18next`) is untouched and unrelated.
@@ -73,25 +76,14 @@ Real, not yet designed in detail, not currently being worked:
 - **A "Markdown" knowledge-source type** — deliberately excluded from the
   knowledge-sources redesign (PR #43) since it isn't real backend
   capability yet; would need a small ingestion addition, not a redesign.
-- **Fake commerce connectors will fabricate a plausible answer for *any*
-  product string**, found live 2026-08-04 via Test Console (asking a
-  tenant's AI "do you have ak47 in stock?" got a confident, ordinary
-  in-stock/restock-ETA answer, regardless of tenant or business type) —
-  `check_inventory`'s hash-seeded logic has no concept of what a tenant
-  actually sells. Planned fix: **not yet built**, full design at
-  [`docs/plans/fake-commerce-platform-integration.md`](plans/fake-commerce-platform-integration.md)
-  — routes the connector through a real internal HTTP call to a new fake
-  platform endpoint backed by a bounded per-tenant product catalog, so an
-  off-catalog query genuinely comes back "not found" instead of a
-  fabrication. Still fully simulated throughout — doesn't reopen the
-  cancelled real-Shopify/WooCommerce-integration decision (§12).
 - **Safety floor has no weapons/regulated-goods pattern category**, found
-  the same session as the item above — `escalation/safety_gate.py`'s
-  Layer 1 only covers contraindication/symptom/outcome-guarantee language
-  (all health-adjacent), so a weapons query never has a chance to trip it
-  regardless of phrasing. Complementary to, not overlapping with, the
-  bounded-catalog fix above — that only protects against *off-catalog*
-  queries, not a tenant whose real catalog legitimately contains something
+  2026-08-04 the same session as the bounded-commerce-catalog fix below
+  (see that changelog entry) — `escalation/safety_gate.py`'s Layer 1 only
+  covers contraindication/symptom/outcome-guarantee language (all
+  health-adjacent), so a weapons query never has a chance to trip it
+  regardless of phrasing. Complementary to, not overlapping with, that
+  fix — the bounded catalog only protects against *off-catalog* queries,
+  not a tenant whose real catalog legitimately contains something
   regulated. Not yet designed in detail; likely shape is a new pattern
   category alongside the existing three, platform-enforced the same way.
 
@@ -123,6 +115,51 @@ auto-send + safety-floor-escalation-only gate (ARCHITECTURE §5) stays
 final, not provisional.
 
 ## Changelog
+
+**2026-08-04, later still** — Built the real-HTTP fake commerce platform
+planned earlier the same day
+([`docs/plans/fake-commerce-platform-integration.md`](plans/fake-commerce-platform-integration.md)),
+fixing the live-found bug where `check_inventory`'s hash-seeded logic
+fabricated a plausible in-stock answer for *any* product string
+regardless of what a tenant actually sells (found via Test Console: "do
+you have ak47 in stock?" got a confident, ordinary answer).
+- New `FakeCommerceProduct` table (`app/commerce/models.py`,
+  tenant-scoped, one migration) — a bounded per-tenant catalog; a query
+  with no matching row now genuinely comes back "not carried."
+- New internal-only router `app/commerce/fake_platform_api.py`
+  (`/internal/fake-commerce/products`, `/internal/fake-commerce/orders/
+  {order_number}`), bearer-token-gated
+  (`ENVELOPS_FAKE_COMMERCE_INTERNAL_TOKEN`, fail-closed), mounted by this
+  same backend and never reachable from outside it. The order-status
+  endpoint keeps the exact same hash-seeded logic the old in-process
+  connector had (moved server-side, not changed) — no bounded
+  fake-orders table, since an arbitrary-looking order number is a normal
+  thing for a real customer to type, unlike an unbounded product string.
+- `app/commerce/connectors.py` rewritten as real async `httpx` calls to
+  that endpoint (`ENVELOPS_INTERNAL_API_BASE_URL`, `localhost:8000` for
+  host dev, `http://backend:8000` for the backend/worker containers —
+  same override pattern as the database/redis URLs); never raises, a
+  timeout/connection failure/non-2xx degrades to `None` same as
+  `execute()`'s existing hallucinated-tool-name handling.
+  `call_tools`/`tools.execute()` both became `async` to thread this
+  through; `InventoryResult` gained a `carried: bool` field so "off
+  catalog" and "carried but out of stock" render as distinct, honest
+  replies.
+- `scripts/seed_calibration_tenant.py`: new `TenantSpec.catalog` field,
+  seeded for Voltage Gadgets only (the one calibration tenant with
+  `inventory_check_enabled=True`).
+- Live-verified through the real pipeline, not just unit tests: asking
+  Voltage Gadgets' AI about a real catalog item returned the seeded
+  quantity; asking about AK-47 rifles returned "We do not carry AK-47
+  rifles, as there is no matching product in our catalog." Also verified
+  the worker container resolves the internal base URL correctly and can
+  reach the backend container by service name.
+- Does **not** fix the safety-floor weapons/regulated-goods pattern gap
+  (separate, still-open item above) — this closes the *fabrication*
+  path, not the *escalation* path, by design (see the plan doc's own
+  non-goals).
+- 12 migrations now (was 7 in CLAUDE.md's stale count, corrected same
+  session), 352 backend tests pass, `ruff`/`mypy` clean.
 
 **2026-08-04, later same day** — Removed the separate `dev_auth_bypass_enabled`
 flag and Login page's own dev-only tenant switcher entirely, direct

@@ -52,6 +52,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth.models import User
 from app.auth.security import hash_password
 from app.channels.models import Channel
+from app.commerce.models import FakeCommerceProduct
 from app.core.db import async_session
 from app.core.llm import embed_text
 from app.knowledge.models import KnowledgeChunk, KnowledgeSource
@@ -97,6 +98,22 @@ PLACEHOLDER_RE = re.compile(r"\{\{Order Number\}\}")
 
 
 @dataclass(frozen=True)
+class CatalogItemSpec:
+    """One app/commerce/models.py FakeCommerceProduct row -- the bounded
+    catalog the fake commerce platform's inventory endpoint matches
+    against (docs/plans/fake-commerce-platform-integration.md). Only
+    meaningful for a tenant whose behavior_config has
+    tool_calling.inventory_check_enabled=True; harmless but unused
+    otherwise."""
+
+    name: str
+    size: str | None
+    in_stock: bool
+    quantity_available: int | None = None
+    restock_eta_days: int | None = None
+
+
+@dataclass(frozen=True)
 class TenantSpec:
     name: str
     slug: str
@@ -113,6 +130,7 @@ class TenantSpec:
         default_factory=lambda: list(DEFAULT_RELEVANT_INTENTS)
     )
     samples_per_intent: int = 2
+    catalog: list[CatalogItemSpec] = field(default_factory=list)
 
 
 # Tenant #1 -- squarely in Bitext's native domain (generic online-retail
@@ -195,6 +213,37 @@ CALIBRATION_TENANTS: list[TenantSpec] = [
                 "and accessories; no physical retail locations."
             ),
         ).model_dump(),
+        # The only tenant seeded with a catalog so far -- the only one
+        # with inventory_check_enabled=True above, so this is the one a
+        # calibration reviewer can actually exercise the bounded-catalog
+        # fix against (e.g. asking about "AK-47" and getting a genuine
+        # "we don't carry that" instead of a fabricated stock answer).
+        catalog=[
+            CatalogItemSpec(
+                name="SmartHome Hub X1", size=None, in_stock=True, quantity_available=34
+            ),
+            CatalogItemSpec(
+                name="Wireless Earbuds Pro", size=None, in_stock=True, quantity_available=58
+            ),
+            CatalogItemSpec(
+                name="FitTrack Band", size="S", in_stock=True, quantity_available=20
+            ),
+            CatalogItemSpec(
+                name="FitTrack Band", size="M", in_stock=True, quantity_available=12
+            ),
+            CatalogItemSpec(
+                name="FitTrack Band", size="L", in_stock=False, restock_eta_days=9
+            ),
+            CatalogItemSpec(
+                name="Smart Plug 4-Pack", size=None, in_stock=False, restock_eta_days=14
+            ),
+            CatalogItemSpec(
+                name="Portable Power Bank 20000mAh",
+                size=None,
+                in_stock=True,
+                quantity_available=76,
+            ),
+        ],
     ),
 ]
 
@@ -272,6 +321,18 @@ async def _setup_tenant(session: AsyncSession, spec: TenantSpec) -> tuple[Tenant
                 knowledge_source_id=source.id,
                 content=text,
                 embedding=embed_text(text, task_type="RETRIEVAL_DOCUMENT"),
+            )
+        )
+    for item in spec.catalog:
+        session.add(
+            FakeCommerceProduct(
+                id=uuid.uuid4(),
+                tenant_id=tenant.id,
+                name=item.name,
+                size=item.size,
+                in_stock=item.in_stock,
+                quantity_available=item.quantity_available,
+                restock_eta_days=item.restock_eta_days,
             )
         )
     await session.commit()
