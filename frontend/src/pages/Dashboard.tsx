@@ -19,12 +19,12 @@ import {
   WhatsAppIcon,
 } from "../components/icons";
 import { useDemoModeContext } from "../context/demoMode/useDemoModeContext";
-import { useDevTenants } from "../hooks/useDevTenants";
+import { useDemoTenants } from "../hooks/useDemoTenants";
 import { decodeJwtPayload } from "../lib/jwt";
 import { formatRelativeTime } from "../utils/relativeTime";
 import "./Dashboard.css";
 
-interface DevLoginResponse {
+interface DemoLoginResponse {
   access_token: string;
   token_type: string;
 }
@@ -100,16 +100,16 @@ export default function Dashboard() {
   const { t, i18n } = useTranslation();
   const { token, logout, loginWithToken } = useAuth();
   const { enabled: demoModeEnabled } = useDemoModeContext();
-  const devTenants = useDevTenants();
+  const demoTenants = useDemoTenants();
   const currentTenantId = token
     ? (decodeJwtPayload<{ tenant_id: string }>(token)?.tenant_id ?? null)
     : null;
 
   async function handleTenantSwitch(tenantId: string) {
-    const tenant = devTenants.find((option) => option.tenant_id === tenantId);
+    const tenant = demoTenants.find((option) => option.tenant_id === tenantId);
     if (!tenant) return;
-    const response = await apiPost<DevLoginResponse>(
-      "/auth/dev-login",
+    const response = await apiPost<DemoLoginResponse>(
+      "/auth/demo-login",
       { user_id: tenant.user_id },
       null,
     );
@@ -176,7 +176,7 @@ export default function Dashboard() {
               onChange={(event) => void handleTenantSwitch(event.target.value)}
             >
               {currentTenantId === null && <option value="">{t("app.loading")}</option>}
-              {devTenants.map((tenant) => (
+              {demoTenants.map((tenant) => (
                 <option key={tenant.tenant_id} value={tenant.tenant_id}>
                   {tenant.tenant_name}
                 </option>

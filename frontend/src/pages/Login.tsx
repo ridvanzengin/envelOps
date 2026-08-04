@@ -2,26 +2,16 @@ import { useState } from "react";
 import type { FormEvent } from "react";
 import { useTranslation } from "react-i18next";
 
-import { apiPost } from "../api/client";
 import { useAuth } from "../auth/useAuth";
 import { LanguageSwitcher } from "../components/LanguageSwitcher";
-import { useDevTenants } from "../hooks/useDevTenants";
-
-interface TokenResponse {
-  access_token: string;
-  token_type: string;
-}
 
 export default function Login() {
   const { t } = useTranslation();
-  const { login, loginWithToken } = useAuth();
+  const { login } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const [devSwitching, setDevSwitching] = useState(false);
-
-  const devTenants = useDevTenants();
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -35,21 +25,6 @@ export default function Login() {
       setError(t("auth.invalidCredentials"));
     } finally {
       setSubmitting(false);
-    }
-  }
-
-  async function handleDevSwitch(userId: string) {
-    if (!userId) return;
-    setDevSwitching(true);
-    try {
-      const response = await apiPost<TokenResponse>(
-        "/auth/dev-login",
-        { user_id: userId },
-        null,
-      );
-      loginWithToken(response.access_token);
-    } finally {
-      setDevSwitching(false);
     }
   }
 
@@ -90,29 +65,6 @@ export default function Login() {
             </p>
           )}
         </form>
-
-        {devTenants.length > 0 && (
-          <div className="login-page__dev-switch">
-            <span className="dev-badge">{t("auth.devBadge")}</span>
-            <label className="form__field">
-              {t("auth.devTenantSwitch")}
-              <select
-                value=""
-                disabled={devSwitching}
-                onChange={(event) => void handleDevSwitch(event.target.value)}
-              >
-                <option value="" disabled>
-                  {t("auth.devTenantSwitchPlaceholder")}
-                </option>
-                {devTenants.map((tenant) => (
-                  <option key={tenant.user_id} value={tenant.user_id}>
-                    {tenant.tenant_name} ({tenant.email})
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
-        )}
       </div>
     </section>
   );

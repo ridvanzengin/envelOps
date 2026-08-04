@@ -34,16 +34,16 @@ async def _login(email: str, password: str) -> httpx.Response:
         return await client.post("/auth/login", json={"email": email, "password": password})
 
 
-async def _get_dev_tenants() -> httpx.Response:
+async def _get_demo_tenants() -> httpx.Response:
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-        return await client.get("/auth/dev-tenants")
+        return await client.get("/auth/demo-tenants")
 
 
-async def _dev_login(user_id: uuid.UUID) -> httpx.Response:
+async def _demo_login(user_id: uuid.UUID) -> httpx.Response:
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-        return await client.post("/auth/dev-login", json={"user_id": str(user_id)})
+        return await client.post("/auth/demo-login", json={"user_id": str(user_id)})
 
 
 class TestLogin:
@@ -81,34 +81,34 @@ class TestLogin:
         assert unknown_response.json()["detail"] == wrong_password_response.json()["detail"]
 
 
-class TestDevAuthBypassDisabled:
-    # The default, and the only acceptable state outside a local machine
-    # (settings.dev_auth_bypass_enabled's own docstring) -- both endpoints
-    # must 404, not just refuse, so a real deployment doesn't reveal this
+class TestDemoModeAuthDisabled:
+    # The default, and the only acceptable state outside a demo deployment
+    # (settings.demo_mode_enabled's own docstring) -- both endpoints must
+    # 404, not just refuse, so a real deployment doesn't reveal this
     # exists at all.
-    async def test_dev_tenants_404s_when_disabled(self) -> None:
-        with patch("app.auth.api.settings.dev_auth_bypass_enabled", False):
-            response = await _get_dev_tenants()
+    async def test_demo_tenants_404s_when_disabled(self) -> None:
+        with patch("app.auth.api.settings.demo_mode_enabled", False):
+            response = await _get_demo_tenants()
         assert response.status_code == 404
 
-    async def test_dev_login_404s_when_disabled(self) -> None:
-        with patch("app.auth.api.settings.dev_auth_bypass_enabled", False):
-            response = await _dev_login(uuid.uuid4())
+    async def test_demo_login_404s_when_disabled(self) -> None:
+        with patch("app.auth.api.settings.demo_mode_enabled", False):
+            response = await _demo_login(uuid.uuid4())
         assert response.status_code == 404
 
 
-class TestDevAuthBypassEnabled:
+class TestDemoModeAuthEnabled:
     async def test_lists_tenants_with_their_owner(self) -> None:
         tenant = type("Tenant", (), {"id": uuid.uuid4(), "name": "Honey Co"})()
         user = _fake_user(tenant_id=tenant.id)
         with (
-            patch("app.auth.api.settings.dev_auth_bypass_enabled", True),
+            patch("app.auth.api.settings.demo_mode_enabled", True),
             patch("app.auth.api.TenantRepository") as mock_repo_cls,
         ):
             mock_repo_cls.return_value.list_with_owner_unscoped = AsyncMock(
                 return_value=[(tenant, user)]
             )
-            response = await _get_dev_tenants()
+            response = await _get_demo_tenants()
         assert response.status_code == 200
         assert response.json() == [
             {
@@ -122,11 +122,11 @@ class TestDevAuthBypassEnabled:
     async def test_logs_in_as_the_chosen_user_with_no_password_check(self) -> None:
         user = _fake_user()
         with (
-            patch("app.auth.api.settings.dev_auth_bypass_enabled", True),
+            patch("app.auth.api.settings.demo_mode_enabled", True),
             patch("app.auth.api.UserRepository") as mock_repo_cls,
         ):
             mock_repo_cls.return_value.get_by_id_unscoped = AsyncMock(return_value=user)
-            response = await _dev_login(user.id)
+            response = await _demo_login(user.id)
         assert response.status_code == 200
         payload = decode_access_token(response.json()["access_token"])
         assert payload["sub"] == str(user.id)
@@ -135,41 +135,9 @@ class TestDevAuthBypassEnabled:
 
     async def test_404s_for_an_unknown_user_id(self) -> None:
         with (
-            patch("app.auth.api.settings.dev_auth_bypass_enabled", True),
+            patch("app.auth.api.settings.demo_mode_enabled", True),
             patch("app.auth.api.UserRepository") as mock_repo_cls,
         ):
             mock_repo_cls.return_value.get_by_id_unscoped = AsyncMock(return_value=None)
-            response = await _dev_login(uuid.uuid4())
+            response = await _demo_login(uuid.uuid4())
         assert response.status_code == 404
-
-
-class TestDevAuthBypassOpenedByDemoMode:
-    # demo_mode_enabled ORs into the same gate (app/auth/api.py's
-    # _require_dev_bypass_enabled) even with dev_auth_bypass_enabled left
-    # False -- a public demo needs the no-password tenant switch (now the
-    # Dashboard's own tenant dropdown) without also being a general local-
-    # dev auth bypass.
-    async def test_dev_tenants_reachable_with_only_demo_mode_enabled(self) -> None:
-        tenant = type("Tenant", (), {"id": uuid.uuid4(), "name": "Honey Co"})()
-        user = _fake_user(tenant_id=tenant.id)
-        with (
-            patch("app.auth.api.settings.dev_auth_bypass_enabled", False),
-            patch("app.auth.api.settings.demo_mode_enabled", True),
-            patch("app.auth.api.TenantRepository") as mock_repo_cls,
-        ):
-            mock_repo_cls.return_value.list_with_owner_unscoped = AsyncMock(
-                return_value=[(tenant, user)]
-            )
-            response = await _get_dev_tenants()
-        assert response.status_code == 200
-
-    async def test_dev_login_reachable_with_only_demo_mode_enabled(self) -> None:
-        user = _fake_user()
-        with (
-            patch("app.auth.api.settings.dev_auth_bypass_enabled", False),
-            patch("app.auth.api.settings.demo_mode_enabled", True),
-            patch("app.auth.api.UserRepository") as mock_repo_cls,
-        ):
-            mock_repo_cls.return_value.get_by_id_unscoped = AsyncMock(return_value=user)
-            response = await _dev_login(user.id)
-        assert response.status_code == 200

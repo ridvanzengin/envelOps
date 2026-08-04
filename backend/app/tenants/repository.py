@@ -22,12 +22,13 @@ class TenantRepository:
         return tenant
 
     async def list_with_owner_unscoped(self) -> list[tuple[Tenant, User]]:
-        """Dev-only tenant switcher (docs/ROADMAP.md, app/auth/api.py's
-        GET /auth/dev-tenants) -- every tenant alongside one of its users,
-        for a testing dropdown. Cross-tenant by design, same reasoning as
-        every other *_unscoped method (CLAUDE.md's tenant-scoping section);
-        gated by settings.dev_auth_bypass_enabled at the API layer, not
-        here. An inner join, not outer -- a tenant with no user yet (e.g.
+        """Demo mode's tenant switcher (docs/ROADMAP.md, app/auth/api.py's
+        GET /auth/demo-tenants) -- every tenant alongside one of its users,
+        for the Dashboard's own dropdown. Cross-tenant by design, same
+        reasoning as every other *_unscoped method (CLAUDE.md's
+        tenant-scoping section); gated by settings.demo_mode_enabled at
+        the API layer, not here. An inner join, not outer -- a tenant with
+        no user yet (e.g.
         scripts/run_synthetic_conversations.py's tenant, which creates no
         User row) can't be logged into anyway, so it's correctly absent
         from this list. Phase 1's single-owner-role model (ARCHITECTURE

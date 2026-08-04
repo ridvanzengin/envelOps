@@ -17,28 +17,32 @@ description: Launch and drive envelOps's full stack (backend via docker compose,
 
 ## Auth for a driven session
 
-`ENVELOPS_DEV_AUTH_BYPASS_ENABLED=true` is set in the local `.env`
-(never true outside local dev — see CLAUDE.md). This means Login.tsx
-renders a dev-tenant `<select>` dropdown that logs in with **no
-password**. Two things that aren't obvious from the DOM text alone:
+`ENVELOPS_DEMO_MODE_ENABLED=true` is set in the local `.env` (never true
+outside local dev or an actual public demo deployment — see CLAUDE.md).
+This means `App.tsx` skips the Login screen **entirely** and
+auto-logs-in as whichever tenant is first in `GET /auth/demo-tenants`,
+with zero interaction needed — just `page.goto(...)` and wait for the
+app shell to render (e.g. `nav.channel-rail`). There used to be a manual
+dropdown on the Login page for this (removed 2026-08-04, along with the
+separate `dev_auth_bypass_enabled` flag it depended on) — don't look for
+a `<select>` on Login anymore, it's a plain email/password form now and
+demo mode never even shows it.
 
-- The `<option>` **label** is `"{tenant_name} ({email})"` (e.g. `"Meadow
-  & Jar Honey Co (owner@meadow-jar-honey.demo)"`) — don't
-  `selectOption({label: "Meadow & Jar Honey Co"})`, it won't match
-  (exact-match only). Select by **value**, which is the tenant's
-  `user_id` — either fetch it live from `GET /auth/dev-tenants` (list of
-  `{user_id, tenant_id, tenant_name, email}`), or reuse a known one:
-  Meadow & Jar Honey Co owner `user_id` =
-  `1748dab3-872d-47b6-b08d-724d0b9da17b` (re-verify via the endpoint
-  above if this tenant's ever been reseeded since — `seed_showcase_tenants.py`
-  mints fresh UUIDs each run).
-- Selecting fires `handleDevSwitch` directly via `onChange` — there's no
-  separate submit button to click afterward.
-- Same dev-login flow is also a plain API call if you don't need the
-  browser session for it: `POST /auth/dev-login {"user_id": "..."}` →
+- To drive a **specific** tenant, not just whichever one auto-login
+  landed on, use the Dashboard's own tenant dropdown instead (only
+  rendered in demo mode, replaces the page's `<h1>`):
+  `page.locator(".dashboard__tenant-select select").selectOption("<tenant_id>")`
+  — note the option **value** here is `tenant_id`, not `user_id` (a real
+  behavior difference from the old Login dropdown, which used
+  `user_id` — don't reuse that muscle memory). Fetch the list live from
+  `GET /auth/demo-tenants` (`{user_id, tenant_id, tenant_name, email}`)
+  if you don't already know the tenant_id.
+- Same demo-login flow is also a plain API call if you don't need the
+  browser session for it: `POST /auth/demo-login {"user_id": "..."}` →
   `{"access_token": "..."}`, then `Authorization: Bearer <token>` on
   everything else (e.g. `POST /test/conversations/messages` to drive the
-  pipeline without going through the Test Console UI at all).
+  pipeline without going through the Test Console UI at all). This one
+  still takes `user_id`, from the same `GET /auth/demo-tenants` list.
 
 ## Driving a browser: no `chromium-cli` here
 
@@ -133,7 +137,10 @@ async function main() {
   page.on("pageerror", (e) => console.log("PAGE_ERROR", String(e)));
 
   await page.goto("http://localhost:5173/");
-  await page.locator("select").first().selectOption("1748dab3-872d-47b6-b08d-724d0b9da17b");
+  // No login step -- demo mode auto-logs in as the first demo-tenants
+  // entry the instant the page loads (App.tsx). If you need a specific
+  // tenant instead, switch via the Dashboard's own dropdown first:
+  // page.locator(".dashboard__tenant-select select").selectOption("<tenant_id>")
   await page.waitForSelector("button.channel-rail__icon--telegram", { timeout: 15000 });
   await page.waitForTimeout(1500); // let the initial GET /escalations settle
 
@@ -141,7 +148,7 @@ async function main() {
   const before = (await badge.count()) ? Number(await badge.textContent()) : 0;
 
   const { access_token } = await (
-    await fetch("http://localhost:8000/auth/dev-login", {
+    await fetch("http://localhost:8000/auth/demo-login", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ user_id: "1748dab3-872d-47b6-b08d-724d0b9da17b" }),

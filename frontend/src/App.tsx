@@ -13,7 +13,7 @@ import { ConversationPanelProvider } from "./context/conversationPanel/Conversat
 import { DemoModeProvider } from "./context/demoMode/DemoModeProvider";
 import { useDemoModeContext } from "./context/demoMode/useDemoModeContext";
 import { ThemeProvider } from "./context/theme/ThemeContext";
-import { useDevTenants } from "./hooks/useDevTenants";
+import { useDemoTenants } from "./hooks/useDemoTenants";
 import Channels from "./pages/Channels";
 import Dashboard from "./pages/Dashboard";
 import Integrations from "./pages/Integrations";
@@ -22,7 +22,7 @@ import Login from "./pages/Login";
 import Settings from "./pages/Settings";
 import TestConsole from "./pages/TestConsole";
 
-interface DevLoginResponse {
+interface DemoLoginResponse {
   access_token: string;
   token_type: string;
 }
@@ -41,22 +41,21 @@ function BootLoading() {
 function AppShell() {
   const { token, loginWithToken } = useAuth();
   const { enabled: demoModeEnabled } = useDemoModeContext();
-  const devTenants = useDevTenants();
+  const demoTenants = useDemoTenants();
 
   // Demo mode never shows a real login screen -- auto-logs in as the
-  // first showcase tenant the instant the dev-tenants list loads. Tenant
-  // switching from there on is Dashboard.tsx's own tenant dropdown (demo
-  // mode only), not this effect again -- it only ever fires while token
-  // is still null.
+  // first showcase tenant the instant the demo-tenants list loads. Tenant
+  // switching from there on is Dashboard.tsx's own tenant dropdown, not
+  // this effect again -- it only ever fires while token is still null.
   useEffect(() => {
-    if (demoModeEnabled && token === null && devTenants.length > 0) {
-      void apiPost<DevLoginResponse>(
-        "/auth/dev-login",
-        { user_id: devTenants[0].user_id },
+    if (demoModeEnabled && token === null && demoTenants.length > 0) {
+      void apiPost<DemoLoginResponse>(
+        "/auth/demo-login",
+        { user_id: demoTenants[0].user_id },
         null,
       ).then((response) => loginWithToken(response.access_token));
     }
-  }, [demoModeEnabled, token, devTenants, loginWithToken]);
+  }, [demoModeEnabled, token, demoTenants, loginWithToken]);
 
   // Single "owner" role, Phase 1 (docs/ARCHITECTURE.md §2) -- one gate for
   // the whole app is enough; there's no per-route permission distinction

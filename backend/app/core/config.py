@@ -24,22 +24,19 @@ class Settings(BaseSettings):
     # tenant-configurable (same "fixed pipeline" reasoning as the rest of
     # the pipeline's business-rule constants).
     follow_up_delay_hours: int = 24
-    # Dev-only tenant switcher (docs/ROADMAP.md) -- lets the frontend log in
-    # as any tenant's owner with no password, via GET /auth/dev-tenants +
-    # POST /auth/dev-login. This is a COMPLETE authentication bypass, not a
-    # lesser-privilege dev mode -- both endpoints 404 (not 403) when this is
-    # off, so a real deployment doesn't even reveal the feature exists.
-    # MUST stay false outside a local/throwaway environment.
-    dev_auth_bypass_enabled: bool = False
     # Public, read-only showcase mode: every mutating endpoint (knowledge
     # source CRUD, settings, escalation resolve/trigger-phrases, the
     # channel AI toggle, inbound channel webhooks) rejects with a 403
     # instead of writing anything, and the Celery follow_up_check job
-    # no-ops entirely. Also implies open tenant switching -- see
-    # dev_auth_bypass_enabled's own gate in auth/api.py, which this flag
-    # ORs into so a demo visitor never needs a real login. Safe to combine
-    # with an open auth bypass specifically BECAUSE nothing can be
-    # mutated once this is on.
+    # no-ops entirely. Also opens a no-password tenant switch (GET
+    # /auth/demo-tenants + POST /auth/demo-login, surfaced as the
+    # Dashboard's own tenant dropdown) -- safe specifically BECAUSE
+    # nothing can be mutated once this is on. This used to be a separate
+    # dev_auth_bypass_enabled flag/login-screen widget; removed (decided
+    # 2026-08-04) once demo mode covered the same need, so there's now
+    # exactly one no-password-login mechanism, not two overlapping ones.
+    # MUST stay false outside a local/throwaway environment or an actual
+    # public demo deployment.
     demo_mode_enabled: bool = False
 
     model_config = SettingsConfigDict(env_file=_ENV_FILE, env_prefix="ENVELOPS_")

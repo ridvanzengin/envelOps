@@ -107,10 +107,7 @@
     "login": "Log in",
     "loggingIn": "Logging in…",
     "logout": "Log out",
-    "invalidCredentials": "Invalid email or password.",
-    "devBadge": "Dev only",
-    "devTenantSwitch": "Switch tenant (no password)",
-    "devTenantSwitchPlaceholder": "Choose a tenant…"
+    "invalidCredentials": "Invalid email or password."
   },
   "escalations": {
     "resolveError": "Couldn't resolve this escalation. Try again.",

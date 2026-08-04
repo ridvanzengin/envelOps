@@ -39,57 +39,59 @@ async def login(
     return TokenResponse(access_token=token)
 
 
-class DevTenantOption(BaseModel):
+class DemoTenantOption(BaseModel):
     user_id: uuid.UUID
     tenant_id: uuid.UUID
     tenant_name: str
     email: str
 
 
-class DevLoginRequest(BaseModel):
+class DemoLoginRequest(BaseModel):
     user_id: uuid.UUID
 
 
-def _require_dev_bypass_enabled() -> None:
-    # 404, not 403 -- a real deployment with both flags correctly off
-    # shouldn't even reveal the feature exists, not just refuse it.
-    # demo_mode_enabled ORs in here too: a public demo needs the same
-    # no-password tenant switch (now surfaced as the Dashboard's tenant
-    # dropdown, not this dev-only login screen widget), and is safe to
-    # open up specifically because demo mode's own write-blocking means
-    # there's nothing an anonymous visitor could do with it beyond
-    # picking which showcase tenant to look at.
-    if not settings.dev_auth_bypass_enabled and not settings.demo_mode_enabled:
+def _require_demo_mode_enabled() -> None:
+    # 404, not 403 -- a real deployment with this off shouldn't even
+    # reveal the feature exists, not just refuse it. Used to also accept
+    # a separate general-purpose dev_auth_bypass_enabled flag; removed
+    # (decided 2026-08-04) once demo mode covered the same no-password
+    # tenant switch need -- this is now solely demo mode's own mechanism
+    # (the Dashboard's tenant dropdown), safe to open up specifically
+    # because demo mode's own write-blocking means there's nothing an
+    # anonymous visitor could do with it beyond picking which showcase
+    # tenant to look at.
+    if not settings.demo_mode_enabled:
         raise HTTPException(status.HTTP_404_NOT_FOUND)
 
 
-@router.get("/dev-tenants")
-async def list_dev_tenants(
+@router.get("/demo-tenants")
+async def list_demo_tenants(
     session: AsyncSession = Depends(get_session),
-) -> list[DevTenantOption]:
-    """Dev-only tenant switcher (docs/ROADMAP.md) -- lists every tenant with
-    a login, for a testing dropdown that skips the email/password form
-    entirely. See settings.dev_auth_bypass_enabled's own docstring for why
-    this must never be reachable outside a local/throwaway environment."""
-    _require_dev_bypass_enabled()
+) -> list[DemoTenantOption]:
+    """Demo mode's tenant switcher (docs/ROADMAP.md) -- lists every tenant
+    with a login, for the Dashboard's own dropdown that skips the email/
+    password form entirely. See settings.demo_mode_enabled's own
+    docstring for why this must never be reachable outside a demo
+    deployment."""
+    _require_demo_mode_enabled()
     rows = await TenantRepository(session).list_with_owner_unscoped()
     return [
-        DevTenantOption(
+        DemoTenantOption(
             user_id=user.id, tenant_id=tenant.id, tenant_name=tenant.name, email=user.email
         )
         for tenant, user in rows
     ]
 
 
-@router.post("/dev-login")
-async def dev_login(
-    body: DevLoginRequest,
+@router.post("/demo-login")
+async def demo_login(
+    body: DemoLoginRequest,
     session: AsyncSession = Depends(get_session),
 ) -> TokenResponse:
     """Mints a real token for the chosen user with no password check at
     all -- the entire point of this endpoint. Same gating and reasoning as
-    GET /dev-tenants above."""
-    _require_dev_bypass_enabled()
+    GET /demo-tenants above."""
+    _require_demo_mode_enabled()
     user = await UserRepository(session).get_by_id_unscoped(body.user_id)
     if user is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND)

@@ -36,5 +36,5 @@ async def demo_mode_status() -> dict[str, bool]:
     """Unauthenticated on purpose -- the frontend needs this before it
     even knows whether to show a login screen (App.tsx skips Login
     entirely and auto-authenticates as a showcase tenant when this is
-    true, see auth/api.py's dev-login endpoints)."""
+    true, see auth/api.py's demo-login endpoints)."""
     return {"enabled": settings.demo_mode_enabled}

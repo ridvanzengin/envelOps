@@ -21,9 +21,14 @@ separate, not-yet-built follow-up, meant to start once a tenant's own
 calibration pass is confirmed good -- not part of this script.
 
 Prerequisites: same as run_bitext_stress_test.py -- `docker compose up`
-(or backend + db running) with a real ENVELOPS_GEMINI_API_KEY, the
-dataset CSV at backend/data/bitext_customer_support_27k.csv, and
-ENVELOPS_DEV_AUTH_BYPASS_ENABLED=true in .env.
+(or backend + db running) with a real ENVELOPS_GEMINI_API_KEY and the
+dataset CSV at backend/data/bitext_customer_support_27k.csv. Logs in
+through the real POST /auth/login with the known DEMO_PASSWORD this
+script itself sets on the tenant it just seeded -- not any no-password
+bypass -- so this has no dependency on ENVELOPS_DEMO_MODE_ENABLED at all
+(deliberately: that flag also makes Test Console stop persisting
+messages, app/test_console/api.py's _send_test_message_demo, which would
+silently defeat the entire point of this script).
 
 Run directly (needs the API reachable at localhost:8000):
 
@@ -273,13 +278,13 @@ async def _setup_tenant(session: AsyncSession, spec: TenantSpec) -> tuple[Tenant
     return tenant, user
 
 
-async def _dev_login(client: httpx.AsyncClient, user_id: uuid.UUID) -> str:
-    resp = await client.post("/auth/dev-login", json={"user_id": str(user_id)})
+async def _login(client: httpx.AsyncClient, email: str) -> str:
+    resp = await client.post("/auth/login", json={"email": email, "password": DEMO_PASSWORD})
     resp.raise_for_status()
     return str(resp.json()["access_token"])
 
 
-async def _run_calibration_messages(spec: TenantSpec, owner_user_id: uuid.UUID) -> None:
+async def _run_calibration_messages(spec: TenantSpec, owner_email: str) -> None:
     samples = _load_bitext_samples(spec)
     print(
         f"\nSampled {len(samples)} messages across {len(spec.relevant_intents)} "
@@ -287,7 +292,7 @@ async def _run_calibration_messages(spec: TenantSpec, owner_user_id: uuid.UUID) 
     )
 
     async with httpx.AsyncClient(base_url=API_BASE_URL, timeout=60) as client:
-        token = await _dev_login(client, owner_user_id)
+        token = await _login(client, owner_email)
         client.headers["Authorization"] = f"Bearer {token}"
 
         results = []
@@ -354,7 +359,7 @@ async def main() -> None:
             print(f"Seeded tenant: {tenant.id} ({tenant.name})")
             print(f"  login: owner@{spec.slug}.demo / {DEMO_PASSWORD}")
 
-            await _run_calibration_messages(spec, user.id)
+            await _run_calibration_messages(spec, user.email)
 
     print("\nDone. Log in with the credentials above to review the seeded")
     print("config on the Settings page and the sampled DMs on the rail.")
