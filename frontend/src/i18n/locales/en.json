@@ -59,9 +59,14 @@
     "loadError": "Couldn't load this platform's test conversation. Try again.",
     "inputPlaceholder": "Type a test message…",
     "send": "Send",
-    "sending": "Sending…",
     "sendError": "Couldn't send this message. Try again.",
-    "escalatedNotice": "This message was escalated for human review: {{reason}}"
+    "escalatedNotice": "This message was escalated for human review: {{reason}}",
+    "thinking": {
+      "understandingIntent": "Understanding intent…",
+      "groundingInKnowledge": "Grounding in knowledge…",
+      "scoringLead": "Scoring the lead…",
+      "decidingNextStep": "Deciding next step…"
+    }
   },
   "diagnostics": {
     "intent": {

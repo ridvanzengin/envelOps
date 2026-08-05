@@ -311,6 +311,33 @@
   padding: 0 2px;
 }
 
+/* Test Console's in-progress placeholder (MessageThread's ThinkingIndicator)
+   -- rendered inside a normal .conversation-panel__message--outbound bubble,
+   this just needs its own text treatment: a slow shimmer so a several-second
+   wait (up to 4 sequential Gemini calls, CLAUDE.md) reads as active, not
+   stalled. */
+.conversation-panel__thinking {
+  font-weight: 600;
+  background: linear-gradient(90deg, var(--accent-h), var(--text-h), var(--accent-h));
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: conversation-panel-thinking-shift 2.4s ease-in-out infinite;
+}
+
+@keyframes conversation-panel-thinking-shift {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
 /* Internal-note bubble (docs/ROADMAP.md §3.1) -- deliberately rendered
    like a third participant in a group chat (full-width, centered, its own
    labeled "sender"), not just a recolored version of the inbound/outbound

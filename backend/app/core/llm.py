@@ -42,6 +42,19 @@ EMBEDDING_DIM = 768
 _client: genai.Client | None = None
 
 
+class AiProviderError(Exception):
+    """Raised on any Gemini failure this module can't recover from --
+    network error, auth, free-tier rate limit (see this file's own
+    RESOURCE_EXHAUSTED notes below), or a response with no usable content.
+    One type regardless of which of those it was, so a caller synchronously
+    waiting on a reply (app/test_console/api.py, via app/main.py's own
+    exception handler) can show one friendly, non-leaking message instead
+    of a raw SDK exception reaching an HTTP response. Callers that don't
+    run inside a request (app/pipeline/tasks.py's Celery tasks) are
+    unaffected either way -- an uncaught exception there already just
+    fails the task, same as before this type existed."""
+
+
 def _get_client() -> genai.Client:
     global _client
     if _client is None:
@@ -50,15 +63,18 @@ def _get_client() -> genai.Client:
 
 
 def generate_text(prompt: str) -> str:
-    response = _get_client().models.generate_content(
-        model=GENERATION_MODEL, contents=prompt
-    )
+    try:
+        response = _get_client().models.generate_content(
+            model=GENERATION_MODEL, contents=prompt
+        )
+    except Exception as exc:
+        raise AiProviderError(str(exc)) from exc
     if response.text is None:
         # Could be a safety-filter block on Gemini's side, or a
         # function-call/non-text-only response — either way, silently
         # returning None where callers expect a reply is the wrong
         # failure mode for a pipeline that auto-sends by default.
-        raise ValueError(f"Gemini returned no text content: {response!r}")
+        raise AiProviderError(f"Gemini returned no text content: {response!r}")
     return response.text
 
 
@@ -99,13 +115,16 @@ def generate_with_tools(
         )
         for d in tool_declarations
     ]
-    response = _get_client().models.generate_content(
-        model=GENERATION_MODEL,
-        contents=prompt,
-        config=types.GenerateContentConfig(
-            tools=[types.Tool(function_declarations=declarations)]
-        ),
-    )
+    try:
+        response = _get_client().models.generate_content(
+            model=GENERATION_MODEL,
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                tools=[types.Tool(function_declarations=declarations)]
+            ),
+        )
+    except Exception as exc:
+        raise AiProviderError(str(exc)) from exc
     calls = [
         ToolCallRequest(name=call.name, args=dict(call.args or {}))
         for call in (response.function_calls or [])
@@ -119,16 +138,19 @@ def embed_text(text: str, *, task_type: str = "RETRIEVAL_DOCUMENT") -> list[floa
     chunk to store, and RETRIEVAL_QUERY when embedding an incoming question
     to search with — using the matching type is part of what makes Gemini's
     retrieval embeddings actually good, not an arbitrary label."""
-    response = _get_client().models.embed_content(
-        model=EMBEDDING_MODEL,
-        contents=text,
-        config=types.EmbedContentConfig(
-            task_type=task_type, output_dimensionality=EMBEDDING_DIM
-        ),
-    )
+    try:
+        response = _get_client().models.embed_content(
+            model=EMBEDDING_MODEL,
+            contents=text,
+            config=types.EmbedContentConfig(
+                task_type=task_type, output_dimensionality=EMBEDDING_DIM
+            ),
+        )
+    except Exception as exc:
+        raise AiProviderError(str(exc)) from exc
     if not response.embeddings:
-        raise ValueError(f"Gemini returned no embedding: {response!r}")
+        raise AiProviderError(f"Gemini returned no embedding: {response!r}")
     values = response.embeddings[0].values
     if values is None:
-        raise ValueError(f"Gemini returned an empty embedding vector: {response!r}")
+        raise AiProviderError(f"Gemini returned an empty embedding vector: {response!r}")
     return values
