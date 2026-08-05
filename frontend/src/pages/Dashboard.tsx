@@ -184,7 +184,17 @@ export default function Dashboard() {
     return { totalSources: knowledgeSources.length, totalChunks, recent };
   }, [knowledgeSources]);
 
+  // The "1 day" range buckets by hour, not calendar day (backend's own
+  // compute_summary), so its trend points need a time-of-day label
+  // ("2:00 PM"), not a date one -- a date label would repeat the same
+  // string 24 times in a row.
   function formatDate(isoDate: string): string {
+    if (days === 1) {
+      return new Date(isoDate).toLocaleTimeString(i18n.language, {
+        hour: "numeric",
+        minute: "2-digit",
+      });
+    }
     return new Date(isoDate).toLocaleDateString(i18n.language, {
       month: "short",
       day: "numeric",
@@ -251,7 +261,10 @@ export default function Dashboard() {
               }
               onClick={() => setDays(option)}
             >
-              {t("dashboard.rangeDays", { count: option })}
+              {/* "1 day" reads as a calendar-day toggle; the backend
+                  actually buckets it as a rolling last-24-hours window
+                  (see formatDate above), so the label says what it does. */}
+              {option === 1 ? t("dashboard.range24Hours") : t("dashboard.rangeDays", { count: option })}
             </button>
           ))}
         </div>

@@ -65,7 +65,14 @@ export function TrendChart({
   const maxValue = useMemo(() => niceMax(Math.max(...points.map((p) => p.count), 0)), [points]);
   const stepX = points.length > 1 ? plotWidth / (points.length - 1) : 0;
 
+  // A single point (the "1 day" range) has no line to draw between --
+  // centered instead of left-flush (the general i*stepX formula would
+  // put it at PADDING.left, reading as a chart missing its other points
+  // rather than a deliberate one-point view). Every xFor(i) call site
+  // (gridline label, hover crosshair/dot, the always-visible dot below)
+  // shares this so they can't drift out of sync with each other.
   function xFor(i: number): number {
+    if (points.length === 1) return PADDING.left + plotWidth / 2;
     return PADDING.left + i * stepX;
   }
   function yFor(count: number): number {
@@ -132,8 +139,27 @@ export function TrendChart({
           ) : null,
         )}
 
-        <polygon points={areaPoints} className="dashboard-trend-chart__area" />
-        <polyline points={linePoints} className="dashboard-trend-chart__line" />
+        {points.length > 1 ? (
+          <>
+            <polygon points={areaPoints} className="dashboard-trend-chart__area" />
+            <polyline points={linePoints} className="dashboard-trend-chart__line" />
+          </>
+        ) : (
+          // A 1-point polyline draws no visible line segment, and the
+          // "area" polygon degenerates to a zero-width sliver (every x
+          // coordinate is identical without a second point to span) --
+          // both silently invisible rather than erroring, which is what
+          // made the chart look empty on the "1 day" range specifically.
+          // A plain dot is the only meaningful way to show one data point.
+          points.length === 1 && (
+            <circle
+              cx={xFor(0)}
+              cy={yFor(points[0].count)}
+              r={4}
+              className="dashboard-trend-chart__dot"
+            />
+          )
+        )}
 
         {hoverIndex !== null && (
           <line
