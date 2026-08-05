@@ -124,6 +124,19 @@
     height: 20px;
   }
 
+  /* .channel-rail__badge's default top:-4px/right:-4px is meant for the
+     desktop rail, where every icon button sits inside .channel-rail's own
+     padding -- there's room for the badge to spill slightly outward.
+     .channel-rail__mobile-trigger has no such buffer: it's flush against
+     the real viewport corner (position: fixed; top: 0; right: 0), so
+     those same negative offsets pushed the badge partly past the actual
+     screen edge, clipping it. Pull it inward instead so it sits fully
+     inside the visible 52x52 button. */
+  .channel-rail__mobile-trigger .channel-rail__badge {
+    top: 4px;
+    right: 4px;
+  }
+
   .channel-rail--mobile {
     position: fixed;
     top: 0;
@@ -159,25 +172,49 @@
     color: var(--text-h);
   }
 
-  .channel-rail__mobile-close {
-    border: none;
+  /* Account menu moved here from its own full-width row (direct
+     instruction) -- an icon button next to the close button, same
+     26x26 outlined-square matched-pair treatment as the sibling
+     reference project's own ActivityBar mobile header uses for its
+     theme toggle + close (iotops-workspace/IoTOps's ActivityBar.css). */
+  .channel-rail__mobile-header-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .channel-rail__mobile-header-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
     background: none;
     color: var(--text);
-    font-size: 18px;
+    cursor: pointer;
+  }
+
+  .channel-rail__mobile-header-icon {
+    width: 15px;
+    height: 15px;
+    display: block;
+  }
+
+  .channel-rail__mobile-close {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: none;
+    color: var(--text);
+    font-size: 16px;
     line-height: 1;
     cursor: pointer;
-    padding: 2px 6px;
-    border-radius: 4px;
-  }
-
-  .channel-rail__mobile-close:hover {
-    background: var(--bg-subtle);
-    color: var(--text-h);
-  }
-
-  .channel-rail__mobile-account-menu {
-    display: block;
-    width: 100%;
   }
 
   .channel-rail__mobile-row {

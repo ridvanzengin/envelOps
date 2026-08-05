@@ -92,126 +92,129 @@ export function ChannelRail() {
         >
           <div className="channel-rail__mobile-header">
             <strong>{t("channelRail.title")}</strong>
-            <button
-              type="button"
-              className="channel-rail__mobile-close"
-              onClick={() => setMobileOpen(false)}
-              aria-label={t("conversationPanel.close")}
-            >
-              ×
-            </button>
-          </div>
-          <div className="dropdown-menu channel-rail__mobile-account-menu">
-            <button
-              type="button"
-              className="channel-rail__mobile-row channel-rail__mobile-account-trigger"
-              aria-expanded={menuOpen}
-              onClick={() => (menuOpen ? closeMenu() : setMenuOpen(true))}
-            >
-              <MoreIcon className="channel-rail__mobile-row-icon" />
-              <span>{t("channelRail.menu")}</span>
-            </button>
-            {menuOpen && (
-              <div className="dropdown-menu__list">
+            <div className="channel-rail__mobile-header-actions">
+              <div className="dropdown-menu channel-rail__mobile-account-menu">
                 <button
                   type="button"
-                  className="dropdown-menu__item dropdown-menu__item--parent"
-                  aria-expanded={langSubmenuOpen}
-                  onClick={() => setLangSubmenuOpen((value) => !value)}
+                  className="channel-rail__mobile-header-btn"
+                  aria-expanded={menuOpen}
+                  aria-label={t("channelRail.menu")}
+                  title={t("channelRail.menu")}
+                  onClick={() => (menuOpen ? closeMenu() : setMenuOpen(true))}
                 >
-                  <GlobeIcon className="dropdown-menu__item-icon" />
-                  {t("menu.language")}
-                  <ChevronIcon
-                    className={`chevron dropdown-menu__item-chevron${
-                      langSubmenuOpen ? " chevron--expanded" : ""
-                    }`}
-                  />
+                  <MoreIcon className="channel-rail__mobile-header-icon" />
                 </button>
-                {langSubmenuOpen && (
-                  <div className="dropdown-menu__submenu">
+                {menuOpen && (
+                  <div className="dropdown-menu__list">
                     <button
                       type="button"
-                      className="dropdown-menu__item dropdown-menu__item--sub"
-                      onClick={() => {
-                        closeMenu();
-                        void i18n.changeLanguage("en");
-                      }}
+                      className="dropdown-menu__item dropdown-menu__item--parent"
+                      aria-expanded={langSubmenuOpen}
+                      onClick={() => setLangSubmenuOpen((value) => !value)}
                     >
-                      English
-                      {isEnglish && <CheckIcon className="dropdown-menu__item-icon" />}
+                      <GlobeIcon className="dropdown-menu__item-icon" />
+                      {t("menu.language")}
+                      <ChevronIcon
+                        className={`chevron dropdown-menu__item-chevron${
+                          langSubmenuOpen ? " chevron--expanded" : ""
+                        }`}
+                      />
                     </button>
+                    {langSubmenuOpen && (
+                      <div className="dropdown-menu__submenu">
+                        <button
+                          type="button"
+                          className="dropdown-menu__item dropdown-menu__item--sub"
+                          onClick={() => {
+                            closeMenu();
+                            void i18n.changeLanguage("en");
+                          }}
+                        >
+                          English
+                          {isEnglish && <CheckIcon className="dropdown-menu__item-icon" />}
+                        </button>
+                        <button
+                          type="button"
+                          className="dropdown-menu__item dropdown-menu__item--sub"
+                          onClick={() => {
+                            closeMenu();
+                            void i18n.changeLanguage("tr");
+                          }}
+                        >
+                          Türkçe
+                          {!isEnglish && <CheckIcon className="dropdown-menu__item-icon" />}
+                        </button>
+                      </div>
+                    )}
+
                     <button
                       type="button"
-                      className="dropdown-menu__item dropdown-menu__item--sub"
+                      className="dropdown-menu__item dropdown-menu__item--parent"
+                      aria-expanded={themeSubmenuOpen}
+                      onClick={() => setThemeSubmenuOpen((value) => !value)}
+                    >
+                      {theme === "dark" ? (
+                        <MoonIcon className="dropdown-menu__item-icon" />
+                      ) : (
+                        <SunIcon className="dropdown-menu__item-icon" />
+                      )}
+                      {t("menu.theme")}
+                      <ChevronIcon
+                        className={`chevron dropdown-menu__item-chevron${
+                          themeSubmenuOpen ? " chevron--expanded" : ""
+                        }`}
+                      />
+                    </button>
+                    {themeSubmenuOpen && (
+                      <div className="dropdown-menu__submenu">
+                        <button
+                          type="button"
+                          className="dropdown-menu__item dropdown-menu__item--sub"
+                          onClick={() => {
+                            closeMenu();
+                            setTheme("light");
+                          }}
+                        >
+                          {t("theme.light")}
+                          {theme === "light" && <CheckIcon className="dropdown-menu__item-icon" />}
+                        </button>
+                        <button
+                          type="button"
+                          className="dropdown-menu__item dropdown-menu__item--sub"
+                          onClick={() => {
+                            closeMenu();
+                            setTheme("dark");
+                          }}
+                        >
+                          {t("theme.dark")}
+                          {theme === "dark" && <CheckIcon className="dropdown-menu__item-icon" />}
+                        </button>
+                      </div>
+                    )}
+
+                    <button
+                      type="button"
+                      className="dropdown-menu__item dropdown-menu__item--danger"
                       onClick={() => {
                         closeMenu();
-                        void i18n.changeLanguage("tr");
+                        logout();
                       }}
                     >
-                      Türkçe
-                      {!isEnglish && <CheckIcon className="dropdown-menu__item-icon" />}
+                      <LogoutIcon className="dropdown-menu__item-icon" />
+                      {t("auth.logout")}
                     </button>
                   </div>
                 )}
-
-                <button
-                  type="button"
-                  className="dropdown-menu__item dropdown-menu__item--parent"
-                  aria-expanded={themeSubmenuOpen}
-                  onClick={() => setThemeSubmenuOpen((value) => !value)}
-                >
-                  {theme === "dark" ? (
-                    <MoonIcon className="dropdown-menu__item-icon" />
-                  ) : (
-                    <SunIcon className="dropdown-menu__item-icon" />
-                  )}
-                  {t("menu.theme")}
-                  <ChevronIcon
-                    className={`chevron dropdown-menu__item-chevron${
-                      themeSubmenuOpen ? " chevron--expanded" : ""
-                    }`}
-                  />
-                </button>
-                {themeSubmenuOpen && (
-                  <div className="dropdown-menu__submenu">
-                    <button
-                      type="button"
-                      className="dropdown-menu__item dropdown-menu__item--sub"
-                      onClick={() => {
-                        closeMenu();
-                        setTheme("light");
-                      }}
-                    >
-                      {t("theme.light")}
-                      {theme === "light" && <CheckIcon className="dropdown-menu__item-icon" />}
-                    </button>
-                    <button
-                      type="button"
-                      className="dropdown-menu__item dropdown-menu__item--sub"
-                      onClick={() => {
-                        closeMenu();
-                        setTheme("dark");
-                      }}
-                    >
-                      {t("theme.dark")}
-                      {theme === "dark" && <CheckIcon className="dropdown-menu__item-icon" />}
-                    </button>
-                  </div>
-                )}
-
-                <button
-                  type="button"
-                  className="dropdown-menu__item dropdown-menu__item--danger"
-                  onClick={() => {
-                    closeMenu();
-                    logout();
-                  }}
-                >
-                  <LogoutIcon className="dropdown-menu__item-icon" />
-                  {t("auth.logout")}
-                </button>
               </div>
-            )}
+              <button
+                type="button"
+                className="channel-rail__mobile-close"
+                onClick={() => setMobileOpen(false)}
+                aria-label={t("conversationPanel.close")}
+              >
+                ×
+              </button>
+            </div>
           </div>
 
           {CHANNEL_TYPES.map((key) => {
