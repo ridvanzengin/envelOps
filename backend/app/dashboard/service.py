@@ -142,6 +142,32 @@ def _daily_counts(dates: list[date], end: datetime, days: int) -> list[TrendPoin
     ]
 
 
+def _hourly_counts(timestamps: list[datetime], end: datetime, hours: int) -> list[TrendPoint]:
+    """`hours` hourly buckets ending at `end`'s current hour, zero-filled --
+    same reasoning/shape as `_daily_counts`, just finer-grained. Used only
+    for the "1 day" range: a single calendar-day bucket there collapsed a
+    full 24 hours of activity into one flat number with nothing to plot a
+    trend from (`_daily_counts([...], now, 1)` always returns exactly one
+    point) -- found live, reported as "the chart disappears," since a
+    1-point line has no second point to draw a line segment between.
+
+    Anchored on `end` (now), not `start`, for the identical reason
+    `_daily_counts` documents -- the most recent hour must never silently
+    drop off the end just because `now`'s minute is later than `start`'s.
+    """
+    end_hour = end.replace(minute=0, second=0, microsecond=0)
+    counts: Counter[datetime] = Counter(
+        ts.replace(minute=0, second=0, microsecond=0) for ts in timestamps
+    )
+    return [
+        TrendPoint(
+            date=(end_hour - timedelta(hours=hours - 1 - i)).isoformat(),
+            count=counts.get(end_hour - timedelta(hours=hours - 1 - i), 0),
+        )
+        for i in range(hours)
+    ]
+
+
 def _intent_breakdown(traces: list[PipelineTrace]) -> list[IntentBreakdownItem]:
     intents = [
         intent
@@ -248,6 +274,15 @@ async def compute_summary(
     unresolved_escalations = [e for e, _ in escalations if e.status == "pending"]
     prev_unresolved_escalations = [e for e, _ in prev_escalations if e.status == "pending"]
 
+    def trend(timestamps: list[datetime]) -> list[TrendPoint]:
+        # "1 day" buckets by hour (24 points, a real trend across the
+        # rolling last-24-hours window this range already queries) --
+        # every other preset keeps the coarser calendar-day buckets, which
+        # is the right granularity once the range spans multiple days.
+        if days == 1:
+            return _hourly_counts(timestamps, now, 24)
+        return _daily_counts([ts.date() for ts in timestamps], now, days)
+
     return DashboardSummary(
         range_days=days,
         total_conversations=len(conversations),
@@ -259,16 +294,10 @@ async def compute_summary(
         escalated=len(unresolved_escalations),
         escalated_prev=len(prev_unresolved_escalations),
         avg_response_minutes=_avg_response_minutes(messages),
-        conversations_trend=_daily_counts(
-            [c.created_at.date() for c, _ in conversations], now, days
-        ),
-        hot_leads_trend=_daily_counts(
-            [lead.created_at.date() for lead in hot_leads], now, days
-        ),
-        complaints_trend=_daily_counts([t.created_at.date() for t in complaints], now, days),
-        escalated_trend=_daily_counts(
-            [e.created_at.date() for e in unresolved_escalations], now, days
-        ),
+        conversations_trend=trend([c.created_at for c, _ in conversations]),
+        hot_leads_trend=trend([lead.created_at for lead in hot_leads]),
+        complaints_trend=trend([t.created_at for t in complaints]),
+        escalated_trend=trend([e.created_at for e in unresolved_escalations]),
         intent_breakdown=_intent_breakdown(traces),
         channels=_channel_stats(conversations, escalations),
     )

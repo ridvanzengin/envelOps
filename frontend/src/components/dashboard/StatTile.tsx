@@ -47,7 +47,7 @@ export function StatTile({
             {delta.text}
           </span>
         )}
-        {value !== null && sparklineValues && sparklineValues.length > 1 && (
+        {value !== null && sparklineValues && sparklineValues.length > 0 && (
           <Sparkline values={sparklineValues} color="var(--accent)" />
         )}
       </div>

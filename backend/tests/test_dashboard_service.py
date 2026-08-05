@@ -7,6 +7,7 @@ from app.dashboard.service import (
     _avg_response_minutes,
     _channel_stats,
     _daily_counts,
+    _hourly_counts,
     _intent_breakdown,
 )
 
@@ -127,6 +128,42 @@ class TestDailyCounts:
         points = _daily_counts([end.date()], end, 30)
         assert points[-1].date == end.date().isoformat()
         assert points[-1].count == 1
+
+
+class TestHourlyCounts:
+    def test_zero_fills_hours_with_no_rows(self) -> None:
+        end = datetime.now(UTC)
+        points = _hourly_counts([], end, 3)
+        assert [p.count for p in points] == [0, 0, 0]
+        assert len(points) == 3
+
+    def test_buckets_by_hour(self) -> None:
+        end = datetime.now(UTC)
+        timestamps = [
+            end - timedelta(hours=1),
+            end - timedelta(hours=1, minutes=30),
+            end,
+        ]
+        points = _hourly_counts(timestamps, end, 2)
+        # Both the on-the-hour and half-past timestamp fall in the same
+        # "1 hour ago" bucket -- minute-level precision must not fragment
+        # a single hour into multiple buckets.
+        assert [p.count for p in points] == [2, 1]
+
+    def test_current_hour_is_always_included(self) -> None:
+        """Same real bug _daily_counts's own equivalent test guards
+        against, one level finer: anchored on `end`'s current hour, not
+        `start`, so the most recent hour's activity can't silently drop
+        off the end of the window."""
+        end = datetime.now(UTC)
+        points = _hourly_counts([end], end, 24)
+        assert points[-1].count == 1
+
+    def test_minutes_within_the_hour_dont_fragment_the_bucket(self) -> None:
+        end = datetime.now(UTC).replace(minute=45, second=30, microsecond=0)
+        points = _hourly_counts([end], end, 1)
+        assert points[0].count == 1
+        assert points[0].date == end.replace(minute=0, second=0, microsecond=0).isoformat()
 
 
 class TestIntentBreakdown:

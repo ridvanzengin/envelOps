@@ -315,6 +315,7 @@
     "rangeLabel": "Date range",
     "rangeDays_one": "{{count}} day",
     "rangeDays_other": "{{count}} days",
+    "range24Hours": "24 hours",
     "loading": "Loading…",
     "loadError": "Couldn't load dashboard data. Try again.",
     "statConversations": "Total Conversations",

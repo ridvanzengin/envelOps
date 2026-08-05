@@ -314,6 +314,7 @@
   "dashboard": {
     "rangeLabel": "Tarih aralığı",
     "rangeDays": "{{count}} gün",
+    "range24Hours": "Son 24 saat",
     "loading": "Yükleniyor…",
     "loadError": "Panel verileri yüklenemedi. Tekrar deneyin.",
     "statConversations": "Toplam Konuşma",
