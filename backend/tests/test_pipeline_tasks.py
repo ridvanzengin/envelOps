@@ -1,15 +1,24 @@
 import uuid
+from datetime import UTC, date, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from langgraph.types import Interrupt
 
+from app.channels.models import Channel
 from app.pipeline.state import PipelineState
 from app.pipeline.tasks import (
+    _count_inbound_since,
+    _demo_stream_daily_target,
     _follow_up_check,
     _process_incoming_message,
+    _purge_stale_demo_data,
     _send_follow_up,
+    _should_send_now,
+    _stream_demo_dm,
     follow_up_check,
     process_incoming_message,
+    purge_stale_demo_data,
+    stream_demo_dm,
 )
 
 
@@ -538,3 +547,213 @@ class TestFollowUpCheck:
                 "conversation_id": str(sent_conversation.id),
             },
         )
+
+
+class TestDemoStreamDailyTarget:
+    def test_within_the_10_to_15_range(self) -> None:
+        for offset in range(28):
+            target = _demo_stream_daily_target(date(2026, 8, 1 + offset))
+            assert 10 <= target <= 15
+
+    def test_deterministic_for_the_same_day(self) -> None:
+        day = date(2026, 8, 5)
+        assert _demo_stream_daily_target(day) == _demo_stream_daily_target(day)
+
+    def test_can_differ_across_days(self) -> None:
+        targets = {_demo_stream_daily_target(date(2026, 8, d)) for d in range(1, 29)}
+        assert len(targets) > 1
+
+
+class TestShouldSendNow:
+    def test_sends_when_behind_pace(self) -> None:
+        assert _should_send_now(sent_today=2, target=12, elapsed_fraction=0.5) is True
+
+    def test_does_not_send_when_ahead_of_pace(self) -> None:
+        assert _should_send_now(sent_today=8, target=12, elapsed_fraction=0.5) is False
+
+    def test_does_not_send_once_daily_target_is_met(self) -> None:
+        assert _should_send_now(sent_today=12, target=12, elapsed_fraction=1.0) is False
+
+    def test_never_exceeds_target_even_early_in_the_day(self) -> None:
+        assert _should_send_now(sent_today=15, target=12, elapsed_fraction=0.1) is False
+
+
+class TestCountInboundSince:
+    async def test_returns_the_scalar_count(self) -> None:
+        session = AsyncMock()
+        session.scalar = AsyncMock(return_value=7)
+        result = await _count_inbound_since(session, [uuid.uuid4()], datetime.now(UTC))
+        assert result == 7
+
+    async def test_returns_zero_when_scalar_is_none(self) -> None:
+        session = AsyncMock()
+        session.scalar = AsyncMock(return_value=None)
+        result = await _count_inbound_since(session, [uuid.uuid4()], datetime.now(UTC))
+        assert result == 0
+
+
+class TestStreamDemoDmDemoMode:
+    # Inverse of follow_up_check's own demo-mode check -- this job must
+    # only ever run when this IS a demo deployment.
+    def test_skips_when_demo_mode_disabled(self) -> None:
+        with (
+            patch("app.pipeline.tasks.settings.demo_mode_enabled", False),
+            patch("app.pipeline.tasks._stream_demo_dm") as mock_inner,
+        ):
+            stream_demo_dm()
+        mock_inner.assert_not_called()
+
+    def test_runs_when_demo_mode_enabled(self) -> None:
+        with (
+            patch("app.pipeline.tasks.settings.demo_mode_enabled", True),
+            patch("app.pipeline.tasks.asyncio.run") as mock_run,
+        ):
+            stream_demo_dm()
+        mock_run.assert_called_once()
+
+
+class TestStreamDemoDm:
+    async def test_no_op_when_no_tenants_exist(self) -> None:
+        session = AsyncMock()
+        with (
+            patch("app.pipeline.tasks.async_session", return_value=_FakeAsyncCM(session)),
+            patch("app.pipeline.tasks.TenantRepository") as mock_tenant_repo_cls,
+            patch("app.pipeline.tasks.ingest_inbound_message") as mock_ingest,
+        ):
+            mock_tenant_repo_cls.return_value.list_with_owner_unscoped = AsyncMock(
+                return_value=[]
+            )
+            await _stream_demo_dm()
+        mock_ingest.assert_not_called()
+
+    async def test_no_op_when_pacing_says_not_yet(self) -> None:
+        session = AsyncMock()
+        tenant = MagicMock()
+        tenant.id = uuid.uuid4()
+        with (
+            patch("app.pipeline.tasks.async_session", return_value=_FakeAsyncCM(session)),
+            patch("app.pipeline.tasks.TenantRepository") as mock_tenant_repo_cls,
+            patch("app.pipeline.tasks._count_inbound_since", AsyncMock(return_value=99)),
+            patch("app.pipeline.tasks._should_send_now", return_value=False),
+            patch("app.pipeline.tasks.ingest_inbound_message") as mock_ingest,
+        ):
+            mock_tenant_repo_cls.return_value.list_with_owner_unscoped = AsyncMock(
+                return_value=[(tenant, MagicMock())]
+            )
+            await _stream_demo_dm()
+        mock_ingest.assert_not_called()
+
+    async def test_reuses_an_existing_demo_stream_channel(self) -> None:
+        session = AsyncMock()
+        tenant = MagicMock()
+        tenant.id = uuid.uuid4()
+        existing_channel = MagicMock()
+        with (
+            patch("app.pipeline.tasks.async_session", return_value=_FakeAsyncCM(session)),
+            patch("app.pipeline.tasks.TenantRepository") as mock_tenant_repo_cls,
+            patch("app.pipeline.tasks._count_inbound_since", AsyncMock(return_value=0)),
+            patch("app.pipeline.tasks._should_send_now", return_value=True),
+            patch("app.pipeline.tasks.ChannelRepository") as mock_channel_repo_cls,
+            patch("app.pipeline.tasks.ingest_inbound_message", AsyncMock()) as mock_ingest,
+        ):
+            mock_tenant_repo_cls.return_value.list_with_owner_unscoped = AsyncMock(
+                return_value=[(tenant, MagicMock())]
+            )
+            mock_channel_repo_cls.return_value.get_demo_stream_channel = AsyncMock(
+                return_value=existing_channel
+            )
+            await _stream_demo_dm()
+
+        mock_channel_repo_cls.return_value.add.assert_not_called()
+        mock_ingest.assert_called_once()
+        assert mock_ingest.call_args.args[0] is existing_channel
+        external_contact_id = mock_ingest.call_args.args[1]
+        assert external_contact_id.startswith("demo-")
+        text = mock_ingest.call_args.args[2]
+        assert isinstance(text, str) and text
+
+    async def test_creates_a_channel_lazily_when_none_exists(self) -> None:
+        session = AsyncMock()
+        tenant = MagicMock()
+        tenant.id = uuid.uuid4()
+        new_channel = MagicMock()
+        with (
+            patch("app.pipeline.tasks.async_session", return_value=_FakeAsyncCM(session)),
+            patch("app.pipeline.tasks.TenantRepository") as mock_tenant_repo_cls,
+            patch("app.pipeline.tasks._count_inbound_since", AsyncMock(return_value=0)),
+            patch("app.pipeline.tasks._should_send_now", return_value=True),
+            patch("app.pipeline.tasks.ChannelRepository") as mock_channel_repo_cls,
+            patch("app.pipeline.tasks.ingest_inbound_message", AsyncMock()) as mock_ingest,
+        ):
+            mock_tenant_repo_cls.return_value.list_with_owner_unscoped = AsyncMock(
+                return_value=[(tenant, MagicMock())]
+            )
+            mock_channel_repo_cls.return_value.get_demo_stream_channel = AsyncMock(
+                return_value=None
+            )
+            mock_channel_repo_cls.return_value.add = AsyncMock(return_value=new_channel)
+            await _stream_demo_dm()
+
+        mock_channel_repo_cls.return_value.add.assert_called_once()
+        created = mock_channel_repo_cls.return_value.add.call_args.args[0]
+        assert isinstance(created, Channel)
+        assert created.tenant_id == tenant.id
+        assert created.is_test is False
+        assert created.bot_token is None
+        mock_ingest.assert_called_once()
+        assert mock_ingest.call_args.args[0] is new_channel
+
+
+class TestPurgeStaleDemoDataDemoMode:
+    def test_skips_when_demo_mode_disabled(self) -> None:
+        with (
+            patch("app.pipeline.tasks.settings.demo_mode_enabled", False),
+            patch("app.pipeline.tasks._purge_stale_demo_data") as mock_inner,
+        ):
+            purge_stale_demo_data()
+        mock_inner.assert_not_called()
+
+    def test_runs_when_demo_mode_enabled(self) -> None:
+        with (
+            patch("app.pipeline.tasks.settings.demo_mode_enabled", True),
+            patch("app.pipeline.tasks.asyncio.run") as mock_run,
+        ):
+            purge_stale_demo_data()
+        mock_run.assert_called_once()
+
+
+class TestPurgeStaleDemoData:
+    async def test_returns_zero_and_deletes_nothing_when_none_are_stale(self) -> None:
+        session = AsyncMock()
+        mock_result = MagicMock()
+        mock_result.all.return_value = []
+        session.scalars = AsyncMock(return_value=mock_result)
+        with patch("app.pipeline.tasks.async_session", return_value=_FakeAsyncCM(session)):
+            result = await _purge_stale_demo_data()
+        assert result == 0
+        session.execute.assert_not_called()
+        session.commit.assert_not_called()
+
+    async def test_deletes_stale_conversations_and_children_in_fk_safe_order(self) -> None:
+        stale_ids = [uuid.uuid4(), uuid.uuid4()]
+        session = AsyncMock()
+        mock_result = MagicMock()
+        mock_result.all.return_value = stale_ids
+        session.scalars = AsyncMock(return_value=mock_result)
+        with patch("app.pipeline.tasks.async_session", return_value=_FakeAsyncCM(session)):
+            result = await _purge_stale_demo_data()
+
+        assert result == 2
+        session.commit.assert_called_once()
+        # PipelineTrace (references message_id, so first), Message
+        # (can reference escalation_id, so before Escalation), Escalation,
+        # Lead, Conversation last -- see the function's own comment for
+        # why this order matters (no model here declares ondelete=CASCADE).
+        tables = [call.args[0].table.name for call in session.execute.call_args_list]
+        assert tables == [
+            "pipeline_traces",
+            "messages",
+            "escalations",
+            "leads",
+            "conversations",
+        ]

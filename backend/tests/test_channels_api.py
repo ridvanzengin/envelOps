@@ -91,7 +91,7 @@ class TestTelegramWebhookHandling:
         channel = _fake_channel()
         with (
             patch("app.channels.api.ChannelRepository") as mock_channel_repo_cls,
-            patch("app.channels.api.process_incoming_message") as mock_task,
+            patch("app.pipeline.tasks.process_incoming_message") as mock_task,
         ):
             mock_channel_repo_cls.return_value.get_by_id_unscoped = AsyncMock(
                 return_value=channel
@@ -111,10 +111,10 @@ class TestTelegramWebhookHandling:
         inbound_message.id = uuid.uuid4()
         with (
             patch("app.channels.api.ChannelRepository") as mock_channel_repo_cls,
-            patch("app.channels.api.ConversationRepository") as mock_conv_repo_cls,
-            patch("app.channels.api.MessageRepository") as mock_message_repo_cls,
-            patch("app.channels.api.process_incoming_message") as mock_task,
-            patch("app.channels.api.publish_event") as mock_publish,
+            patch("app.channels.service.ConversationRepository") as mock_conv_repo_cls,
+            patch("app.channels.service.MessageRepository") as mock_message_repo_cls,
+            patch("app.pipeline.tasks.process_incoming_message") as mock_task,
+            patch("app.channels.service.publish_event") as mock_publish,
         ):
             mock_channel_repo_cls.return_value.get_by_id_unscoped = AsyncMock(
                 return_value=channel
@@ -163,10 +163,10 @@ class TestTelegramWebhookHandling:
         inbound_message.id = uuid.uuid4()
         with (
             patch("app.channels.api.ChannelRepository") as mock_channel_repo_cls,
-            patch("app.channels.api.ConversationRepository") as mock_conv_repo_cls,
-            patch("app.channels.api.MessageRepository") as mock_message_repo_cls,
-            patch("app.channels.api.process_incoming_message") as mock_task,
-            patch("app.channels.api.publish_event") as mock_publish,
+            patch("app.channels.service.ConversationRepository") as mock_conv_repo_cls,
+            patch("app.channels.service.MessageRepository") as mock_message_repo_cls,
+            patch("app.pipeline.tasks.process_incoming_message") as mock_task,
+            patch("app.channels.service.publish_event") as mock_publish,
         ):
             mock_channel_repo_cls.return_value.get_by_id_unscoped = AsyncMock(
                 return_value=channel

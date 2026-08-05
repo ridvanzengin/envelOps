@@ -1,9 +1,31 @@
 import uuid
 
-from sqlalchemy import select
+from sqlalchemy import Select, select
 
 from app.channels.models import Channel
 from app.core.repository import TenantScopedRepository
+
+
+def _build_demo_stream_channel_stmt(
+    tenant_id: uuid.UUID, channel_type: str
+) -> Select[tuple[Channel]]:
+    """Split out from get_demo_stream_channel for testability -- lets a
+    plain offline test compile this statement and inspect its SQL without
+    a real database, same approach app/commerce/repository.py's
+    _build_match_stmt already takes.
+
+    is_test=False (so it shows up on the real Channels page, like a
+    genuinely connected platform) -- but bot_token IS NULL is checked too,
+    not just is_test: a real Telegram integration is *also* is_test=False,
+    and reusing it here would make the demo DM streamer's fake inbound
+    messages trigger a REAL send attempt through send_message() with a
+    real bot_token, which must never happen."""
+    return select(Channel).where(
+        Channel.tenant_id == tenant_id,
+        Channel.type == channel_type,
+        Channel.is_test.is_(False),
+        Channel.bot_token.is_(None),
+    )
 
 
 class ChannelRepository(TenantScopedRepository[Channel]):
@@ -31,6 +53,18 @@ class ChannelRepository(TenantScopedRepository[Channel]):
             Channel.is_test.is_(True),
         )
         return await self.session.scalar(stmt)
+
+    async def get_demo_stream_channel(
+        self, tenant_id: uuid.UUID, channel_type: str
+    ) -> Channel | None:
+        """The demo DM streamer's own channel per (tenant, type) --
+        app/pipeline/tasks.py's stream_demo_dm. Lazily created by the
+        caller via .add() if this returns None, same pattern as
+        get_test_channel above. See _build_demo_stream_channel_stmt's own
+        docstring for why bot_token IS NULL matters here."""
+        return await self.session.scalar(
+            _build_demo_stream_channel_stmt(tenant_id, channel_type)
+        )
 
     async def list_non_test(self, tenant_id: uuid.UUID) -> list[Channel]:
         """The Channels page's real channel list (2026-08-03) -- Test
