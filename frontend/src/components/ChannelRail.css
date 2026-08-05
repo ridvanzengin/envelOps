@@ -124,6 +124,19 @@
     height: 20px;
   }
 
+  /* .channel-rail__badge's default top:-4px/right:-4px is meant for the
+     desktop rail, where every icon button sits inside .channel-rail's own
+     padding -- there's room for the badge to spill slightly outward.
+     .channel-rail__mobile-trigger has no such buffer: it's flush against
+     the real viewport corner (position: fixed; top: 0; right: 0), so
+     those same negative offsets pushed the badge partly past the actual
+     screen edge, clipping it. Pull it inward instead so it sits fully
+     inside the visible 52x52 button. */
+  .channel-rail__mobile-trigger .channel-rail__badge {
+    top: 4px;
+    right: 4px;
+  }
+
   .channel-rail--mobile {
     position: fixed;
     top: 0;
