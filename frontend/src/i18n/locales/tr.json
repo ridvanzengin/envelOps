@@ -317,8 +317,8 @@
     "loading": "Yükleniyor…",
     "loadError": "Panel verileri yüklenemedi. Tekrar deneyin.",
     "statConversations": "Toplam Konuşma",
-    "statMessages": "Gönderilen Mesaj",
     "statHotLeads": "Sıcak Potansiyel Müşteri",
+    "statComplaints": "Şikayetler",
     "statEscalated": "Yükseltilen",
     "statResponseTime": "Ort. Yanıt Süresi",
     "minutes": "{{count}}dk",
@@ -364,8 +364,6 @@
     "configure": "Yapılandır",
     "moreActions": "Diğer işlemler",
     "comingSoon": "Yakında geliyor — bu aşamada henüz yapılmadı",
-    "toolCallingNote": "Sipariş durumu ve stok sorguları simüle edilmiş demo verilerle bugün zaten çalışıyor.",
-    "toolCallingLinkLabel": "Ayarlar → Araç çağırma bölümüne git",
     "platforms": {
       "shopify": "Shopify",
       "woocommerce": "WooCommerce",

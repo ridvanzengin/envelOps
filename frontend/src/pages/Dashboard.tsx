@@ -14,8 +14,8 @@ import {
   ClockIcon,
   EmailIcon,
   FacebookIcon,
+  FlagIcon,
   InstagramIcon,
-  SendIcon,
   StoreIcon,
   TargetIcon,
   TelegramIcon,
@@ -54,16 +54,16 @@ interface DashboardSummary {
   range_days: number;
   total_conversations: number;
   total_conversations_prev: number;
-  messages_sent: number;
-  messages_sent_prev: number;
   hot_leads: number;
   hot_leads_prev: number;
+  complaints: number;
+  complaints_prev: number;
   escalated: number;
   escalated_prev: number;
   avg_response_minutes: number | null;
   conversations_trend: TrendPoint[];
-  messages_trend: TrendPoint[];
   hot_leads_trend: TrendPoint[];
+  complaints_trend: TrendPoint[];
   escalated_trend: TrendPoint[];
   intent_breakdown: IntentBreakdownItem[];
   channels: ChannelStat[];
@@ -78,7 +78,7 @@ interface KnowledgeSource {
   content: string;
 }
 
-const RANGE_OPTIONS = [7, 30, 90] as const;
+const RANGE_OPTIONS = [1, 7, 30] as const;
 type RangeDays = (typeof RANGE_OPTIONS)[number];
 
 const CHANNEL_ICONS: Record<string, typeof TelegramIcon> = {
@@ -142,7 +142,7 @@ export default function Dashboard() {
     closePanel();
   }
 
-  const [days, setDays] = useState<RangeDays>(30);
+  const [days, setDays] = useState<RangeDays>(7);
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
   const [summaryError, setSummaryError] = useState<string | null>(null);
   const [knowledgeSources, setKnowledgeSources] = useState<KnowledgeSource[] | null>(null);
@@ -275,18 +275,19 @@ export default function Dashboard() {
               icon={<ChatIcon />}
             />
             <StatTile
-              label={t("dashboard.statMessages")}
-              value={summary.messages_sent}
-              prevValue={summary.messages_sent_prev}
-              sparklineValues={summary.messages_trend.map((p) => p.count)}
-              icon={<SendIcon />}
-            />
-            <StatTile
               label={t("dashboard.statHotLeads")}
               value={summary.hot_leads}
               prevValue={summary.hot_leads_prev}
               sparklineValues={summary.hot_leads_trend.map((p) => p.count)}
               icon={<TargetIcon />}
+            />
+            <StatTile
+              label={t("dashboard.statComplaints")}
+              value={summary.complaints}
+              prevValue={summary.complaints_prev}
+              increaseIsGood={false}
+              sparklineValues={summary.complaints_trend.map((p) => p.count)}
+              icon={<FlagIcon />}
             />
             <StatTile
               label={t("dashboard.statEscalated")}

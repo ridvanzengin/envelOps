@@ -52,10 +52,14 @@ class DashboardSummary(BaseModel):
     range_days: int
     total_conversations: int
     total_conversations_prev: int
-    messages_sent: int
-    messages_sent_prev: int
     hot_leads: int
     hot_leads_prev: int
+    # Traces classified complaint_or_problem in range -- same "count of
+    # what happened," not a resolution-state reading, as hot_leads above
+    # (unlike escalated below, a complaint has no separate resolved/
+    # pending status of its own to filter on).
+    complaints: int
+    complaints_prev: int
     # Currently-*unresolved* escalations created in range, not a running
     # total of everything that was ever escalated -- resolving one drops
     # this number, since it's meant to answer "how many need attention
@@ -72,8 +76,8 @@ class DashboardSummary(BaseModel):
     # outbound one -- no data point exists to average, not zero minutes.
     avg_response_minutes: float | None
     conversations_trend: list[TrendPoint]
-    messages_trend: list[TrendPoint]
     hot_leads_trend: list[TrendPoint]
+    complaints_trend: list[TrendPoint]
     escalated_trend: list[TrendPoint]
     intent_breakdown: list[IntentBreakdownItem]
     channels: list[ChannelStat]
@@ -110,7 +114,7 @@ def _daily_counts(dates: list[date], end: datetime, days: int) -> list[TrendPoin
     filled -- a plain GROUP BY only returns days that actually have a
     row, and a trend chart with silently-missing days reads as a data
     gap, not "zero that day". Shared by every stat tile's sparkline
-    (conversations/messages/hot leads/escalations) -- each caller just
+    (conversations/hot leads/complaints/escalations) -- each caller just
     picks which rows' dates to bucket first.
 
     Anchored on `end` (today), not `start` -- an earlier version anchored
@@ -214,8 +218,9 @@ async def compute_summary(
     prev_conversations = await conversation_repo.list_in_range_with_channel(
         tenant_id, prev_start, start
     )
+    # No "prev" fetch -- avg_response_minutes has no previous-period
+    # comparison (StatTile renders it as a bare value, no delta).
     messages = await message_repo.list_in_range(tenant_id, start, now)
-    prev_messages = await message_repo.list_in_range(tenant_id, prev_start, start)
     leads = await lead_repo.list_in_range(tenant_id, start, now)
     prev_leads = await lead_repo.list_in_range(tenant_id, prev_start, start)
     escalations = await escalation_repo.list_with_channel_info(tenant_id, start, now)
@@ -223,9 +228,18 @@ async def compute_summary(
         tenant_id, prev_start, start
     )
     traces = await trace_repo.list_in_range(tenant_id, start, now)
+    prev_traces = await trace_repo.list_in_range(tenant_id, prev_start, start)
 
-    outbound_messages = [m for m in messages if m.direction == "outbound"]
     hot_leads = [lead for lead in leads if lead.score == "hot"]
+    # Same "count of what happened in range" reading as hot_leads above --
+    # unlike escalated below, a complaint has no separate resolved/pending
+    # status of its own to filter to "still needs attention."
+    complaints = [
+        t for t in traces if t.state.get("detected_intent") == "complaint_or_problem"
+    ]
+    prev_complaints = [
+        t for t in prev_traces if t.state.get("detected_intent") == "complaint_or_problem"
+    ]
     # Filtered to current status, not "as it stood when created" (this
     # data model has no resolved_at to reconstruct a past snapshot from,
     # CLAUDE.md) -- so this reads as "of what was escalated in range,
@@ -238,22 +252,20 @@ async def compute_summary(
         range_days=days,
         total_conversations=len(conversations),
         total_conversations_prev=len(prev_conversations),
-        messages_sent=len(outbound_messages),
-        messages_sent_prev=sum(1 for m in prev_messages if m.direction == "outbound"),
         hot_leads=len(hot_leads),
         hot_leads_prev=sum(1 for lead in prev_leads if lead.score == "hot"),
+        complaints=len(complaints),
+        complaints_prev=len(prev_complaints),
         escalated=len(unresolved_escalations),
         escalated_prev=len(prev_unresolved_escalations),
         avg_response_minutes=_avg_response_minutes(messages),
         conversations_trend=_daily_counts(
             [c.created_at.date() for c, _ in conversations], now, days
         ),
-        messages_trend=_daily_counts(
-            [m.created_at.date() for m in outbound_messages], now, days
-        ),
         hot_leads_trend=_daily_counts(
             [lead.created_at.date() for lead in hot_leads], now, days
         ),
+        complaints_trend=_daily_counts([t.created_at.date() for t in complaints], now, days),
         escalated_trend=_daily_counts(
             [e.created_at.date() for e in unresolved_escalations], now, days
         ),

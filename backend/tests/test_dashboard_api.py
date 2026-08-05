@@ -28,16 +28,16 @@ def _fake_summary(**overrides: object) -> DashboardSummary:
         "range_days": 30,
         "total_conversations": 0,
         "total_conversations_prev": 0,
-        "messages_sent": 0,
-        "messages_sent_prev": 0,
         "hot_leads": 0,
         "hot_leads_prev": 0,
+        "complaints": 0,
+        "complaints_prev": 0,
         "escalated": 0,
         "escalated_prev": 0,
         "avg_response_minutes": None,
         "conversations_trend": [],
-        "messages_trend": [],
         "hot_leads_trend": [],
+        "complaints_trend": [],
         "escalated_trend": [],
         "intent_breakdown": [],
         "channels": [],
@@ -72,22 +72,22 @@ class TestGetSummary:
         assert response.json()["total_conversations"] == 7
         args, _ = mock_compute.call_args
         assert args[1] == tenant_id
-        assert args[2] == 30
+        assert args[2] == 7
 
-    async def test_defaults_to_30_days_and_accepts_7_and_90(self) -> None:
+    async def test_defaults_to_7_days_and_accepts_1_and_30(self) -> None:
         token = _token()
         with patch(
             "app.dashboard.api.compute_summary", new_callable=AsyncMock
         ) as mock_compute:
             mock_compute.return_value = _fake_summary()
             await _get_summary(token)
-            assert mock_compute.call_args.args[2] == 30
-
-            await _get_summary(token, days=7)
             assert mock_compute.call_args.args[2] == 7
 
-            await _get_summary(token, days=90)
-            assert mock_compute.call_args.args[2] == 90
+            await _get_summary(token, days=1)
+            assert mock_compute.call_args.args[2] == 1
+
+            await _get_summary(token, days=30)
+            assert mock_compute.call_args.args[2] == 30
 
     async def test_rejects_an_unsupported_days_value(self) -> None:
         token = _token()
