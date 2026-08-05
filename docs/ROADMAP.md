@@ -124,6 +124,74 @@ final, not provisional.
 
 ## Changelog
 
+**2026-08-05, one more thing** — Test Console polish (direct instruction,
+using IoTOps's `CopilotChat.tsx`/`ai/service.py` as the explicit
+reference pattern for both halves of this): the Send button used to
+freeze on "Sending..." for the whole pipeline round-trip (up to 4
+sequential Gemini calls, easily several seconds), and any Gemini failure
+(rate limit, network, auth) reached the browser as a raw, uncaught 500 —
+neither of which this project had a pattern for before.
+- **Optimistic send + inline "Thinking" indicator.** `TestConsole.tsx`
+  now shows the typed message immediately (clears the input, appends a
+  `pendingInbound` bubble) instead of waiting for the response before
+  anything appears on screen; the Send button's label no longer changes
+  to "Sending..." (removed the now-dead `testConsole.sending` i18n key)
+  — it just stays disabled until the request settles, same as before,
+  just without the misleading label. `MessageThread.tsx` (shared with
+  ConversationPanel, so both new props are optional/additive) gained a
+  `ThinkingIndicator` that renders in the AI's own bubble slot and
+  cycles through the pipeline's actual step names — "Understanding
+  intent" → "Grounding in knowledge" → "Scoring the lead" → "Deciding
+  next step" (the same four steps `Documentation.tsx` already describes
+  publicly) — real progress framing, not IoTOps's generic filler
+  phrases, since this pipeline's steps are fixed and known up front. CSS
+  shimmer effect (`.conversation-panel__thinking`) mirrors IoTOps's own
+  gradient-text treatment, using this app's `--accent-h`/`--text-h`
+  variables instead of IoTOps's `--chip`/`--accent`. On a failed send,
+  `pendingInbound` is deliberately *not* cleared — in the real (non-demo)
+  path the inbound `Message` row is committed before the pipeline even
+  runs (CLAUDE.md's checkpointer-commit rule), so it's already durably
+  saved even when the AI reply itself fails; hiding it here would be
+  wrong, not just unpolished.
+- **Friendly AI-provider-failure notice, IoTOps's `AiGenerationError`
+  pattern.** `app/core/llm.py` had zero error handling before this — any
+  SDK exception (network, auth, the documented free-tier
+  `RESOURCE_EXHAUSTED` case) or an empty/safety-filtered response
+  propagated raw, and the two "no usable content" checks each raised a
+  bare `ValueError` nothing ever caught. New `AiProviderError` exception
+  wraps all of it (all three call sites — `generate_text`,
+  `generate_with_tools`, `embed_text` — now `try`/`except Exception` the
+  SDK call itself, and the content-empty checks raise this type too).
+  `app/main.py` registers one global `@app.exception_handler` for it —
+  502, generic client-facing detail ("The AI provider is temporarily
+  unavailable..."), full exception logged server-side
+  only, same "don't leak provider/quota specifics" reasoning as IoTOps's
+  own demo-mode message. Registered globally rather than per-route (only
+  Test Console runs the pipeline synchronously inside a request today,
+  but this is a real safety net for free the moment anything else does).
+  `TestConsole.tsx`'s catch block now shows `ApiError.message` directly
+  (the backend's own detail) instead of always falling back to a
+  generic translated string — for a 4xx it's already-friendly validation
+  text, for the new 502 it's this exact message.
+- New coverage: `tests/test_llm.py` (SDK-exception and empty-response
+  cases for all three functions become `AiProviderError`, mocking
+  `_get_client`), plus one new case in `tests/test_test_console_api.py`
+  asserting the endpoint returns 502 with the friendly detail and
+  explicitly that the raw exception text (`RESOURCE_EXHAUSTED`) never
+  reaches the response body. 400 backend tests pass (was 394),
+  `ruff`/`mypy` clean; frontend `tsc -b`/`vite build`/`oxlint` all clean.
+- Live-verified with Playwright against the real running stack, not just
+  unit tests: (1) success path — button label stays "Send" through the
+  whole send, the typed message appears instantly, the Thinking bubble
+  visibly cycles through two different phrases before the real reply
+  (with its diagnostics badges) replaces it; (2) failure path — routed
+  the real POST through a mocked 502 matching the handler's exact
+  response shape (rather than actually breaking the live Gemini key) and
+  confirmed the pending message stays visible, the Thinking bubble
+  disappears, the exact backend detail string renders in the error
+  banner, and the Send button re-enables the moment there's text to send
+  again.
+
 **2026-08-05, later still** — Deleted all conversation history (direct
 instruction, a clean slate) and ran every message in the demo-stream
 pool once to review the answers — 15/16 were direct and accurate; the

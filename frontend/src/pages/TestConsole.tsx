@@ -66,12 +66,22 @@ export default function TestConsole() {
   const [inputText, setInputText] = useState("");
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
+  // The inbound text already submitted to the backend but not yet folded
+  // into `messages` -- shown immediately on submit (optimistic send)
+  // instead of waiting for the full pipeline round-trip to complete.
+  // Deliberately NOT cleared on a failed send: in the real (non-demo) path
+  // the inbound message is committed before the pipeline runs (see
+  // app/test_console/api.py), so it's already durably saved even when the
+  // AI reply itself fails -- clearing it here would hide a message that
+  // genuinely was sent.
+  const [pendingInbound, setPendingInbound] = useState<string | null>(null);
 
   const loadConversation = useCallback(
     async (platform: string, contactId: string) => {
       setLoadError(null);
       setEscalatedNotice(null);
       setMessages(null);
+      setPendingInbound(null);
       try {
         const result = await apiGet<TestConversationResponse>(
           `/test/conversations?channel_type=${encodeURIComponent(platform)}` +
@@ -98,6 +108,7 @@ export default function TestConsole() {
     setSessionId(generateSessionId());
     setInputText("");
     setSendError(null);
+    setPendingInbound(null);
   }
 
   function commitSessionName() {
@@ -127,7 +138,17 @@ export default function TestConsole() {
     const stripped = inputText.trim();
     if (!stripped || sending) return;
 
+    // Optimistic send: the message shows immediately and the input clears
+    // right away, rather than waiting for the full pipeline round-trip
+    // (up to 4 sequential Gemini calls, CLAUDE.md) before either happens.
+    // `sending` still gates the Send button/input against a second submit
+    // on the same session -- concurrent runs against the same LangGraph
+    // thread_id are a real, documented gotcha (CLAUDE.md), not just a UX
+    // nicety -- but the button's own label no longer changes to "Sending...";
+    // the inline Thinking indicator below is what communicates progress now.
     setSendError(null);
+    setInputText("");
+    setPendingInbound(stripped);
     setSending(true);
     try {
       const result = await apiPost<SendTestMessageResponse>(
@@ -137,13 +158,19 @@ export default function TestConsole() {
       );
       setMessages(result.messages);
       setEscalatedNotice(result.escalated ? result.escalation_reason : null);
-      setInputText("");
+      setPendingInbound(null);
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
         logout();
         return;
       }
-      setSendError(t("testConsole.sendError"));
+      // ApiError's own message is the backend's HTTPException detail --
+      // for an AI provider failure that's already the friendly, non-leaking
+      // text app/main.py's exception handler produces (see AiProviderError),
+      // not a raw Gemini error. Only a genuine network-level failure (fetch
+      // itself throwing, no response at all) falls back to the generic
+      // translated message.
+      setSendError(err instanceof ApiError ? err.message : t("testConsole.sendError"));
     } finally {
       setSending(false);
     }
@@ -203,12 +230,16 @@ export default function TestConsole() {
         {messages === null && !loadError && (
           <p className="test-console__hint">{t("testConsole.loading")}</p>
         )}
-        {messages !== null && messages.length === 0 && (
+        {messages !== null && messages.length === 0 && pendingInbound === null && (
           <p className="test-console__hint">{t("testConsole.empty")}</p>
         )}
-        {messages !== null && messages.length > 0 && (
+        {messages !== null && (messages.length > 0 || pendingInbound !== null) && (
           <div className="test-console__thread">
-            <MessageThread messages={messages} />
+            <MessageThread
+              messages={messages}
+              pendingInbound={pendingInbound}
+              thinking={sending}
+            />
           </div>
         )}
         {escalatedNotice !== null && (
@@ -233,7 +264,7 @@ export default function TestConsole() {
           className="button button--primary"
           disabled={sending || inputText.trim() === ""}
         >
-          {sending ? t("testConsole.sending") : t("testConsole.send")}
+          {t("testConsole.send")}
         </button>
       </form>
       {sendError && (

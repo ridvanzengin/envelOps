@@ -59,9 +59,14 @@
     "loadError": "Bu platformun test konuşması yüklenemedi. Tekrar deneyin.",
     "inputPlaceholder": "Bir test mesajı yazın…",
     "send": "Gönder",
-    "sending": "Gönderiliyor…",
     "sendError": "Bu mesaj gönderilemedi. Tekrar deneyin.",
-    "escalatedNotice": "Bu mesaj insan incelemesi için yükseltildi: {{reason}}"
+    "escalatedNotice": "Bu mesaj insan incelemesi için yükseltildi: {{reason}}",
+    "thinking": {
+      "understandingIntent": "Niyet anlaşılıyor…",
+      "groundingInKnowledge": "Bilgi tabanında aranıyor…",
+      "scoringLead": "Potansiyel müşteri puanlanıyor…",
+      "decidingNextStep": "Sıradaki adıma karar veriliyor…"
+    }
   },
   "diagnostics": {
     "intent": {
