@@ -72,12 +72,18 @@ from app.tenants.behavior_config import (
 from app.tenants.models import Tenant
 
 # Direct instruction (2026-08-05): every calibration tenant is
-# formal/professional by default across every tone-bearing option, not
-# just left on BehaviorAreaBase's own "friendly_business"/"casual_chat"
-# defaults -- both the shared BusinessTone areas and a per-channel
-# override for all 5 channel types (matching the demo DM streamer's own
-# _DEMO_STREAM_CHANNEL_TYPES, app/pipeline/tasks.py, which now sends
-# across all 5 at random).
+# formal/professional by default across the shared BusinessTone areas
+# (greeting/off_topic/knowledge_query/escalation_cover below). Channel-
+# level formality is deliberately narrower, not the same blanket
+# treatment -- direct instruction the same day, after live-watching a
+# WhatsApp/Telegram/Instagram/Facebook DM come back in a stiff "Dear
+# customer... Best regards" register that reads wrong for a chat
+# platform: only `email` gets an explicit formal_email override here.
+# The other 4 channel types get no entry at all, which falls through to
+# app/pipeline/behavior.py's own system default per channel (short and
+# casual, no greeting/sign-off, "like a real person texting back") --
+# not a second, redundant "casual" override, since that default already
+# is exactly that.
 _FORMAL_CHANNEL_OVERRIDES = {
     channel_type: ChannelToneConfig(
         formality="formal_email",
@@ -85,7 +91,7 @@ _FORMAL_CHANNEL_OVERRIDES = {
         include_sign_off=True,
         length_guidance="as_needed",
     )
-    for channel_type in ("telegram", "instagram", "whatsapp", "facebook", "email")
+    for channel_type in ("email",)
 }
 
 API_BASE_URL = "http://localhost:8000"
@@ -478,6 +484,14 @@ CALIBRATION_TENANTS: list[TenantSpec] = [
             "Orders ship within 1 business day; standard shipping takes "
             "3-5 business days domestically, express shipping (additional "
             "$15) arrives in 1-2 business days.",
+            # Added 2026-08-05, found live: a demo-streamed "do you ship "
+            # internationally?" escalated for lack of any documented
+            # answer -- unlike Wildroot (which does ship internationally),
+            # Voltage Gadgets deliberately doesn't, a realistic constraint
+            # for a small electronics retailer (import/voltage-standard/
+            # certification complexity varies a lot by country).
+            "We currently ship only within the United States; "
+            "international shipping is not available at this time.",
             "All electronics come with a 1-year manufacturer warranty; "
             "extended 2-year protection plans are available at checkout "
             "for an additional fee.",

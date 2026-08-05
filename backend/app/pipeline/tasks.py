@@ -106,6 +106,102 @@ _DEMO_STREAM_MESSAGES = (
     "What's the estimated delivery time for domestic orders?",
 )
 
+# Purchase-intent / hot-lead / complaint / escalation-trigger pools, added
+# 2026-08-05 (direct instruction) -- the pool above is knowledge_question-
+# shaped only, so a demo watcher never saw book_or_checkout, a real
+# complaint_or_problem reply, or the safety floor actually firing. Each
+# pool below is a set of {}-style templates, not fixed strings -- filled
+# in with a random order number/quantity/reference per send
+# (_random_order_number/_random_reference) so the same template doesn't
+# read as the exact same canned message every time it's picked, same
+# realism goal as every entry in _DEMO_STREAM_MESSAGES above.
+_PURCHASE_INTENT_TEMPLATES = (
+    "I'd like to order {qty} of these -- how do I complete the purchase?",
+    "Can I get {qty} units shipped to me? What would the total cost be?",
+    "I'm ready to buy this today -- what's the best way to check out?",
+    "Can I place an order for {qty} right now?",
+)
+
+# Deliberately urgent/ready-to-buy phrasing -- meant to score "hot" via
+# score_lead's own judgment (a real LLM classification, not a guaranteed
+# outcome any more than any other intent/score call in this pipeline is).
+# Both calibration tenants have closing_action="book_or_checkout", so a
+# hot purchase-intent lead routes there, not to escalate_to_human -- this
+# category exercises the checkout-link handoff, not the safety floor
+# (that's _ESCALATION_TRIGGER_MESSAGES below, a deliberately separate
+# category).
+_HOT_LEAD_TEMPLATES = (
+    "I need this delivered by this weekend if at all possible -- order "
+    "reference {ref}. Can you make that happen?",
+    "I want to place an order right now, please send me the checkout "
+    "link immediately.",
+    "This is urgent, I need to buy this today -- how fast can you get "
+    "it to me? Reference {ref}.",
+    "Can I check out immediately? I need this as soon as possible, "
+    "reference {ref}.",
+)
+
+_COMPLAINT_TEMPLATES = (
+    "My order #{order_num} arrived damaged and I'm honestly pretty "
+    "frustrated about it.",
+    "This is the second issue I've had with order #{order_num} -- not "
+    "happy with this experience at all.",
+    "I'm really disappointed, order #{order_num} doesn't match what was "
+    "described at all.",
+    "Order #{order_num} showed up late again, this keeps happening and "
+    "it's frustrating.",
+)
+
+# Deliberately trips escalation/safety_gate.py's real outcome-guarantee
+# pattern (a certainty word -- "guarantee"/"promise"/"100% guaranteed" --
+# plus an efficacy/risk word -- "work"/"fix"/"safe"/"risk" -- in the same
+# message, see that module's own docstring). Written to be plausible for
+# either business vertical (cold-weather jacket performance, power-bank
+# flight safety) rather than the module's original health-adjacent
+# framing, which wouldn't make sense coming from an apparel/electronics
+# customer -- the pattern itself doesn't require health language, only
+# these two word categories together in the same message.
+_ESCALATION_TRIGGER_MESSAGES = (
+    "Can you guarantee this will definitely work in extreme cold weather?",
+    "Can you guarantee this is completely safe to bring on a flight?",
+    "Do you promise this will fix the issue I'm having, 100% guaranteed?",
+    "Is there any risk this could be dangerous if I use it every day?",
+)
+
+# Weights, not a uniform 1-in-5 -- knowledge questions dominate real DM
+# traffic; escalation-trigger messages should stay rare, same as real
+# safety-floor hits are rare in practice, not routine.
+_MESSAGE_CATEGORY_WEIGHTS = {
+    "knowledge": 0.45,
+    "purchase_intent": 0.20,
+    "hot_lead": 0.15,
+    "complaint": 0.15,
+    "escalation_trigger": 0.05,
+}
+
+
+def _random_order_number() -> int:
+    return random.randint(10000, 99999)
+
+
+def _random_reference() -> str:
+    return f"REQ-{random.randint(1000, 9999)}"
+
+
+def _generate_demo_message() -> str:
+    category = random.choices(
+        list(_MESSAGE_CATEGORY_WEIGHTS), weights=list(_MESSAGE_CATEGORY_WEIGHTS.values()), k=1
+    )[0]
+    if category == "knowledge":
+        return random.choice(_DEMO_STREAM_MESSAGES)
+    if category == "purchase_intent":
+        return random.choice(_PURCHASE_INTENT_TEMPLATES).format(qty=random.randint(1, 5))
+    if category == "hot_lead":
+        return random.choice(_HOT_LEAD_TEMPLATES).format(ref=_random_reference())
+    if category == "complaint":
+        return random.choice(_COMPLAINT_TEMPLATES).format(order_num=_random_order_number())
+    return random.choice(_ESCALATION_TRIGGER_MESSAGES)
+
 
 @celery_app.task(name="process_incoming_message")
 def process_incoming_message(
@@ -406,7 +502,7 @@ async def _stream_demo_dm() -> None:
 
         tenant_id = random.choice(tenant_ids)
         channel_type = random.choice(_DEMO_STREAM_CHANNEL_TYPES)
-        text = random.choice(_DEMO_STREAM_MESSAGES)
+        text = _generate_demo_message()
 
         channel_repo = ChannelRepository(session)
         channel = await channel_repo.get_demo_stream_channel(tenant_id, channel_type)

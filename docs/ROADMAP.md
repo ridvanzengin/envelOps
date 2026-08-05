@@ -124,6 +124,65 @@ final, not provisional.
 
 ## Changelog
 
+**2026-08-05, later still** — Deleted all conversation history (direct
+instruction, a clean slate) and ran every message in the demo-stream
+pool once to review the answers — 15/16 were direct and accurate; the
+one miss (Voltage Gadgets escalating "do you ship internationally?")
+turned out to be a real content gap: only Wildroot's knowledge actually
+states a shipping-scope policy. Three follow-ups from that review, all
+direct instruction:
+- **Voltage Gadgets knowledge gap closed**: added "We currently ship
+  only within the United States; international shipping is not
+  available at this time" (a deliberate contrast with Wildroot, which
+  does ship internationally — plausible for a small electronics
+  retailer given import/voltage-standard/certification complexity).
+  Applied to both the seed script and the live tenant.
+- **Demo-stream messages now cover more than knowledge questions.** The
+  original pool (`_DEMO_STREAM_MESSAGES`, kept fully intact, nothing
+  removed) only ever exercised `keep_chatting` with a knowledge-grounded
+  answer. Four new pools added alongside it in `app/pipeline/tasks.py`,
+  each `{}`-style templates filled in with a random order number/
+  quantity/reference per send (not fixed strings, so the same template
+  doesn't read as an identical canned message every time) —
+  `_PURCHASE_INTENT_TEMPLATES`, `_HOT_LEAD_TEMPLATES` (urgent/ready-to-
+  buy phrasing, exercises the `book_or_checkout` handoff since both
+  tenants have that `closing_action`), `_COMPLAINT_TEMPLATES`, and
+  `_ESCALATION_TRIGGER_MESSAGES` (deliberately trips
+  `escalation/safety_gate.py`'s real outcome-guarantee pattern — a
+  certainty word plus an efficacy/risk word in the same message — using
+  business-plausible phrasing like cold-weather jacket performance or
+  power-bank flight safety instead of the module's original health-
+  adjacent framing, which wouldn't make sense for these tenants).
+  `_generate_demo_message()` picks a category by weight (knowledge 45%,
+  purchase 20%, hot lead 15%, complaint 15%, escalation 5% — matching
+  real DM traffic, where safety-floor hits are rare, not routine), then
+  a random template within it. `_stream_demo_dm` calls this instead of
+  sampling `_DEMO_STREAM_MESSAGES` directly.
+- **Channel-level formality narrowed to email only.** Live-watching the
+  earlier all-5-channels-formal setting showed a WhatsApp/Telegram/
+  Instagram/Facebook reply in a stiff "Dear customer... Best regards"
+  register that reads wrong for a chat platform. `_FORMAL_CHANNEL_OVERRIDES`
+  now only has an `email` entry; the other 4 channel types get no
+  `channel_overrides` entry at all, which falls through to
+  `app/pipeline/behavior.py`'s own system default per channel (short,
+  casual, no greeting/sign-off) rather than a second, redundant
+  "casual" override. The shared `BusinessTone` settings (greeting/
+  off_topic/knowledge_query/escalation_cover all `formal_business`) are
+  unchanged — this was specifically about the per-channel axis. Applied
+  to both the seed script and both live tenants.
+- Live-verified with 5 targeted sends, not just unit tests: the
+  escalation-trigger message genuinely tripped the real safety floor
+  (`outcome-guarantee request`, not a scripted fake); a complaint got
+  classified `complaint_or_problem` and answered empathetically; a hot
+  purchase-intent message scored `hot`, routed to `book_or_checkout`,
+  and delivered the real checkout link in casual tone ("Awesome, here
+  you go..."); the identical shipping-scope question got a short,
+  greeting-free reply on Telegram and a "Hello... Best regards" reply on
+  Email from the same tenant.
+- 394 backend tests pass (unchanged — no new test surface, this is
+  content/config/generator-template work covered by the existing
+  `_stream_demo_dm`/pacing test suite), `ruff`/`mypy` clean.
+
 **2026-08-05, later same day** — FAQ (`url`) and Terms of Service
 (`pdf`) knowledge sources added for both calibration tenants (direct
 instruction), rounding out a tenant's knowledge library with the two
