@@ -1,0 +1,15 @@
+[Unit]
+Description=EnvelOps Application (FastAPI + Celery + Frontend)
+After=docker.service agritwin-infra.service
+Requires=docker.service agritwin-infra.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/opt/envelops
+ExecStart=docker compose -p envelops --env-file deploy/envelops/.env.prod -f deploy/envelops/docker-compose.prod.yml up -d
+ExecStop=docker compose -p envelops --env-file deploy/envelops/.env.prod -f deploy/envelops/docker-compose.prod.yml down
+TimeoutStartSec=300
+
+[Install]
+WantedBy=multi-user.target

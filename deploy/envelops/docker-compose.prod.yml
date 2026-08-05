@@ -1,0 +1,129 @@
+# EnvelOps -- production Docker Compose
+# Run from the repo root:
+#   docker compose -p envelops -f deploy/envelops/docker-compose.prod.yml --env-file deploy/envelops/.env.prod <command>
+#
+# Requires the "infra" compose project (from the agritwin repo) to already
+# be running -- it provides infra-db-1 (TimescaleDB image, which also
+# bundles pgvector -- confirmed via `pg_available_extensions`, just not
+# yet enabled in any database), infra-redis-1, and infra-nginx-1, plus the
+# infra_proxy network. See ../nginx/envelops.conf and SERVER_SETUP.md.
+#
+# No dedicated db/redis service here, unlike the dev docker-compose.yml --
+# this reuses the shared infra project the same way IoTOps and AgriTwin
+# already do, rather than running a third standalone Postgres/Redis on
+# this VM. See SERVER_SETUP.md for why this is safe (pgvector is a real
+# extension in the shared image, not a TimescaleDB-only instance) and how
+# the database/Redis DB index were chosen.
+#
+# Every service below joins infra_proxy as its only network. No service
+# publishes a host port; only infra-nginx-1 (not part of this compose
+# project) touches 80/443.
+
+services:
+  # One-shot: runs `alembic upgrade head` (including the initial
+  # migration's `CREATE EXTENSION IF NOT EXISTS vector`) and exits. Not
+  # `restart: unless-stopped` -- a migration container is meant to run
+  # once per deploy and stop, not be kept alive/respawned by Docker.
+  migrate:
+    build:
+      context: ../../backend
+      dockerfile: Dockerfile
+    command: ["alembic", "upgrade", "head"]
+    restart: "no"
+    env_file: .env.prod
+    environment:
+      ENVELOPS_DATABASE_URL: "postgresql+asyncpg://envelops:${ENVELOPS_DB_PASSWORD}@infra-db-1:5432/envelops"
+    networks:
+      - infra_proxy
+
+  backend:
+    build:
+      context: ../../backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file: .env.prod
+    environment:
+      ENVELOPS_DATABASE_URL: "postgresql+asyncpg://envelops:${ENVELOPS_DB_PASSWORD}@infra-db-1:5432/envelops"
+      # DB index 2 -- 0 is AgriTwin's own Celery broker (also, confusingly,
+      # IoTOps's real-time-rule firing keys, both defaulting to 0), 1 is
+      # IoTOps's own Celery broker. Picked the next free index rather than
+      # doubling up on an already-shared one. See SERVER_SETUP.md.
+      ENVELOPS_REDIS_URL: "redis://infra-redis-1:6379/2"
+      # app/commerce/connectors.py calls this backend's own
+      # fake-commerce-platform endpoint over real HTTP -- `envelops-backend-1`
+      # (this container's own compose-assigned name) resolves back to
+      # itself on infra_proxy, same self-referential pattern IoTOps's
+      # demo-showcase service uses for BACKEND_BASE_URL.
+      ENVELOPS_INTERNAL_API_BASE_URL: "http://envelops-backend-1:8000"
+    networks:
+      - infra_proxy
+    depends_on:
+      - migrate
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+  worker:
+    build:
+      context: ../../backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file: .env.prod
+    environment:
+      ENVELOPS_DATABASE_URL: "postgresql+asyncpg://envelops:${ENVELOPS_DB_PASSWORD}@infra-db-1:5432/envelops"
+      ENVELOPS_REDIS_URL: "redis://infra-redis-1:6379/2"
+      ENVELOPS_INTERNAL_API_BASE_URL: "http://envelops-backend-1:8000"
+    # --concurrency set explicitly from the start, not left at the
+    # os.cpu_count() default -- IoTOps hit a real same-day incident from
+    # exactly this default (4 prefork processes, each a near-full Python
+    # interpreter copy, OOM-killing a memory-capped celery-worker
+    # container). This worker's load is light (per-message pipeline runs,
+    # a 30-minute follow-up scan, hourly/daily demo-mode ticks) -- 2
+    # processes is plenty, no need to rediscover the same lesson here.
+    command: ["celery", "-A", "app.core.celery_app", "worker", "--loglevel=info", "--concurrency=2"]
+    networks:
+      - infra_proxy
+    depends_on:
+      - migrate
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+  beat:
+    build:
+      context: ../../backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file: .env.prod
+    environment:
+      ENVELOPS_REDIS_URL: "redis://infra-redis-1:6379/2"
+    command: ["celery", "-A", "app.core.celery_app", "beat", "--loglevel=info"]
+    networks:
+      - infra_proxy
+    depends_on:
+      - migrate
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+
+  frontend:
+    build:
+      context: ../..
+      dockerfile: docker/frontend/Dockerfile.prod
+      args:
+        VITE_API_BASE_URL: ""
+    restart: unless-stopped
+    networks:
+      - infra_proxy
+    deploy:
+      resources:
+        limits:
+          memory: 32M
+
+networks:
+  infra_proxy:
+    external: true
+    name: infra_proxy

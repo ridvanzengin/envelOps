@@ -14,10 +14,14 @@ dist/
 build/
 .vite/
 
-# Env / secrets
+# Env / secrets -- exact names, not a glob. `.env.*` with a `!.env.example`
+# negation (the previous form here) silently swallowed anything that
+# wasn't literally named ".env.example" -- caught when
+# deploy/envelops/.env.prod.example needed committing but the glob still
+# matched it. Explicit names avoid the whole class of gotcha, same
+# pattern IoTOps's own .gitignore already uses.
 .env
-.env.*
-!.env.example
+.env.prod
 
 # Docker
 *.pid
