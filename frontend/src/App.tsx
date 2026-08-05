@@ -16,6 +16,7 @@ import { ThemeProvider } from "./context/theme/ThemeContext";
 import { useDemoTenants } from "./hooks/useDemoTenants";
 import Channels from "./pages/Channels";
 import Dashboard from "./pages/Dashboard";
+import Documentation from "./pages/Documentation";
 import Integrations from "./pages/Integrations";
 import KnowledgeSources from "./pages/KnowledgeSources";
 import Login from "./pages/Login";
@@ -86,6 +87,7 @@ function AppShell() {
               <Route path="/knowledge" element={<KnowledgeSources />} />
               <Route path="/test-console" element={<TestConsole />} />
               <Route path="/settings" element={<Settings />} />
+              <Route path="/docs" element={<Documentation />} />
             </Routes>
           </div>
           <ConversationPanel />

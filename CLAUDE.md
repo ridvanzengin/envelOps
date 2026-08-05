@@ -373,6 +373,15 @@ nav/routes, `src/i18n/` has the locale files and config. Every page under
 `src/pages/` is real, built-out screen content now (Dashboard, Knowledge
 sources, Test console, Settings, the conversation rail/panel), not the
 early-Phase-1 translated placeholders this line used to describe.
+Sidebar also has a "Reference" section (`/docs` in-app Documentation page
++ an external Source Code link to the GitHub repo) and a "Built by
+Rıdvan Zengin" footer, modeled directly on the sibling reference
+project's own Sidebar (`iotops-workspace/IoTOps/frontend`) — same
+section/footer CSS classes, same collapsed-sidebar behavior. The
+Documentation page's body content (features/stats/tech table) is
+English-only by design, same choice iotops's own docs page made; only
+the nav label and page header route through `react-i18next` like every
+other page.
 
 - `npm run dev` — dev server (verified boots and serves)
 - `npm run build` — type-check (`tsc -b`) + production build (verified

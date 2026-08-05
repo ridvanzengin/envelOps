@@ -12,18 +12,23 @@
     "settings": "Settings",
     "dashboard": "Dashboard",
     "channels": "Channels",
-    "integrations": "Integrations"
+    "integrations": "Integrations",
+    "documentation": "Documentation",
+    "sourceCode": "Source code"
   },
   "sidebar": {
     "collapse": "Collapse sidebar",
-    "expand": "Expand sidebar"
+    "expand": "Expand sidebar",
+    "reference": "Reference",
+    "attribution": "Built by Rıdvan Zengin"
   },
   "pages": {
     "knowledge": "Add (URL/PDF/manual), list, and refresh knowledge sources.",
     "testConsole": "Send a test message through the real pipeline on any platform, to compare how replies differ by channel.",
     "settings": "AI behavior, business settings, and safety trigger phrases, organized by tab. Channel connection status isn't shown here yet.",
     "channels": "Connect and manage the places where your AI assistant talks with users.",
-    "integrations": "Connect e-commerce platforms and services to let your AI assistant access real-time data."
+    "integrations": "Connect e-commerce platforms and services to let your AI assistant access real-time data.",
+    "documentation": "How EnvelOps's pipeline, channels, and tenant configuration fit together."
   },
   "theme": {
     "light": "Light theme",
