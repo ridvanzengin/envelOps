@@ -119,24 +119,23 @@ IoTOps's -- `backend`/`worker` (same image) sit at ~145-235MB baseline
 even at rest. Currently 256M, sized against that observed baseline, not
 a guess.
 
-**A calibration/showcase seed script "succeeds" (real tenant + knowledge
-base rows, exit code 0) but seeds zero conversations, having burned real
-Gemini quota trying.** `scripts/seed_calibration_tenant.py` (and
-`seed_showcase_tenants.py`) call `POST /test/conversations/messages` to
-run seeded messages through the real pipeline -- but
-`app/test_console/api.py`'s `send_test_message` checks
-`settings.demo_mode_enabled` directly, not how the caller authenticated,
-so with `ENVELOPS_DEMO_MODE_ENABLED=true` (the production default) every
-call still runs the real pipeline and then silently discards the result.
-The script's own docstring claims immunity from this via its real
-(non-bypass) login; that claim doesn't hold against the current code.
-See `SERVER_SETUP.md` step 7 for the actual "conversations are optional,
-tenants aren't" workaround and the "temporarily flip demo mode off"
-procedure if you do want real seeded conversations. **If a seed run gets
-killed mid-way or fails partway, delete the resulting empty-shell tenant
-before retrying** -- both scripts skip (not retry) a tenant whose owner
-email already exists, so a broken half-seeded tenant stays broken forever
-otherwise:
+**The calibration seed script "succeeds" (real tenant + knowledge base
+rows, exit code 0) but seeds zero conversations, having burned real
+Gemini quota trying.** `scripts/seed_calibration_tenant.py` calls
+`POST /test/conversations/messages` to run seeded messages through the
+real pipeline -- but `app/test_console/api.py`'s `send_test_message`
+checks `settings.demo_mode_enabled` directly, not how the caller
+authenticated, so with `ENVELOPS_DEMO_MODE_ENABLED=true` (the production
+default) every call still runs the real pipeline and then silently
+discards the result. The script's own docstring claims immunity from
+this via its real (non-bypass) login; that claim doesn't hold against
+the current code. See `SERVER_SETUP.md` step 7 for the actual
+"conversations are optional, tenants aren't" workaround and the
+"temporarily flip demo mode off" procedure if you do want real seeded
+conversations. **If a seed run gets killed mid-way or fails partway,
+delete the resulting empty-shell tenant before retrying** -- the script
+skips (not retries) a tenant whose owner email already exists, so a
+broken half-seeded tenant stays broken forever otherwise:
 ```bash
 DB_PASS=$(grep "^ENVELOPS_DB_PASSWORD=" /opt/envelops/deploy/envelops/.env.prod | cut -d= -f2-)
 docker exec infra-db-1 psql "postgresql://envelops:$DB_PASS@localhost:5432/envelops" -c "SELECT id, name, created_at FROM tenants ORDER BY created_at;"

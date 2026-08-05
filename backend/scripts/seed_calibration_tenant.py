@@ -1,12 +1,13 @@
 """One-tenant-at-a-time calibration seeding (docs/ROADMAP.md): seeds a
 single new tenant (settings + a small hand-written knowledge base of
 business-specific facts) and runs a batch of real customer-support DMs,
-sampled from the Bitext dataset (see scripts/run_bitext_stress_test.py's
-own docstring for provenance/download instructions), through the real
-pipeline via the Test Console API -- so they show up as real, inspectable
-conversations in the conversation rail (Channel.is_test=True, same
-mechanism every other test conversation in this app already uses), not
-just this script's own printed summary.
+sampled from the public Bitext customer-support dataset (not checked in,
+fetch from https://huggingface.co/datasets/bitext/Bitext-customer-support-llm-chatbot-training-dataset
+and place at backend/data/bitext_customer_support_27k.csv), through the
+real pipeline via the Test Console API -- so they show up as real,
+inspectable conversations in the conversation rail (Channel.is_test=True,
+same mechanism every other test conversation in this app already uses),
+not just this script's own printed summary.
 
 Workflow this was built for, by direct instruction: add one TenantSpec to
 CALIBRATION_TENANTS below, run this script, then review live -- log in as
@@ -20,9 +21,9 @@ messages still classify/decide the same way after later changes) is a
 separate, not-yet-built follow-up, meant to start once a tenant's own
 calibration pass is confirmed good -- not part of this script.
 
-Prerequisites: same as run_bitext_stress_test.py -- `docker compose up`
-(or backend + db running) with a real ENVELOPS_GEMINI_API_KEY and the
-dataset CSV at backend/data/bitext_customer_support_27k.csv. Logs in
+Prerequisites: `docker compose up` (or backend + db running) with a real
+ENVELOPS_GEMINI_API_KEY and the dataset CSV at
+backend/data/bitext_customer_support_27k.csv (see above). Logs in
 through the real POST /auth/login with the known DEMO_PASSWORD this
 script itself sets on the tenant it just seeded -- not any no-password
 bypass -- so this has no dependency on ENVELOPS_DEMO_MODE_ENABLED at all
@@ -111,11 +112,11 @@ API_BASE_URL = settings.internal_api_base_url
 CSV_PATH = Path(__file__).resolve().parents[1] / "data" / "bitext_customer_support_27k.csv"
 DEMO_PASSWORD = "EnvelOpsDemo!1"
 DELAY_BETWEEN_MESSAGES_SECONDS = 20.0  # same free-tier headroom reasoning
-# as run_synthetic_conversations.py / run_bitext_stress_test.py.
+# as run_synthetic_conversations.py.
 
-# Same curated subset run_bitext_stress_test.py established -- the
-# categories that actually map onto a small DM seller's own knowledge
-# base (ORDER/SHIPPING/CANCEL/DELIVERY/REFUND/PAYMENT). ACCOUNT/
+# Curated subset of Bitext's 27 intents -- the categories that actually
+# map onto a small DM seller's own knowledge base (ORDER/SHIPPING/CANCEL/
+# DELIVERY/REFUND/PAYMENT). ACCOUNT/
 # SUBSCRIPTION/INVOICE/CONTACT/FEEDBACK assume a self-service platform
 # account system most of these businesses don't have -- a per-tenant
 # spec can still override this with its own list if a given vertical
@@ -595,7 +596,9 @@ CALIBRATION_TENANTS: list[TenantSpec] = [
 def _load_bitext_samples(spec: TenantSpec) -> list[tuple[str, str, str]]:
     if not CSV_PATH.exists():
         raise SystemExit(
-            f"{CSV_PATH} not found -- see run_bitext_stress_test.py's docstring"
+            f"{CSV_PATH} not found -- fetch from "
+            "https://huggingface.co/datasets/bitext/"
+            "Bitext-customer-support-llm-chatbot-training-dataset"
         )
     by_intent: dict[str, list[tuple[str, str]]] = {}
     with CSV_PATH.open() as f:
