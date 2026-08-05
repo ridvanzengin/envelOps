@@ -54,6 +54,7 @@ from app.auth.models import User
 from app.auth.security import hash_password
 from app.channels.models import Channel
 from app.commerce.models import FakeCommerceProduct
+from app.core.config import settings
 from app.core.db import async_session
 from app.core.llm import embed_text
 from app.knowledge.chunking import chunk_text
@@ -94,7 +95,19 @@ _FORMAL_CHANNEL_OVERRIDES = {
     for channel_type in ("email",)
 }
 
-API_BASE_URL = "http://localhost:8000"
+# Was hardcoded to "http://localhost:8000" -- correct for host-based dev
+# (docker-compose.yml's dev file publishes backend's 8000 to the host),
+# wrong for deploy/envelops/docker-compose.prod.yml, which deliberately
+# publishes no host ports at all (same security default IoTOps/AgriTwin
+# already use). Reuses the same self-referential setting
+# app/commerce/connectors.py already relies on for exactly this problem
+# -- ENVELOPS_INTERNAL_API_BASE_URL defaults to localhost:8000 (host dev)
+# but is overridden to this backend container's own compose-assigned
+# name in every docker-compose*.yml. Found live: this script's own
+# hardcoded constant 404/ConnectError'd every time when run via `docker
+# compose run backend python3 -m scripts.seed_calibration_tenant`
+# against production.
+API_BASE_URL = settings.internal_api_base_url
 CSV_PATH = Path(__file__).resolve().parents[1] / "data" / "bitext_customer_support_27k.csv"
 DEMO_PASSWORD = "EnvelOpsDemo!1"
 DELAY_BETWEEN_MESSAGES_SECONDS = 20.0  # same free-tier headroom reasoning
