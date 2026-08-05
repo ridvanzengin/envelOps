@@ -153,15 +153,16 @@ etc.) confirm the migration landed, not just that the container exited
 
 ## 7 — Seed tenants + knowledge bases (conversations are optional)
 
-**Decided live on first deploy (2026-08-05): use
-`seed_calibration_tenant.py` (Wildroot Apparel Co, Voltage Gadgets), not
-`seed_showcase_tenants.py`.** The showcase script's 4 generic-vertical
-tenants were seeded once, reviewed, and deliberately deleted in favor of
-the 2 calibration tenants — real, hand-specced businesses with real
-knowledge bases, "the current primary way new tenant configs get
-exercised" per `docs/ROADMAP.md`. If you want the showcase set instead,
-swap the module name below; both work the same way for what this step
-actually needs (see "What this step actually needs" below).
+**Decided live on first deploy (2026-08-05): use `seed_calibration_tenant.py`
+(Wildroot Apparel Co, Voltage Gadgets).** An earlier `seed_showcase_tenants.py`
+script (4 generic-vertical tenants) was seeded once, reviewed, and
+deliberately deleted in favor of these 2 calibration tenants — real,
+hand-specced businesses with real knowledge bases, "the current primary
+way new tenant configs get exercised" per `docs/ROADMAP.md`. That script
+(and its own dependent, `run_bitext_stress_test.py`) has since been
+removed from the repo entirely (2026-08-05, stale-file cleanup) — it
+predated the Turkish/bilingual pipeline cut and was never updated
+afterward, and had no other current documented use.
 
 ```bash
 docker compose -p envelops --env-file deploy/envelops/.env.prod \
@@ -216,8 +217,8 @@ Only safe to do this **before** the site is genuinely public (no TLS yet,
 or a maintenance window) — demo mode is what blocks every other mutating
 endpoint too, not just this one.
 
-Neither script is idempotent (see either one's own docstring) — a tenant
-whose owner email already exists is skipped, not refreshed or duplicated.
+Not idempotent (see the script's own docstring) — a tenant whose owner
+email already exists is skipped, not refreshed or duplicated.
 
 ---
 

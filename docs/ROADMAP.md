@@ -124,6 +124,58 @@ final, not provisional.
 
 ## Changelog
 
+**2026-08-05, post-deploy cleanup** — First production deploy (PRs
+#59–64: `deploy/` infra, Dockerfile/celery-beat/hardcoded-localhost
+fixes) surfaced `scripts/seed_showcase_tenants.py` as dead weight —
+`deploy/SERVER_SETUP.md` step 7 had already, on the day of that deploy,
+documented choosing `seed_calibration_tenant.py` over it live and
+deleting its seeded tenants from production. Asked to check for other
+stale files/docs starting from that one; found a real cascading
+staleness chain, not just the one script:
+- `seed_showcase_tenants.py` itself predated the 2026-07-31 Turkish/
+  bilingual pipeline cut and was never updated after — still contained a
+  literal Turkish scenario message. Not referenced anywhere in CLAUDE.md's
+  Commands section (only `seed_calibration_tenant.py` is called "the
+  current primary way").
+- `scripts/run_bitext_stress_test.py` hard-depended on it (logged in as
+  `owner@meadow-jar-honey.demo`, a tenant that no longer exists in
+  production or, going forward, anywhere) and its own docstring claimed
+  that tenant had a "26-entry FAQ knowledge base" when the seed script
+  actually only ever gave it 3 entries — a stale cross-reference even
+  before the tenant itself stopped existing.
+- `.claude/skills/deploy/SKILL.md` had picked up a factual error along
+  the way: it claimed `seed_showcase_tenants.py` also calls
+  `POST /test/conversations/messages` like `seed_calibration_tenant.py`
+  does. It doesn't — it calls `run_pipeline` directly, in-process. Never
+  actually true, not just outdated.
+- Both scripts deleted outright (direct instruction, after presenting
+  the evidence and options). `seed_calibration_tenant.py`'s own
+  docstring/error-message cross-references into `run_bitext_stress_test.py`
+  (provenance/download instructions for the Bitext CSV, prerequisites)
+  rewritten to be self-contained instead of pointing at a file that no
+  longer exists. `SERVER_SETUP.md` step 7 and `SKILL.md`'s known-failure-
+  modes section updated to drop the now-nonexistent alternative path and
+  the "both scripts" wording. **The Bitext CSV itself is still needed** —
+  `seed_calibration_tenant.py` samples real customer-support DMs from it
+  directly, independent of the deleted stress-test script; nothing about
+  that dependency changed.
+- Also found and fixed, unrelated to the git history: this machine's own
+  local (gitignored, untracked) `.env` had picked up a stray
+  `ENVELOPS_PROD_GEMINI_API_KEY` line at some point during the deploy
+  work -- `Settings` has no field for it, and pydantic-settings' default
+  `extra="forbid"` made `Settings()` raise at import time, breaking
+  pytest/uvicorn/every script locally on this machine (not visible in
+  any PR since `.env` isn't tracked). Removed the stray line; the real
+  production key lives in `deploy/envelops/.env.prod` on the server
+  already, not in this repo either way.
+- 400 backend tests pass, unchanged -- neither deleted script had test
+  coverage of its own (82 -> 80 source files per mypy), `ruff`/`mypy`
+  both clean.
+- Not yet checked: whether the first production deploy itself
+  (PRs #59-64) warrants its own changelog entry here -- none of those
+  PRs added one, so this is currently the only changelog trace of that
+  work happening at all. Flagged for the user, not decided unilaterally.
+
 **2026-08-05, and one more thing after that** — Mobile-device UI (direct
 instruction, using IoTOps's `Sidebar.tsx`/`ActivityBar.tsx`/
 `EventsPanel.tsx` mobile rework as the explicit structural reference).
