@@ -124,6 +124,67 @@ final, not provisional.
 
 ## Changelog
 
+**2026-08-05, first production launch** — EnvelOps went live at
+https://envelops.site (PRs #59–64), reusing the same shared Hetzner VM
+("ringo") already hosting IoTOps and AgriTwin rather than standing up
+new infrastructure — same pattern as those two sibling projects.
+- **`deploy/` added** (PR #59): `SERVER_SETUP.md` (numbered fresh-server
+  playbook), `deploy/envelops/{docker-compose.prod.yml,.env.prod.example}`,
+  `deploy/nginx/envelops.conf`, `deploy/scripts/deploy.sh`,
+  `deploy/systemd/envelops-app.service`, and a new production frontend
+  build (`docker/frontend/{Dockerfile.prod,nginx.conf}` — only a dev-mode
+  Vite server existed before this). New `.claude/skills/deploy/SKILL.md`
+  for routine operation.
+- **Shared-infra decisions**: Postgres reuses `infra-db-1` (confirmed
+  pgvector 0.8.3 already ships in the `timescaledb-ha:pg16` image, just
+  needed enabling for a new `envelops` database/user, same pattern as
+  the existing `iotops`/`agritwin` databases already coexisting there).
+  Redis reuses `infra-redis-1` at DB index 2 (0 and 1 already taken by
+  the sibling apps' own brokers/keys). No Docker socket mount, unlike
+  IoTOps — this app doesn't manage sibling containers. `celery-worker`
+  starts at `--concurrency=2` from day one, not the `os.cpu_count()`
+  default that OOM-killed IoTOps's own worker on this same VM before —
+  applying that lesson pre-emptively instead of rediscovering it here
+  too.
+- **Three real bugs found and fixed the same day, live**: the backend
+  Dockerfile only ever copied `app/` — `alembic upgrade head` and every
+  `python3 -m scripts.*` invocation both failed inside the built image
+  until `alembic.ini`/`alembic/`/`scripts/` were added to the `COPY`
+  list (PRs #60–61, first real use of either from inside a container).
+  `celery-beat` OOM-crash-looped at IoTOps's inherited 128M memory limit
+  — this app's Celery import footprint (LangGraph/LangChain/google-genai/
+  SQLAlchemy async) is heavier, confirmed via `dmesg` real OOM-kills, 21
+  restarts in ~15 minutes; bumped to 256M against the ~145–235MB
+  baseline `backend`/`worker` (same image) actually sit at (PR #62).
+  `seed_calibration_tenant.py` had `API_BASE_URL` hardcoded to
+  `http://localhost:8000` — correct for host dev, `httpx.ConnectError`
+  every time against production (which publishes no host ports); fixed
+  to reuse `ENVELOPS_INTERNAL_API_BASE_URL`, the same self-referential
+  setting `app/commerce/connectors.py` already relied on for the
+  identical problem (PR #63).
+- **Also found and documented, not code fixes**: Postgres 15+ no longer
+  grants schema-level `CREATE` from a database-level `GRANT` alone —
+  `migrate`'s first `CREATE TABLE` failed with `permission denied for
+  schema public` until `GRANT ALL ON SCHEMA public` was added to
+  `SERVER_SETUP.md` step 4. Decided live to seed with
+  `seed_calibration_tenant.py` (Wildroot Apparel Co, Voltage Gadgets),
+  not the now-deleted `seed_showcase_tenants.py` — see this file's own
+  "post-deploy cleanup" entry below for what that led to. Confirmed live
+  (twice, burning real Gemini quota both times before diagnosing it):
+  `ENVELOPS_DEMO_MODE_ENABLED=true` silently discards Test Console-seeded
+  conversations regardless of how the caller authenticated, despite the
+  seed script's own docstring claiming immunity via its real (non-bypass)
+  login — `app/test_console/api.py`'s demo-mode check doesn't
+  distinguish. `SERVER_SETUP.md` step 7 documents both the "conversations
+  are optional, tenants aren't" workaround and the "temporarily flip
+  demo mode off" procedure for anyone who wants real seeded conversations
+  later (PR #64, `.claude/skills/deploy/SKILL.md`'s own new-to-this-app
+  Known Failure Modes section).
+- Not yet checked end-to-end at the time of this entry: whether
+  production's own live traffic (celery-beat's `stream_demo_dm`, real
+  visitor usage) surfaces anything the pre-launch testing didn't —
+  first real signal of that is the very next changelog entry below.
+
 **2026-08-05, post-deploy cleanup** — First production deploy (PRs
 #59–64: `deploy/` infra, Dockerfile/celery-beat/hardcoded-localhost
 fixes) surfaced `scripts/seed_showcase_tenants.py` as dead weight —
