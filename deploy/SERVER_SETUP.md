@@ -69,9 +69,19 @@ docker exec -it infra-db-1 psql -U postgres <<'SQL'
   CREATE USER envelops WITH PASSWORD 'CHANGE_ME';  -- match .env.prod ENVELOPS_DB_PASSWORD
   GRANT ALL PRIVILEGES ON DATABASE envelops TO envelops;
   \c envelops
+  GRANT ALL ON SCHEMA public TO envelops;
   CREATE EXTENSION IF NOT EXISTS vector;
 SQL
 ```
+
+**The `GRANT ALL ON SCHEMA public` line is required, not optional** — hit
+live on the first deploy: `GRANT ALL PRIVILEGES ON DATABASE` alone is not
+enough on Postgres 15+. Since PG15, the `public` schema no longer grants
+`CREATE` to `PUBLIC` (every role) by default — a database-level grant
+doesn't imply a schema-level one. Without this, the `migrate` service's
+first `CREATE TABLE alembic_version` fails with `permission denied for
+schema public`, even though the user/database were created successfully
+moments before.
 
 `infra-db-1` runs `timescale/timescaledb-ha:pg16` — confirmed via
 `SELECT * FROM pg_available_extensions WHERE name = 'vector'` that
@@ -141,22 +151,73 @@ etc.) confirm the migration landed, not just that the container exited
 
 ---
 
-## 7 — Seed showcase demo data
+## 7 — Seed tenants + knowledge bases (conversations are optional)
+
+**Decided live on first deploy (2026-08-05): use
+`seed_calibration_tenant.py` (Wildroot Apparel Co, Voltage Gadgets), not
+`seed_showcase_tenants.py`.** The showcase script's 4 generic-vertical
+tenants were seeded once, reviewed, and deliberately deleted in favor of
+the 2 calibration tenants — real, hand-specced businesses with real
+knowledge bases, "the current primary way new tenant configs get
+exercised" per `docs/ROADMAP.md`. If you want the showcase set instead,
+swap the module name below; both work the same way for what this step
+actually needs (see "What this step actually needs" below).
 
 ```bash
 docker compose -p envelops --env-file deploy/envelops/.env.prod \
-  -f deploy/envelops/docker-compose.prod.yml run --rm backend \
-  python3 -m scripts.seed_showcase_tenants
+  -f deploy/envelops/docker-compose.prod.yml run --rm \
+  -v $(pwd)/backend/data:/app/data backend \
+  python3 -m scripts.seed_calibration_tenant
 ```
 
-Writes real tenants/knowledge sources/conversations across the four
-REQUIREMENTS.md business-model verticals, run through the real pipeline
-against the real `ENVELOPS_GEMINI_API_KEY` — this is what makes the
-public demo mode's tenant switcher (`GET /auth/demo-tenants`) have
-something worth looking at instead of empty state. Not idempotent (see
-the script's own docstring) — running it twice creates a second set of
-tenants, it doesn't refresh the first. Run once here; re-run later only
-if you deliberately want fresh showcase data.
+The `-v` mount is required — `backend/data/bitext_customer_support_27k.csv`
+is real third-party research data, deliberately gitignored (not source),
+and the Dockerfile doesn't bake it into the image either (same reasoning
+as `alembic`/`scripts` below: never needed until this exact step ran for
+the first time). Copy it onto the VM first if it isn't already at
+`backend/data/` there:
+```bash
+scp backend/data/bitext_customer_support_27k.csv iotops-vm:/opt/envelops/backend/data/
+```
+
+**What this step actually needs vs. what it also tries to do:**
+`app/pipeline/tasks.py`'s `stream_demo_dm` (Celery Beat, hourly, see
+`app/core/celery_app.py`) is what actually keeps the public demo feeling
+alive going forward — it self-provisions its own demo-stream channel and
+picks a random *existing* tenant every tick, but no-ops forever
+(`if not tenant_ids: return`) if zero tenants exist. So this step's real
+job is just **getting at least one tenant + knowledge base into the
+database** — it doesn't need to succeed at seeding conversations too.
+
+**It will still try, and will fail harmlessly if `ENVELOPS_DEMO_MODE_ENABLED=true`.**
+This script logs in for real (not the no-password demo bypass) specifically
+so it *should* be exempt from demo mode, per its own docstring — but
+`app/test_console/api.py`'s `send_test_message` checks
+`settings.demo_mode_enabled` directly, not how the caller authenticated,
+so in practice every `POST /test/conversations/messages` call still runs
+the real pipeline (burning real Gemini quota) and then silently discards
+it (`_send_test_message_demo`, "still runs the real pipeline, just never
+persists"). Confirmed live, twice. **The tenant/knowledge-base creation
+phase (direct DB writes, not gated) still succeeds either way** — so
+running this as-is is a safe, if wasteful, way to get tenants seeded; you
+just won't get seeded conversations out of it.
+
+**To also get real seeded conversations**, temporarily flip demo mode off
+for this one step:
+```bash
+sed -i 's/ENVELOPS_DEMO_MODE_ENABLED=true/ENVELOPS_DEMO_MODE_ENABLED=false/' deploy/envelops/.env.prod
+docker compose -p envelops --env-file deploy/envelops/.env.prod -f deploy/envelops/docker-compose.prod.yml up -d --no-deps backend worker
+# delete any tenant shell from a prior demo-mode attempt first (same email = skipped, not retried) -- see the skill's own troubleshooting section
+docker compose -p envelops --env-file deploy/envelops/.env.prod -f deploy/envelops/docker-compose.prod.yml run --rm -v $(pwd)/backend/data:/app/data backend python3 -m scripts.seed_calibration_tenant
+sed -i 's/ENVELOPS_DEMO_MODE_ENABLED=false/ENVELOPS_DEMO_MODE_ENABLED=true/' deploy/envelops/.env.prod
+docker compose -p envelops --env-file deploy/envelops/.env.prod -f deploy/envelops/docker-compose.prod.yml up -d --no-deps backend worker
+```
+Only safe to do this **before** the site is genuinely public (no TLS yet,
+or a maintenance window) — demo mode is what blocks every other mutating
+endpoint too, not just this one.
+
+Neither script is idempotent (see either one's own docstring) — a tenant
+whose owner email already exists is skipped, not refreshed or duplicated.
 
 ---
 
