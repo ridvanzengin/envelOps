@@ -88,6 +88,71 @@ docker exec infra-db-1 psql -U envelops -d envelops -c '\dt'
 docker logs envelops-beat-1 --tail 20 | grep -i schedule
 ```
 
+## Known failure modes -- hit for real on this app's own first deploy (2026-08-05)
+
+**`migrate` fails with `permission denied for schema public`** on a
+freshly-created database, even though `GRANT ALL PRIVILEGES ON DATABASE`
+already ran. Postgres 15+ no longer grants `CREATE` on the `public`
+schema to `PUBLIC` (every role) by default -- a database-level grant
+doesn't imply a schema-level one. Fix: `GRANT ALL ON SCHEMA public TO
+envelops;` as the `postgres` superuser (already folded into
+`SERVER_SETUP.md` step 4 -- this only recurs if you're improvising
+outside that playbook).
+
+**`migrate`/seed scripts fail with things like `No 'script_location' key
+found in configuration` or `ModuleNotFoundError: No module named
+'scripts'`** -- the backend `Dockerfile` only ever copied `app/`; nothing
+had actually run `alembic` or `python3 -m scripts.<name>` from inside the
+image before this app's first real deploy. Already fixed (the Dockerfile
+now copies `alembic.ini`/`alembic/`/`scripts/` too) -- only relevant again
+if a *new* top-level directory the Dockerfile doesn't know about becomes
+runnable-from-container for the first time. Check `docker run --rm
+envelops-<service>:latest ls /app` if a similar "file not found"-shaped
+error shows up for something new.
+
+**`envelops-beat-1` OOM-crash-loops** (`docker inspect ... .State.OOMKilled`
+-> `true`, `RestartCount` climbing fast, empty logs since it dies before
+printing anything) if its memory limit ever drops back toward IoTOps's
+own 128M starting point. This app's Celery import footprint
+(LangGraph/LangChain/google-genai/SQLAlchemy async) is heavier than
+IoTOps's -- `backend`/`worker` (same image) sit at ~145-235MB baseline
+even at rest. Currently 256M, sized against that observed baseline, not
+a guess.
+
+**A calibration/showcase seed script "succeeds" (real tenant + knowledge
+base rows, exit code 0) but seeds zero conversations, having burned real
+Gemini quota trying.** `scripts/seed_calibration_tenant.py` (and
+`seed_showcase_tenants.py`) call `POST /test/conversations/messages` to
+run seeded messages through the real pipeline -- but
+`app/test_console/api.py`'s `send_test_message` checks
+`settings.demo_mode_enabled` directly, not how the caller authenticated,
+so with `ENVELOPS_DEMO_MODE_ENABLED=true` (the production default) every
+call still runs the real pipeline and then silently discards the result.
+The script's own docstring claims immunity from this via its real
+(non-bypass) login; that claim doesn't hold against the current code.
+See `SERVER_SETUP.md` step 7 for the actual "conversations are optional,
+tenants aren't" workaround and the "temporarily flip demo mode off"
+procedure if you do want real seeded conversations. **If a seed run gets
+killed mid-way or fails partway, delete the resulting empty-shell tenant
+before retrying** -- both scripts skip (not retry) a tenant whose owner
+email already exists, so a broken half-seeded tenant stays broken forever
+otherwise:
+```bash
+DB_PASS=$(grep "^ENVELOPS_DB_PASSWORD=" /opt/envelops/deploy/envelops/.env.prod | cut -d= -f2-)
+docker exec infra-db-1 psql "postgresql://envelops:$DB_PASS@localhost:5432/envelops" -c "SELECT id, name, created_at FROM tenants ORDER BY created_at;"
+# then delete the broken one's dependent rows in this order (no CASCADE
+# constraints in this schema) before the tenants row itself:
+# pipeline_traces, messages, escalations, leads, conversations, channels,
+# knowledge_chunks, knowledge_sources, escalation_trigger_phrases,
+# fake_commerce_products, users -- all keyed by tenant_id -- then tenants by id.
+```
+
+**`seed_calibration_tenant.py` needs `backend/data/bitext_customer_support_27k.csv`
+mounted at runtime** (`-v $(pwd)/backend/data:/app/data` on the `docker
+compose run` command) -- it's real third-party research data, deliberately
+gitignored and not baked into the image. If it isn't already on the VM,
+`scp` it from a machine that has it first.
+
 ## Known failure modes (inherited from IoTOps/AgriTwin's own incident history on this box — check here before re-diagnosing from scratch)
 
 **Shared `infra-nginx-1` silently stops listening on 80/443** (master +
