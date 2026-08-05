@@ -15,5 +15,17 @@ RUN --mount=type=cache,target=/root/.cache/pip \
     pip install -r requirements.txt
 
 COPY app ./app
+# Never needed before this image ran a real migration -- local/CI dev
+# always runs alembic via the host venv (README's documented workflow),
+# so this image never had to carry its own copy. The deploy/envelops
+# `migrate` service (docker-compose.prod.yml) is the first thing to
+# actually invoke `alembic upgrade head` from inside this image; without
+# these two, alembic can't find its own config at all ("No
+# 'script_location' key found in configuration", not a wrong-path error
+# -- it silently falls back to an empty config when alembic.ini isn't
+# where it expects, since alembic.ini's own script_location is relative
+# to alembic.ini's location, not the invoking CWD).
+COPY alembic.ini .
+COPY alembic ./alembic
 
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
