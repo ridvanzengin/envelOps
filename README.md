@@ -4,8 +4,7 @@ AI DM-handling pipeline for small/mid-size businesses — understands intent,
 grounds replies in the business's own knowledge, scores the lead, and
 either auto-sends or pauses for a human at a hard safety gate. Built as a
 demonstration of AI assistant behavior orchestration, safety gating, and
-per-tenant configuration; originally scoped for a real pilot business, now
-a solo portfolio project (see [`docs/ROADMAP.md`](docs/ROADMAP.md)).
+per-tenant configuration.
 
 ![EnvelOps Dashboard](docs/ss.png)
 
