@@ -27,5 +27,10 @@ COPY app ./app
 # to alembic.ini's location, not the invoking CWD).
 COPY alembic.ini .
 COPY alembic ./alembic
+# Same reasoning as alembic above -- `python3 -m scripts.<name>` (README's
+# documented invocation for seed_showcase_tenants.py and friends) had
+# never been run from inside this image before deploying for real either.
+# Without this, ModuleNotFoundError: No module named 'scripts'.
+COPY scripts ./scripts
 
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
