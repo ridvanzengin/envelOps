@@ -107,7 +107,17 @@ services:
     deploy:
       resources:
         limits:
-          memory: 128M
+          # Was 128M, copied from IoTOps's own celery-beat limit without
+          # adjusting for this app's much heavier import footprint
+          # (LangGraph/LangChain/google-genai/SQLAlchemy async, autodiscovered
+          # by app.core.celery_app on startup same as the worker). Confirmed
+          # via dmesg: real OOM-kills, 21 restarts within ~15 minutes of first
+          # deploy, dying before it could even log anything -- sibling
+          # `backend`/`worker` containers (same image) sit at ~145-235MB at
+          # rest even though beat itself never executes a task body. Bumped
+          # to match, not the bare minimum that happened to survive one
+          # observed run.
+          memory: 256M
 
   frontend:
     build:
