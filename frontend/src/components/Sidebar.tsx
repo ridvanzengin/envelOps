@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { NavLink, useLocation } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 
+import { useConversationPanel } from "../context/conversationPanel/useConversationPanel";
 import { useMediaQuery, MOBILE_QUERY } from "../hooks/useMediaQuery";
 import {
   ChannelsIcon,
@@ -51,6 +52,7 @@ export function Sidebar() {
   const isMobile = useMediaQuery(MOBILE_QUERY);
   const [mobileOpen, setMobileOpen] = useState(false);
   const { pathname } = useLocation();
+  const { closePanel } = useConversationPanel();
 
   useEffect(() => {
     window.localStorage.setItem(COLLAPSED_STORAGE_KEY, collapsed ? "1" : "0");
@@ -60,8 +62,19 @@ export function Sidebar() {
   // (same as the sibling reference project's own mobile drawer,
   // iotops-workspace/IoTOps) -- otherwise the drawer stays open over the
   // new page until manually dismissed, which reads as stuck/broken.
+  //
+  // Also closes ConversationPanel on mobile specifically -- found live:
+  // it's a full-screen overlay on mobile (ConversationPanel.css's
+  // .conversation-panel--mobile), not a docked side panel like on
+  // desktop, so leaving it open across a Sidebar navigation covered the
+  // entire new page with no way back short of reopening the hamburger
+  // menu. Desktop's docked panel intentionally keeps persisting across
+  // navigation (it doesn't block anything there), so this is
+  // mobile-only, not a general "always close on nav" change.
   useEffect(() => {
     setMobileOpen(false);
+    if (isMobile) closePanel();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pathname]);
 
   function handleNavLinkClick() {
