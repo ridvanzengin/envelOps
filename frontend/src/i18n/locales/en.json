@@ -20,7 +20,9 @@
     "collapse": "Collapse sidebar",
     "expand": "Expand sidebar",
     "reference": "Reference",
-    "attribution": "Built by Rıdvan Zengin"
+    "attribution": "Built by Rıdvan Zengin",
+    "openMenu": "Open menu",
+    "closeMenu": "Close menu"
   },
   "pages": {
     "knowledge": "Add (URL/PDF/manual), list, and refresh knowledge sources.",
@@ -46,7 +48,9 @@
     "email": "Email",
     "realIntegration": "Real integration",
     "simulatedIntegration": "Simulated integration",
-    "menu": "Account menu"
+    "menu": "Account menu",
+    "openMenu": "Open channels",
+    "title": "Channels"
   },
   "testConsole": {
     "platform": "Platform",

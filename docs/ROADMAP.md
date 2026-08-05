@@ -124,6 +124,68 @@ final, not provisional.
 
 ## Changelog
 
+**2026-08-05, and one more thing after that** — Mobile-device UI (direct
+instruction, using IoTOps's `Sidebar.tsx`/`ActivityBar.tsx`/
+`EventsPanel.tsx` mobile rework as the explicit structural reference).
+Before this, the app shell had no responsive handling at all below
+desktop widths — the left `Sidebar`, right `ChannelRail`, and
+`ConversationPanel` are all fixed-width flex siblings with nowhere to go
+on a phone-width viewport.
+- New `hooks/useMediaQuery.ts` (`MOBILE_QUERY = "(max-width: 640px)"`,
+  matchMedia-backed so it reacts live to rotation/DevTools breakpoint
+  changes) — ported near-verbatim from IoTOps, shared by all three
+  components below.
+- **`Sidebar.tsx`** becomes a `position: fixed` off-canvas drawer on
+  mobile instead of a permanent flex sibling: a fixed hamburger button
+  (top-left, 52×52) plus a `.mobile-topbar` brand strip opens it;
+  closes on backdrop click, its own × button, or navigating (a
+  `useLocation` pathname effect, plus an explicit `onClick` on every
+  `NavLink` for the same reason IoTOps's own comment gives — a route
+  change is what the pathname effect reacts to, not the click itself).
+  The desktop `collapsed` icon-rail state is meaningless once inside the
+  drawer (`effectiveCollapsed = isMobile ? false : collapsed`) — it's
+  either fully open or fully hidden, never a narrow icon column on top
+  of that.
+- **`ChannelRail.tsx`** collapses into a single fixed trigger (top-right,
+  a new `ChatIcon`, badged with the sum of
+  `pendingEscalationCountByChannelType` across every channel) that opens
+  a mirrored right-edge drawer. The existing account menu (language/
+  theme/logout `dropdown-menu`) renders as-is at the top of the drawer
+  instead of being redesigned into separate rows — it's already a
+  self-contained click-to-open dropdown, so nesting it needed no new
+  logic. Each channel becomes a labeled row (icon + name + badge)
+  instead of an icon-only button, closing the drawer explicitly on
+  click (clicking a channel never changes the route, so the pathname
+  effect alone wouldn't close it — same non-navigating-action pattern
+  IoTOps's own `ActivityBar.tsx` documents for its own project clicks).
+- **`ConversationPanel.tsx`** becomes a true `inset: 0` full-screen
+  overlay on mobile (its resize handle and stored-width inline style
+  are both dropped — `isMobile ? undefined : {width}}` lets the
+  overlay's own CSS own sizing entirely) instead of a resizable docked
+  panel. Its header gets `padding-left`/`right: 52px` so its own title/
+  close button don't render underneath the two corner-fixed triggers.
+- Z-index scheme ported directly from IoTOps, same reasoning: mobile
+  topbar 30, corner trigger buttons 46 (stay reachable above the
+  full-screen conversation panel at 45), shared `.sidebar-backdrop` 48,
+  either drawer itself 50 (a drawer's own backdrop necessarily sits
+  *above* the corner buttons while that drawer is open -- reachable
+  through the drawer's own close/backdrop, not by reaching past it to a
+  corner button underneath).
+- `App.css` gets the matching `padding-top: 52px` on `.app-content`
+  (clears the fixed mobile topbar) and a reduced `.page` padding (16px
+  vs. 32px/24px) under the same breakpoint.
+- New `MenuIcon` (`icons.tsx`) — same three-line hamburger shape as
+  IoTOps's own.
+- New i18n keys, both locales: `sidebar.openMenu`/`closeMenu`,
+  `channelRail.openMenu`/`title`.
+- `tsc -b`/`vite build`/`oxlint` all clean. **Not yet live-verified in a
+  real mobile viewport** (skipped this round, direct instruction) —
+  unlike this project's usual practice of a Playwright pass at the
+  target viewport before calling a frontend change done (see e.g. the
+  Test Console Thinking-indicator entry below), so treat the drawer
+  open/close wiring and z-index layering as implemented-from-the-
+  reference-pattern but not yet empirically confirmed end to end.
+
 **2026-08-05, one more thing** — Test Console polish (direct instruction,
 using IoTOps's `CopilotChat.tsx`/`ai/service.py` as the explicit
 reference pattern for both halves of this): the Send button used to

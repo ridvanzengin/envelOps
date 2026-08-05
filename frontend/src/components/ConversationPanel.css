@@ -23,6 +23,37 @@
   background: var(--accent-border);
 }
 
+/* Mobile: full-screen overlay instead of a resizable docked panel -- the
+   inline width style is dropped in ConversationPanel.tsx (isMobile ?
+   undefined : {width}) so this can own sizing entirely. True inset:0 --
+   Sidebar's own mobile hamburger trigger (.mobile-topbar__menu-btn) and
+   ChannelRail's own mobile trigger stay reachable on top of this through
+   their own z-index (46) rather than this panel leaving a permanent gap
+   for them. Mirrors the sibling reference project's own mobile pass
+   (iotops-workspace/IoTOps's EventsPanel.css) almost verbatim. */
+@media (max-width: 640px) {
+  .conversation-panel--mobile .conversation-panel__header {
+    /* Clears Sidebar's floating .mobile-topbar__menu-btn (fixed at
+       left:0, 52px wide) so this panel's own title doesn't render
+       underneath it. Right side clears ChannelRail's own mobile trigger
+       (fixed at right:0, 52px wide) the same way, so this header's own
+       close button doesn't end up underneath *that* -- both now render
+       above this panel (z-index 46 each) specifically so a way back to
+       either drawer doesn't require closing this panel first. */
+    padding-left: 52px;
+    padding-right: 52px;
+  }
+
+  .conversation-panel--mobile {
+    position: fixed;
+    inset: 0;
+    width: 100% !important;
+    height: 100%;
+    z-index: 45;
+    border-left: none;
+  }
+}
+
 .conversation-panel__header {
   display: flex;
   align-items: center;

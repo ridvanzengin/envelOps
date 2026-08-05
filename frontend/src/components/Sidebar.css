@@ -168,3 +168,121 @@
 .sidebar__attribution:hover {
   color: var(--text-h);
 }
+
+/* Mobile: the sidebar becomes an off-canvas drawer (see Sidebar.tsx's
+   mobileOpen state) instead of a permanent flex sibling -- position:fixed
+   takes it out of .app-shell's flex flow entirely, so no width is
+   reserved for it when closed. .mobile-topbar (hamburger + brand) is what
+   opens it; hidden entirely above this breakpoint. Mirrors the sibling
+   reference project's own mobile pass (iotops-workspace/IoTOps's
+   Sidebar.css) almost verbatim -- same breakpoint, same z-index scheme,
+   .sidebar-backdrop shared with ChannelRail's own mobile drawer. */
+.mobile-topbar {
+  display: none;
+}
+
+@media (max-width: 640px) {
+  .mobile-topbar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    position: fixed;
+    top: 0;
+    /* .mobile-topbar__menu-btn is a standalone fixed element (see its own
+       comment below), so this reserves the same space for it via the
+       row's own left bound instead of flex layout, the same way
+       `right: 52px` reserves space for ChannelRail's own mobile trigger
+       on the opposite edge. */
+    left: 52px;
+    right: 52px;
+    height: 52px;
+    padding: 0 12px;
+    box-sizing: border-box;
+    background: var(--bg);
+    border-bottom: 1px solid var(--border);
+    z-index: 30;
+  }
+
+  /* Independent fixed element, not a flex child of .mobile-topbar --
+     .mobile-topbar's own position:fixed + z-index:30 establishes a
+     stacking context for its children, which caps how high any z-index
+     on a *child* can ever visually render: no value would let this
+     button escape above a *sibling* of .mobile-topbar itself, like
+     ConversationPanel's full-screen mobile overlay (z-index 45,
+     ConversationPanel.css) -- it would stay trapped under that overlay
+     regardless. Being its own top-level fixed element (same pattern as
+     ChannelRail's own mobile trigger) sidesteps that entirely, so it
+     stays reachable as a way out of that overlay instead of being
+     covered by it. */
+  .mobile-topbar__menu-btn {
+    position: fixed;
+    top: 0;
+    left: 0;
+    z-index: 46;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 52px;
+    height: 52px;
+    box-sizing: border-box;
+    border: none;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg);
+    color: var(--text-h);
+    cursor: pointer;
+  }
+
+  .mobile-topbar__menu-icon {
+    width: 20px;
+    height: 20px;
+  }
+
+  .mobile-topbar__menu-btn:hover {
+    background: var(--bg-subtle);
+  }
+
+  .mobile-topbar__brand {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 700;
+    font-size: 15px;
+    color: var(--text-h);
+    text-decoration: none;
+  }
+
+  .mobile-topbar__brand-icon {
+    width: 18px;
+    height: 18px;
+    flex-shrink: 0;
+  }
+
+  /* Above .conversation-panel--mobile's own 45 (ConversationPanel.css) --
+     opening either off-canvas drawer (this one or ChannelRail's own,
+     which shares this exact backdrop class) while the conversation panel
+     is already open needs to come out on top of it, not get stacked
+     underneath where it'd be unreachable. */
+  .sidebar-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 48;
+  }
+
+  .sidebar--mobile {
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    width: 260px;
+    min-height: 100svh;
+    z-index: 50;
+    transform: translateX(-100%);
+    transition: transform 0.2s ease;
+    box-shadow: var(--shadow);
+  }
+
+  .sidebar--mobile-open {
+    transform: translateX(0);
+  }
+}

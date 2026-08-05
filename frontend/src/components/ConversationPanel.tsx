@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 
 import type { Conversation, ConversationFilterKey } from "../context/conversationPanel/context";
 import { useConversationPanel } from "../context/conversationPanel/useConversationPanel";
+import { useMediaQuery, MOBILE_QUERY } from "../hooks/useMediaQuery";
 import { useTick } from "../hooks/useTick";
 import { CHANNEL_ICONS } from "../lib/channels";
 import type { ChannelType } from "../lib/channels";
@@ -92,6 +93,7 @@ export function ConversationPanel() {
   // Keeps conversation-list row timestamps live, same as MessageThread's
   // own tick for its per-message timestamps.
   useTick(60_000);
+  const isMobile = useMediaQuery(MOBILE_QUERY);
 
   // Persists across reopens and reloads, same drag-to-resize convention as
   // the sibling reference project's own right-side panel -- the handle
@@ -189,8 +191,13 @@ export function ConversationPanel() {
   const ChannelIcon = activeChannelType ? CHANNEL_ICONS[activeChannelType as ChannelType] : undefined;
 
   return (
-    <aside className="conversation-panel" style={{ width }}>
-      <div className="conversation-panel__resize-handle" onMouseDown={handleResizeStart} />
+    <aside
+      className={`conversation-panel${isMobile ? " conversation-panel--mobile" : ""}`}
+      style={isMobile ? undefined : { width }}
+    >
+      {!isMobile && (
+        <div className="conversation-panel__resize-handle" onMouseDown={handleResizeStart} />
+      )}
       <div className="conversation-panel__header">
         {selectedConversationId !== null && (
           <button
