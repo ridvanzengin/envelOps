@@ -17,7 +17,7 @@
 
 ---
 
-## Current state (as of 2026-08-04)
+## Current state (as of 2026-08-05)
 
 EnvelOps is a solo portfolio project demonstrating AI behavior
 orchestration/safety/configuration — **not** a product being shipped to a
@@ -60,6 +60,14 @@ scope-pivot reasoning. Concretely, right now:
   now the single no-password-login mechanism, at `/auth/demo-tenants` +
   `/auth/demo-login` (renamed from `/auth/dev-tenants`/`/auth/dev-login`).
   See the changelog entries below for the full shape.
+- Demo mode also runs a lightweight background DM streamer now
+  (`stream_demo_dm`/`purge_stale_demo_data`, `app/pipeline/tasks.py`,
+  2026-08-05) — 10-15 simulated inbound DMs/day, spread across every
+  demo tenant and all 5 channel types, through the real pipeline, with a
+  rolling 7-day retention purge. Both tasks only ever run when
+  `demo_mode_enabled` is on. See the changelog entry below for the full
+  shape and why it exists (Test Console's own demo-mode path never
+  touches the real conversation rail at all).
 - All PRs through #50 are merged into `main` (confirmed via `gh pr view
   50 --json state` 2026-08-04) — **check this**: verify the actual PR
   number/state with `gh pr list`/`gh pr view <N> --json state` rather
@@ -115,6 +123,90 @@ auto-send + safety-floor-escalation-only gate (ARCHITECTURE §5) stays
 final, not provisional.
 
 ## Changelog
+
+**2026-08-05** — Lightweight demo DM streaming + rolling retention
+(direct instruction), following a discussion of static-vs-live demo
+data: Test Console's own demo-mode path was found to never touch the
+real conversation rail at all (`_send_test_message_demo` never commits,
+never publishes an SSE event), so a passive demo visitor never saw
+anything move. Two new Celery Beat jobs in `app/pipeline/tasks.py`, both
+gated on `settings.demo_mode_enabled` being True (checked first thing,
+inverted from `follow_up_check`'s own check) so neither can ever write
+to or delete from a real deployment's database on its own — confirmed
+directly before building, not assumed:
+- **`stream_demo_dm`** (hourly tick) fires at most one simulated inbound
+  DM per tick, paced against a 10-15/day target picked once per calendar
+  day and prorated against elapsed time-of-day (`_should_send_now`, a
+  pure function split out for direct unit testing) — self-corrects if a
+  tick is missed rather than relying on an in-memory counter. Sends
+  across all 5 channel types at random, including `telegram` — a
+  deliberate exception to "Telegram is the one real integration"
+  elsewhere in this app, safe here because a Channel row with
+  `bot_token=None` already makes the outbound send path no-op, the same
+  "real pipeline, no real platform contacted" property the other 4 types
+  get from being simulated in the first place.
+  `ChannelRepository.get_demo_stream_channel` never reuses an existing
+  *real* Telegram channel (checks `bot_token IS NULL`, not just
+  `is_test=False`, since a real integration is also `is_test=False`) --
+  covered by an offline SQL-compilation test
+  (`tests/test_channels_repository.py`), same approach
+  `app/commerce/repository.py` already established.
+- **`purge_stale_demo_data`** (daily) deletes conversations — and
+  everything under them: messages, leads, escalations, pipeline traces,
+  in FK-safe order since none of these models declare
+  `ondelete=CASCADE` — whose most recent message is older than 7 days.
+  Direct instruction: applies to *all* demo history uniformly, including
+  the original calibration-seeded conversations, not just newly-streamed
+  ones, so the whole tenant history stays a rolling recent window rather
+  than a mix of old fixed data and new trickle.
+- Refactored `_ingest_inbound_message` out of `app/channels/api.py` into
+  a new `app/channels/service.py` (`ingest_inbound_message`, now public)
+  so both the real webhook handlers and `stream_demo_dm` share the exact
+  same "a DM arrived" logic — find-or-create Conversation, persist
+  Message, commit, publish the live-update event, enqueue
+  `process_incoming_message`. `process_incoming_message` itself is
+  imported lazily inside the function (not at module level) specifically
+  to avoid a circular import, since `app/pipeline/tasks.py` needs to
+  import `ingest_inbound_message` too.
+- Live-verified against the real running stack, not just unit tests: a
+  triggered `stream_demo_dm` run created a real `whatsapp` Channel
+  (`is_test=False`, `bot_token=None`) for Voltage Gadgets that
+  immediately showed up on the real Channels page, ran the real pipeline
+  end to end (Gemini intent/score/reply calls, a real knowledge-search
+  embedding call), and persisted a real reply. A manually-backdated
+  conversation was then correctly purged (and confirmed gone, along with
+  its messages) by a triggered `purge_stale_demo_data` run.
+- Follow-up round, same day, three more live findings while watching
+  real streamed replies:
+  - Several hardcoded demo messages used a dangling "this item"/"this
+    product" reference with nothing to resolve it against, since every
+    streamed DM starts a brand-new conversation with no prior turn —
+    reworded to be self-contained (e.g. "Is this item currently in
+    stock?" → dropped; "What's the estimated delivery time to my area?"
+    → "...for domestic orders?", matching knowledge both tenants already
+    have).
+  - The same message pool is shared across every demo tenant regardless
+    of vertical, so apparel-specific sizing questions ("what sizes are
+    available?", "exchange for a different size") read as nonsensical
+    coming from an electronics-shop customer — removed from the shared
+    pool entirely (each tenant's own knowledge base still covers sizing
+    for anyone who asks it organically, e.g. via Test Console).
+  - Direct instruction: both calibration tenants set to formal/
+    professional by default across every tone-bearing option, not just
+    `BehaviorAreaBase`'s own friendly/casual defaults — `greeting`,
+    `off_topic`, `knowledge_query`, and `escalation_cover` all set to
+    `tone="formal_business"`, plus an explicit `formal_email` /
+    `include_greeting` / `include_sign_off` / `as_needed`-length
+    `channel_overrides` entry for all 5 channel types. Applied to both
+    `scripts/seed_calibration_tenant.py` (future fresh seeds) and
+    directly to the two already-seeded live tenants. Also added new
+    knowledge chunks to both tenants (damaged/defective-item refund
+    policy — Wildroot's phrased to explicitly answer "do you have a
+    warranty?" too, since the first version didn't ground confidently
+    enough and escalated live — promotions, most-popular-product, and
+    order-tracking-via-the-assistant) so the streamed question pool has
+    real facts to ground an ANSWERED reply in rather than escalating.
+  - 394 backend tests pass (12 new), `ruff`/`mypy` clean.
 
 **2026-08-04, later still, another round** — The singular/plural-only
 fix from the round below turned out insufficient once tested further:

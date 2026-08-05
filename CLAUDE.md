@@ -149,11 +149,13 @@ all three share this one Dockerfile.
   uvicorn app.main:app --reload`
 - Celery worker, without Docker: `celery -A app.core.celery_app worker
   --loglevel=info`
-- Celery beat (periodic jobs — currently just `follow_up_check`, every 30
-  minutes), without Docker: `celery -A app.core.celery_app beat
-  --loglevel=info` — a separate process from the worker above, both need
-  to be running for `follow_up_check` to actually fire. `docker compose
-  up` starts both (`worker` + `beat` services) already.
+- Celery beat (periodic jobs — `follow_up_check` every 30 minutes;
+  `stream_demo_dm` hourly and `purge_stale_demo_data` daily, both added
+  2026-08-05 and both no-ops unless `demo_mode_enabled` is on), without
+  Docker: `celery -A app.core.celery_app beat --loglevel=info` — a
+  separate process from the worker above, both need to be running for
+  any of these to actually fire. `docker compose up` starts both
+  (`worker` + `beat` services) already.
 - Health check once running: `curl localhost:8000/healthz`
 - Connecting a real Telegram channel: create a tenant (no API for this
   yet — insert directly or via a script), get a bot token from

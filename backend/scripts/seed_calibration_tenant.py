@@ -58,11 +58,33 @@ from app.core.llm import embed_text
 from app.knowledge.models import KnowledgeChunk, KnowledgeSource
 from app.tenants.behavior_config import (
     BookOrCheckoutConfig,
+    ChannelToneConfig,
     ComplaintConfig,
+    EscalationCoverConfig,
+    GreetingConfig,
+    KnowledgeQueryConfig,
+    OffTopicConfig,
     TenantBehaviorConfig,
     ToolCallingConfig,
 )
 from app.tenants.models import Tenant
+
+# Direct instruction (2026-08-05): every calibration tenant is
+# formal/professional by default across every tone-bearing option, not
+# just left on BehaviorAreaBase's own "friendly_business"/"casual_chat"
+# defaults -- both the shared BusinessTone areas and a per-channel
+# override for all 5 channel types (matching the demo DM streamer's own
+# _DEMO_STREAM_CHANNEL_TYPES, app/pipeline/tasks.py, which now sends
+# across all 5 at random).
+_FORMAL_CHANNEL_OVERRIDES = {
+    channel_type: ChannelToneConfig(
+        formality="formal_email",
+        include_greeting=True,
+        include_sign_off=True,
+        length_guidance="as_needed",
+    )
+    for channel_type in ("telegram", "instagram", "whatsapp", "facebook", "email")
+}
 
 API_BASE_URL = "http://localhost:8000"
 CSV_PATH = Path(__file__).resolve().parents[1] / "data" / "bitext_customer_support_27k.csv"
@@ -160,11 +182,36 @@ CALIBRATION_TENANTS: list[TenantSpec] = [
             "be modified.",
             "We accept Visa, Mastercard, Amex, PayPal, and Klarna "
             "installment payments (4 interest-free payments).",
+            # Added 2026-08-05 to give the demo DM streamer's own question
+            # set (app/pipeline/tasks.py's _DEMO_STREAM_MESSAGES) something
+            # concrete to ground an ANSWERED reply in, instead of an
+            # avoidable knowledge-gap escalation.
+            "We don't offer a separate product warranty -- instead, if an "
+            "item arrives damaged or defective, we offer a full refund "
+            "or a free replacement -- reply with a photo of the issue "
+            "and we'll take care of it right away, no need to wait for "
+            "the standard 30-day return window.",
+            "We run seasonal promotions and discount codes a few times a "
+            "year, announced by email and on our social channels; there "
+            "is no permanent storewide discount.",
+            "Our best-selling item is the Oversized Hoodie, available in "
+            "sizes S through XL; the Graphic Tee and Cargo Joggers are "
+            "also customer favorites. We carry apparel from size XS "
+            "through XXL depending on the style.",
+            "Once an order ships, a tracking number is emailed "
+            "automatically; a customer can also ask us for a real-time "
+            "order status update at any time by providing their order "
+            "number.",
         ],
         behavior_config=TenantBehaviorConfig(
+            greeting=GreetingConfig(tone="formal_business"),
+            off_topic=OffTopicConfig(tone="formal_business"),
+            knowledge_query=KnowledgeQueryConfig(tone="formal_business"),
             complaint=ComplaintConfig(empathetic_acknowledgment=True),
+            escalation_cover=EscalationCoverConfig(tone="formal_business"),
             book_or_checkout=BookOrCheckoutConfig(cta_style="direct_cta"),
             tool_calling=ToolCallingConfig(inventory_check_enabled=True),
+            channel_overrides=dict(_FORMAL_CHANNEL_OVERRIDES),
             general_context=(
                 "Wildroot Apparel Co is an online-only streetwear brand; "
                 "no physical retail locations, ships from a single US "
@@ -237,13 +284,38 @@ CALIBRATION_TENANTS: list[TenantSpec] = [
             "Orders can be modified within 30 minutes of placing them; "
             "after that they enter our fulfillment queue and can't be "
             "changed, only cancelled if not yet shipped.",
+            # Added 2026-08-05, same reasoning as Wildroot's own new
+            # chunks above -- gives the demo DM streamer's question set
+            # something concrete to ground an ANSWERED reply in.
+            "A damaged or defective item is always eligible for a full "
+            "refund or replacement, regardless of the 15-day return "
+            "window or restocking fee that applies to non-defective "
+            "returns -- just let us know and send a photo if possible.",
+            "We don't run a fixed year-round discount, but we do offer "
+            "promotional pricing during major sales periods like Black "
+            "Friday and back-to-school season.",
+            "Our most popular product is the SmartHome Hub X1, our "
+            "flagship smart-home device; the Wireless Earbuds Pro and "
+            "Portable Power Bank are also top sellers.",
+            "Our wearable devices, like the FitTrack Band, come in S/M/L "
+            "band sizes; all of our other electronics (hubs, earbuds, "
+            "power banks, smart plugs) are one-size.",
+            "Once an order ships, a tracking number is emailed "
+            "automatically; a customer can also ask us for a real-time "
+            "order status update at any time by providing their order "
+            "number.",
         ],
         behavior_config=TenantBehaviorConfig(
+            greeting=GreetingConfig(tone="formal_business"),
+            off_topic=OffTopicConfig(tone="formal_business"),
+            knowledge_query=KnowledgeQueryConfig(tone="formal_business"),
             complaint=ComplaintConfig(empathetic_acknowledgment=True),
+            escalation_cover=EscalationCoverConfig(tone="formal_business"),
             book_or_checkout=BookOrCheckoutConfig(cta_style="direct_cta"),
             tool_calling=ToolCallingConfig(
                 order_status_lookup_enabled=True, inventory_check_enabled=True
             ),
+            channel_overrides=dict(_FORMAL_CHANNEL_OVERRIDES),
             general_context=(
                 "Voltage Gadgets is an online-only consumer electronics "
                 "retailer specializing in smart home devices, wearables, "

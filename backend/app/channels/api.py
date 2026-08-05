@@ -5,20 +5,16 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import CurrentUser, get_current_user
-from app.channels.models import Channel
 from app.channels.repository import ChannelRepository
+from app.channels.service import ingest_inbound_message
 from app.channels.simulated_client import (
     EmailWebhookPayload,
     MetaMessagingEvent,
     WhatsAppMessage,
 )
 from app.channels.telegram_client import TelegramUpdate
-from app.conversations.models import Conversation, Message
-from app.conversations.repository import ConversationRepository, MessageRepository
 from app.core.db import get_session
 from app.core.demo_mode import block_in_demo_mode
-from app.core.events import publish_event
-from app.pipeline.tasks import process_incoming_message
 
 router = APIRouter(prefix="/channels", tags=["channels"])
 
@@ -87,64 +83,6 @@ async def update_channel_ai(
 _SIMULATED_SECRET_HEADER = "X-EnvelOps-Simulated-Webhook-Secret"
 
 
-async def _ingest_inbound_message(
-    channel: Channel, external_contact_id: str, text: str, session: AsyncSession
-) -> None:
-    """The part of "a DM arrived" that's identical across every channel,
-    real or simulated: find-or-create the Conversation, persist the
-    inbound Message, commit, publish the live-update event, and hand off
-    to the pipeline. Telegram's own handler calls this too, after its
-    Telegram-specific parsing/auth."""
-    conversation_repo = ConversationRepository(session)
-    conversation = await conversation_repo.get_by_external_contact(
-        channel.tenant_id, channel.id, external_contact_id
-    )
-    if conversation is None:
-        conversation = await conversation_repo.add(
-            Conversation(
-                tenant_id=channel.tenant_id,
-                channel_id=channel.id,
-                external_contact_id=external_contact_id,
-            )
-        )
-
-    message_repo = MessageRepository(session)
-    inbound_message = await message_repo.add(
-        Message(
-            tenant_id=channel.tenant_id,
-            conversation_id=conversation.id,
-            direction="inbound",
-            text=text,
-        )
-    )
-    # Committed here, in the webhook handler's own session/transaction --
-    # the pipeline run happens in a separate session inside the Celery
-    # task (ARCHITECTURE §8: kept out of the handler so the caller gets a
-    # fast response), not this one.
-    await session.commit()
-
-    # docs/ROADMAP.md §3.5 -- lets an already-open rail update without a
-    # manual refetch. Best-effort: a live-update push is a nice-to-have,
-    # not a guarantee the inbound message itself already is (it's
-    # committed above regardless of whether anyone's listening).
-    await publish_event(
-        channel.tenant_id,
-        {
-            "type": "message",
-            "channel_type": channel.type,
-            "conversation_id": str(conversation.id),
-        },
-    )
-
-    process_incoming_message.delay(
-        str(channel.tenant_id),
-        str(conversation.id),
-        str(channel.id),
-        str(inbound_message.id),
-        text,
-    )
-
-
 @router.post("/telegram/{channel_id}/webhook")
 async def telegram_webhook(
     channel_id: uuid.UUID,
@@ -169,7 +107,7 @@ async def telegram_webhook(
         # retries non-2xx responses, and there's nothing here to retry.
         return {"status": "ignored"}
 
-    await _ingest_inbound_message(
+    await ingest_inbound_message(
         channel, str(update.message.chat.id), update.message.text, session
     )
     return {"status": "accepted"}
@@ -191,7 +129,7 @@ async def _simulated_webhook(
         raise HTTPException(status.HTTP_403_FORBIDDEN, "invalid secret token")
     if not text:
         return {"status": "ignored"}
-    await _ingest_inbound_message(channel, external_contact_id, text, session)
+    await ingest_inbound_message(channel, external_contact_id, text, session)
     return {"status": "accepted"}
 
 
