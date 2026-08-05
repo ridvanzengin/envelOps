@@ -124,6 +124,46 @@ final, not provisional.
 
 ## Changelog
 
+**2026-08-05, later same day** — FAQ (`url`) and Terms of Service
+(`pdf`) knowledge sources added for both calibration tenants (direct
+instruction), rounding out a tenant's knowledge library with the two
+source *types* the real Knowledge Sources UI supports (besides `manual`)
+that neither tenant had exercised before.
+- New `scripts/seed_calibration_tenant.py` helper, `_add_chunked_source`:
+  seeds one `KnowledgeSource` + its chunks from a long text block run
+  through the real `chunk_text()` splitter — unlike `knowledge`'s one-
+  chunk-per-hand-written-fact, this produces a multi-chunk source shaped
+  like a genuinely-ingested document, matching what a real url/pdf
+  upload through `app/knowledge/api.py` would produce.
+- Never actually fetches the fake FAQ URL or parses a real PDF file, and
+  deliberately doesn't need to: `app/knowledge/api.py`'s own docstrings
+  note this app never retains the original HTML/PDF bytes after
+  ingestion anyway, only the extracted+chunked text — hand-seeding that
+  text directly produces an identical end state for a fraction of the
+  complexity and no new PDF-writing dependency.
+- The FAQ URL uses the `.invalid` TLD (RFC 2606 — reserved, guaranteed
+  to never resolve), deliberately *not* the `.example.com` convention
+  `Tenant.closing_link` already uses elsewhere in this script: a
+  closing_link is only ever rendered as text, never fetched by this
+  app's own code, but a `url` source's `source_uri` can be (a real
+  "Refresh" click does a real `fetch_url`) — `.example.com` actually
+  resolves and would silently overwrite the hand-seeded FAQ content with
+  placeholder garbage on refresh, while `.invalid` fails DNS cleanly, so
+  a refresh attempt gets an honest 400 instead of silent corruption.
+  Acceptable either way since demo mode blocks refresh entirely.
+- Applied to both the seed script (future fresh seeds) and directly to
+  the two already-seeded live tenants.
+- Live-verified through the real pipeline, not just checking the DB: a
+  Wildroot question only answerable from the new FAQ content ("do you
+  offer gift cards?") got a correct, direct, formally-toned answer
+  pulled from that source. A more compound Voltage Gadgets warranty
+  question didn't ground as cleanly (escalated instead of citing the
+  ToS's specific misuse clause) — ordinary top-k vector-retrieval
+  imprecision now that each tenant has more chunks competing for the
+  same slots, not a regression from this change.
+- 394 backend tests pass (unchanged — no new test surface, this is
+  content/seeding only), `ruff`/`mypy` clean.
+
 **2026-08-05** — Lightweight demo DM streaming + rolling retention
 (direct instruction), following a discussion of static-vs-live demo
 data: Test Console's own demo-mode path was found to never touch the
