@@ -729,6 +729,49 @@ Channels' real AI on/off switch — none of that adds a new real channel
 integration or e-commerce connector, just management UI/behavior around
 the ones (real and simulated) that already existed; see §10's own note.
 
+## 13. Public demo mode (2026-08-04)
+
+Added after Phase 1 itself was otherwise done, so it's numbered after
+§12 rather than folded into an earlier section and shifting every
+existing cross-reference (`ROADMAP.md`/`CLAUDE.md` both cite specific
+§ numbers above). One flag, `ENVELOPS_DEMO_MODE_ENABLED`
+(`app/core/config.py`), makes the whole deployment safe to point the
+public at — this is what `envelops.site` actually runs.
+
+- **Every mutating endpoint 403s** — a shared FastAPI dependency
+  (`app/core/demo_mode.py`) applied at the API layer, not just a
+  frontend disable: knowledge-source CRUD, tenant settings, escalation
+  resolve/trigger-phrase add-delete, the channel AI toggle, and all 5
+  inbound channel webhooks. `follow_up_check` (Celery Beat) skips
+  entirely, since a background job isn't reachable through the API gate
+  at all.
+- **Test Console is the deliberate exception** — it still runs the real
+  pipeline (real Gemini calls, real knowledge search) but never creates
+  a `Channel`/`Conversation` row or writes a `Message`/`PipelineTrace`
+  row. Swaps the Postgres checkpointer for an in-memory `MemorySaver`
+  and keeps per-session history in a process-local dict instead, keyed
+  the same way a real `Conversation` lookup would be — the point of Test
+  Console is that it still runs, unlike everything else this flag blocks
+  outright.
+- **Auth**: the frontend skips the login screen entirely
+  (`GET /system/demo-mode` + `GET /auth/demo-tenants` +
+  `POST /auth/demo-login`) in favor of a tenant-switcher dropdown on the
+  Dashboard — a complete authentication bypass for whichever tenants
+  exist, not a lesser-privilege mode. This replaced an earlier, separate
+  `dev_auth_bypass_enabled` flag and Login-page dev switcher (removed
+  2026-08-04) once demo mode covered the identical no-password need.
+- **Keeping the live site feeling alive**: two Celery Beat jobs, both
+  gated on this same flag being on (inverted from every other job's own
+  check, so neither can ever touch a real deployment's database).
+  `stream_demo_dm` fires simulated inbound DMs (10–15/day, paced and
+  prorated across the day, spread across every tenant and all 5 channel
+  types — including Telegram, safe because the channel row it creates
+  has no `bot_token`, so the real-send path already no-ops) through the
+  real pipeline. `purge_stale_demo_data` deletes any conversation (and
+  everything under it) whose most recent message is older than 7 days,
+  applied uniformly across the whole tenant history, not just newly
+  streamed data.
+
 ---
 
 *This document plus `REQUIREMENTS.md` together are the reference for

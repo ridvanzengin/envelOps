@@ -8,70 +8,76 @@
 > verified) is not kept here once an item ships; the Changelog below is a
 > one-line-per-item pointer, not a write-up. Reusable engineering gotchas
 > (not just "this one bug") live in `CLAUDE.md` instead, so they survive
-> this kind of pruning.
+> this kind of pruning; deploy-specific failure modes live in
+> `.claude/skills/deploy/SKILL.md` the same way.
 >
 > Housekeeping pass 2026-07-31: this file was ~1800 lines of full
-> session write-ups. Condensed to open items + a compact changelog: same
-> content class as `git log`, not a substitute for it — check `git log
-> --merges` / `gh pr view <N>` for the real detail behind any entry below.
+> session write-ups. Condensed to open items + a compact changelog.
+>
+> Housekeeping pass 2026-08-05 (development for Phase 1 is now finished):
+> back up to ~1030 lines — the same drift the first pass fixed, mostly
+> from very detailed same-day changelog entries written during active
+> development. Condensed again, same policy: check `git log --merges` /
+> `gh pr view <N>` for the full narrative behind any entry below, not
+> this file. Nothing below is deleted from history, only from this
+> document — every PR still has its own full commit message.
 
 ---
 
 ## Current state (as of 2026-08-05)
 
-EnvelOps is a solo portfolio project demonstrating AI behavior
-orchestration/safety/configuration — **not** a product being shipped to a
-real business. The original pilot (a friend's honey business) is
-deprioritized; see the Changelog's 2026-07-31 entries for the full
-scope-pivot reasoning. Concretely, right now:
+**Phase 1 development is finished.** EnvelOps is a solo portfolio project
+demonstrating AI behavior orchestration/safety/configuration — **not** a
+product being shipped to a real business. The original pilot (a friend's
+honey business) is deprioritized; see `REQUIREMENTS.md`'s own status
+update at its top for the full scope-pivot reasoning. It's **live and
+open source**:
 
+- **Live at [envelops.site](https://envelops.site)**, in public read-only
+  demo mode, deployed on a shared Hetzner VM alongside two sibling
+  projects (IoTOps, AgriTwin). See `deploy/SERVER_SETUP.md` and
+  `.claude/skills/deploy/SKILL.md` for the deployment topology and
+  operating playbook.
+- **Open source, MIT licensed** (`LICENSE`) — mentioned explicitly in the
+  README and the in-app Documentation page, not just implied by a badge.
 - **Telegram** is the one real channel integration. Instagram/WhatsApp/
   Facebook/Email are simulated (`app/channels/simulated_client.py`) — real
   pipeline, webhook-shaped entry points, no real platform contacted.
 - Order-status/inventory lookup use **real** Gemini tool-calling over a
   **real** internal HTTP call (`app/commerce/connectors.py`) to a
   **fake** commerce-platform endpoint this same backend also mounts
-  (`app/commerce/fake_platform_api.py`, 2026-08-04), grounded in a real,
-  bounded per-tenant catalog — not a real Shopify/WooCommerce
-  integration, never reachable from outside this backend.
+  (`app/commerce/fake_platform_api.py`), grounded in a real, bounded
+  per-tenant catalog — not a real Shopify/WooCommerce integration, never
+  reachable from outside this backend.
 - Turkish/bilingual pipeline support is cut, fully, including
   `escalation/safety_gate.py`'s own pattern lists. Frontend i18n UI chrome
   (`react-i18next`) is untouched and unrelated.
 - Two calibration tenants are seeded (Wildroot Apparel Co, Voltage
-  Gadgets), each run against ~28 real Bitext-sampled customer-support DMs
-  via `scripts/seed_calibration_tenant.py` — the current primary way new
-  tenant configs get exercised, replacing the original synthetic-then-
-  real-pilot validation plan (REQUIREMENTS §12).
-- The Dashboard page is real now (stats/trend/donut intent breakdown/
-  channels table/knowledge status, all live tenant data) — no more open
-  items carried in this file as of PR #46.
-- Channels and Integrations are new nav pages. Integrations stays a
-  static preview, no backend — real e-commerce connectors stay out of
-  scope (ARCHITECTURE §12). Channels is now partly real: it lists the
-  tenant's actual channels with a **working per-channel AI auto-reply
-  on/off switch** (`GET /channels/connected`/`PATCH /channels/{id}`) —
-  real channel *creation* is still script-only.
+  Gadgets), each run against real Bitext-sampled customer-support DMs via
+  `scripts/seed_calibration_tenant.py` — the primary way tenant configs
+  get exercised.
+- Dashboard, Channels, Integrations, Test Console, Knowledge Sources, and
+  Settings are all real, built-out screens — no placeholder pages remain.
+  Integrations stays a deliberate static preview (real e-commerce
+  connectors are out of scope); Channels lists real channels with a
+  working per-channel AI auto-reply toggle, but channel *creation* is
+  still script-only.
 - A public, read-only demo mode exists (`ENVELOPS_DEMO_MODE_ENABLED`,
   `app/core/demo_mode.py`) — every mutating endpoint 403s, Test Console
   stays real but persistence-free, and the frontend skips login entirely
-  in favor of a real dropdown-menu tenant switcher on the Dashboard. The
-  old, separate `dev_auth_bypass_enabled` flag and Login page's own
-  dev-only tenant switcher are gone (decided 2026-08-04) — demo mode is
-  now the single no-password-login mechanism, at `/auth/demo-tenants` +
-  `/auth/demo-login` (renamed from `/auth/dev-tenants`/`/auth/dev-login`).
-  See the changelog entries below for the full shape.
-- Demo mode also runs a lightweight background DM streamer now
-  (`stream_demo_dm`/`purge_stale_demo_data`, `app/pipeline/tasks.py`,
-  2026-08-05) — 10-15 simulated inbound DMs/day, spread across every
-  demo tenant and all 5 channel types, through the real pipeline, with a
-  rolling 7-day retention purge. Both tasks only ever run when
-  `demo_mode_enabled` is on. See the changelog entry below for the full
-  shape and why it exists (Test Console's own demo-mode path never
-  touches the real conversation rail at all).
-- All PRs through #50 are merged into `main` (confirmed via `gh pr view
-  50 --json state` 2026-08-04) — **check this**: verify the actual PR
-  number/state with `gh pr list`/`gh pr view <N> --json state` rather
-  than trusting this file, which goes stale between sessions.
+  in favor of a dropdown-menu tenant switcher. It's also what
+  `stream_demo_dm`/`purge_stale_demo_data` (Celery Beat) key off to keep
+  the live site feeling alive — 10–15 simulated inbound DMs/day across
+  every tenant and all 5 channel types, with a rolling 7-day retention
+  purge. Both jobs only ever run when `demo_mode_enabled` is on.
+- The frontend has a mobile-device layout (off-canvas drawers for
+  `Sidebar`/`ChannelRail`, a full-screen `ConversationPanel` overlay
+  below 640px) — implemented but not yet live-verified in a real mobile
+  viewport.
+- 400+ backend tests pass, `ruff`/`mypy` clean; frontend `tsc -b`/
+  `vite build`/`oxlint` clean. Check `gh pr list --state merged` rather
+  than trusting a PR number in this file, which goes stale between
+  sessions.
 
 ## Open items
 
@@ -82,18 +88,25 @@ Real, not yet designed in detail, not currently being worked:
   actually depend on `understand_intent`'s output, so parallelizing those
   two is a viable future latency win).
 - **A "Markdown" knowledge-source type** — deliberately excluded from the
-  knowledge-sources redesign (PR #43) since it isn't real backend
-  capability yet; would need a small ingestion addition, not a redesign.
-- **Safety floor has no weapons/regulated-goods pattern category**, found
-  2026-08-04 the same session as the bounded-commerce-catalog fix below
-  (see that changelog entry) — `escalation/safety_gate.py`'s Layer 1 only
-  covers contraindication/symptom/outcome-guarantee language (all
-  health-adjacent), so a weapons query never has a chance to trip it
-  regardless of phrasing. Complementary to, not overlapping with, that
-  fix — the bounded catalog only protects against *off-catalog* queries,
-  not a tenant whose real catalog legitimately contains something
-  regulated. Not yet designed in detail; likely shape is a new pattern
-  category alongside the existing three, platform-enforced the same way.
+  knowledge-sources redesign since it isn't real backend capability yet;
+  would need a small ingestion addition, not a redesign.
+- **Safety floor has no weapons/regulated-goods pattern category** —
+  `escalation/safety_gate.py`'s Layer 1 only covers contraindication/
+  symptom/outcome-guarantee language (all health-adjacent), so a weapons
+  query never has a chance to trip it regardless of phrasing.
+  Complementary to, not overlapping with, the bounded fake-commerce
+  catalog fix — that only protects against *off-catalog* queries, not a
+  tenant whose real catalog legitimately contains something regulated.
+  Not yet designed in detail; likely shape is a new pattern category
+  alongside the existing three, platform-enforced the same way.
+- **Mobile UI not yet live-verified** in a real mobile viewport (see
+  Current state above) — implemented from a reference pattern, drawer
+  open/close wiring and z-index layering not yet empirically confirmed
+  end to end.
+- **Whether the deploy PRs' own commit messages are a sufficient
+  changelog trace going forward**, now that this file's changelog is
+  deliberately terse again — worth revisiting if that starts feeling
+  thin in practice.
 
 **Longer-horizon, deferred not cut** (REQUIREMENTS §10/§13 have the full
 reasoning, not duplicated here since these are phase-level, not
@@ -109,894 +122,138 @@ from); real Instagram/WhatsApp/Facebook Messenger integrations and real
 commerce connectors (Shopify/WooCommerce/etc. — simulated versions ship
 instead); Turkish/bilingual pipeline support; `book_or_checkout` beyond a
 static link (a real per-order checkout/booking connector); ROI/ad-spend
-attribution and a multi-model prompt playground (cut early as scope
-creep). **Added 2026-07-31, same pivot logic** — real-business-ops
-concerns that don't add to what this project actually demonstrates:
-human-paused conversations (a human replying directly outside the
-pipeline — the conversation thread view's read-only state is now a
-settled design choice, not a placeholder for this, see ARCHITECTURE
-§10); channel failure behavior beyond the health-check stub; data
-retention/deletion policy specifics; and whether/when general
-draft-and-approve comes back (including draft-approval timeout/
-notification mechanics, which only mattered if it did) — Phase 1's
+attribution and a multi-model prompt playground; human-paused
+conversations (the conversation thread view's read-only state is a
+settled design choice, see ARCHITECTURE §10); channel failure behavior
+beyond the health-check stub; data retention/deletion policy specifics;
+and whether/when general draft-and-approve comes back — Phase 1's
 auto-send + safety-floor-escalation-only gate (ARCHITECTURE §5) stays
 final, not provisional.
 
 ## Changelog
 
-**2026-08-05, first real bug from production traffic** — Reported live:
-clicking the first celery-beat `stream_demo_dm`-seeded conversation on
-the conversation rail showed "Couldn't load this conversation's
-messages. Try again." Root cause was **nginx, not application code** —
-`deploy/nginx/envelops.conf`'s `location = /conversations`/
-`location = /escalations` blocks (added in PR #59) are exact-match only;
-that PR's own comment already claimed a trailing-slash companion
-location existed for nested paths, but it was never actually written.
-Every nested path under either prefix — `GET /conversations/{id}/
-messages`, `POST /escalations/{id}/resolve`, the trigger-phrase CRUD
-under `/escalations/trigger-phrases` — matched no backend rule and fell
-through to the catch-all `location /`, which proxies to the *frontend*
-container. That silently returned `index.html` (`200 OK`, `text/html`)
-instead of a 404 or JSON. `apiGet()`'s catch block only special-cases a
-401 `ApiError`; a `JSON.parse()` `SyntaxError` on HTML content falls
-into the same generic "couldn't load" message every other failure
-mode does, so this read as an application bug from the browser, not a
-routing gap — confirmed instead via `curl -sI
-https://envelops.site/conversations/<uuid>/messages` returning
-`text/html` directly, and cross-checking `/escalations/trigger-phrases`
-the same way once the pattern was suspected (also broken, same cause —
-this affected resolving escalations and the Settings trigger-phrase UI
-in production too, not just the conversation thread that surfaced it).
-Fixed by adding the missing `location /conversations/ {...}` and
-`location /escalations/ {...}` trailing-slash blocks, identical
-`proxy_pass` to their exact-match siblings — the same pattern every
-other backend prefix in this file already uses. Deployed live; both
-routes confirmed returning real backend responses afterward, IoTOps/
-AgriTwin confirmed unaffected (shared nginx).
+Terse, newest first — one entry (or a short group) per work session, PR
+number where known. Full detail lives in `git log --merges` / `gh pr
+view <N>`, not here.
 
-**2026-08-05, first production launch** — EnvelOps went live at
-https://envelops.site (PRs #59–64), reusing the same shared Hetzner VM
-("ringo") already hosting IoTOps and AgriTwin rather than standing up
-new infrastructure — same pattern as those two sibling projects.
-- **`deploy/` added** (PR #59): `SERVER_SETUP.md` (numbered fresh-server
-  playbook), `deploy/envelops/{docker-compose.prod.yml,.env.prod.example}`,
-  `deploy/nginx/envelops.conf`, `deploy/scripts/deploy.sh`,
-  `deploy/systemd/envelops-app.service`, and a new production frontend
-  build (`docker/frontend/{Dockerfile.prod,nginx.conf}` — only a dev-mode
-  Vite server existed before this). New `.claude/skills/deploy/SKILL.md`
-  for routine operation.
-- **Shared-infra decisions**: Postgres reuses `infra-db-1` (confirmed
-  pgvector 0.8.3 already ships in the `timescaledb-ha:pg16` image, just
-  needed enabling for a new `envelops` database/user, same pattern as
-  the existing `iotops`/`agritwin` databases already coexisting there).
-  Redis reuses `infra-redis-1` at DB index 2 (0 and 1 already taken by
-  the sibling apps' own brokers/keys). No Docker socket mount, unlike
-  IoTOps — this app doesn't manage sibling containers. `celery-worker`
-  starts at `--concurrency=2` from day one, not the `os.cpu_count()`
-  default that OOM-killed IoTOps's own worker on this same VM before —
-  applying that lesson pre-emptively instead of rediscovering it here
-  too.
-- **Three real bugs found and fixed the same day, live**: the backend
-  Dockerfile only ever copied `app/` — `alembic upgrade head` and every
-  `python3 -m scripts.*` invocation both failed inside the built image
-  until `alembic.ini`/`alembic/`/`scripts/` were added to the `COPY`
-  list (PRs #60–61, first real use of either from inside a container).
-  `celery-beat` OOM-crash-looped at IoTOps's inherited 128M memory limit
-  — this app's Celery import footprint (LangGraph/LangChain/google-genai/
-  SQLAlchemy async) is heavier, confirmed via `dmesg` real OOM-kills, 21
-  restarts in ~15 minutes; bumped to 256M against the ~145–235MB
-  baseline `backend`/`worker` (same image) actually sit at (PR #62).
-  `seed_calibration_tenant.py` had `API_BASE_URL` hardcoded to
-  `http://localhost:8000` — correct for host dev, `httpx.ConnectError`
-  every time against production (which publishes no host ports); fixed
-  to reuse `ENVELOPS_INTERNAL_API_BASE_URL`, the same self-referential
-  setting `app/commerce/connectors.py` already relied on for the
-  identical problem (PR #63).
-- **Also found and documented, not code fixes**: Postgres 15+ no longer
-  grants schema-level `CREATE` from a database-level `GRANT` alone —
-  `migrate`'s first `CREATE TABLE` failed with `permission denied for
-  schema public` until `GRANT ALL ON SCHEMA public` was added to
-  `SERVER_SETUP.md` step 4. Decided live to seed with
-  `seed_calibration_tenant.py` (Wildroot Apparel Co, Voltage Gadgets),
-  not the now-deleted `seed_showcase_tenants.py` — see this file's own
-  "post-deploy cleanup" entry below for what that led to. Confirmed live
-  (twice, burning real Gemini quota both times before diagnosing it):
-  `ENVELOPS_DEMO_MODE_ENABLED=true` silently discards Test Console-seeded
-  conversations regardless of how the caller authenticated, despite the
-  seed script's own docstring claiming immunity via its real (non-bypass)
-  login — `app/test_console/api.py`'s demo-mode check doesn't
-  distinguish. `SERVER_SETUP.md` step 7 documents both the "conversations
-  are optional, tenants aren't" workaround and the "temporarily flip
-  demo mode off" procedure for anyone who wants real seeded conversations
-  later (PR #64, `.claude/skills/deploy/SKILL.md`'s own new-to-this-app
-  Known Failure Modes section).
-- Not yet checked end-to-end at the time of this entry: whether
-  production's own live traffic (celery-beat's `stream_demo_dm`, real
-  visitor usage) surfaces anything the pre-launch testing didn't —
-  first real signal of that is the very next changelog entry below.
+**2026-08-05** — Open-sourced under MIT (`LICENSE`; README and in-app
+docs both mention it explicitly, not just via a badge); in-app docs'
+test-count stat refreshed and a Demo Mode feature card added (PR #68).
+This file (and `REQUIREMENTS.md`/`ARCHITECTURE.md`, checked but left
+alone — see their own housekeeping notes) condensed as part of the same
+pass.
 
-**2026-08-05, post-deploy cleanup** — First production deploy (PRs
-#59–64: `deploy/` infra, Dockerfile/celery-beat/hardcoded-localhost
-fixes) surfaced `scripts/seed_showcase_tenants.py` as dead weight —
-`deploy/SERVER_SETUP.md` step 7 had already, on the day of that deploy,
-documented choosing `seed_calibration_tenant.py` over it live and
-deleting its seeded tenants from production. Asked to check for other
-stale files/docs starting from that one; found a real cascading
-staleness chain, not just the one script:
-- `seed_showcase_tenants.py` itself predated the 2026-07-31 Turkish/
-  bilingual pipeline cut and was never updated after — still contained a
-  literal Turkish scenario message. Not referenced anywhere in CLAUDE.md's
-  Commands section (only `seed_calibration_tenant.py` is called "the
-  current primary way").
-- `scripts/run_bitext_stress_test.py` hard-depended on it (logged in as
-  `owner@meadow-jar-honey.demo`, a tenant that no longer exists in
-  production or, going forward, anywhere) and its own docstring claimed
-  that tenant had a "26-entry FAQ knowledge base" when the seed script
-  actually only ever gave it 3 entries — a stale cross-reference even
-  before the tenant itself stopped existing.
-- `.claude/skills/deploy/SKILL.md` had picked up a factual error along
-  the way: it claimed `seed_showcase_tenants.py` also calls
-  `POST /test/conversations/messages` like `seed_calibration_tenant.py`
-  does. It doesn't — it calls `run_pipeline` directly, in-process. Never
-  actually true, not just outdated.
-- Both scripts deleted outright (direct instruction, after presenting
-  the evidence and options). `seed_calibration_tenant.py`'s own
-  docstring/error-message cross-references into `run_bitext_stress_test.py`
-  (provenance/download instructions for the Bitext CSV, prerequisites)
-  rewritten to be self-contained instead of pointing at a file that no
-  longer exists. `SERVER_SETUP.md` step 7 and `SKILL.md`'s known-failure-
-  modes section updated to drop the now-nonexistent alternative path and
-  the "both scripts" wording. **The Bitext CSV itself is still needed** —
-  `seed_calibration_tenant.py` samples real customer-support DMs from it
-  directly, independent of the deleted stress-test script; nothing about
-  that dependency changed.
-- Also found and fixed, unrelated to the git history: this machine's own
-  local (gitignored, untracked) `.env` had picked up a stray
-  `ENVELOPS_PROD_GEMINI_API_KEY` line at some point during the deploy
-  work -- `Settings` has no field for it, and pydantic-settings' default
-  `extra="forbid"` made `Settings()` raise at import time, breaking
-  pytest/uvicorn/every script locally on this machine (not visible in
-  any PR since `.env` isn't tracked). Removed the stray line; the real
-  production key lives in `deploy/envelops/.env.prod` on the server
-  already, not in this repo either way.
-- 400 backend tests pass, unchanged -- neither deleted script had test
-  coverage of its own (82 -> 80 source files per mypy), `ruff`/`mypy`
-  both clean.
-- Not yet checked: whether the first production deploy itself
-  (PRs #59-64) warrants its own changelog entry here -- none of those
-  PRs added one, so this is currently the only changelog trace of that
-  work happening at all. Flagged for the user, not decided unilaterally.
+**2026-08-05** — Fixed a production nginx routing gap: `/conversations/`
+and `/escalations/` nested paths (message loading, escalation resolve,
+trigger-phrase CRUD) had no trailing-slash `location` block and silently
+fell through to the SPA instead of the backend — the first real bug
+surfaced by production traffic, after a celery-beat-streamed conversation
+failed to open on the rail (PR #67).
 
-**2026-08-05, and one more thing after that** — Mobile-device UI (direct
-instruction, using IoTOps's `Sidebar.tsx`/`ActivityBar.tsx`/
-`EventsPanel.tsx` mobile rework as the explicit structural reference).
-Before this, the app shell had no responsive handling at all below
-desktop widths — the left `Sidebar`, right `ChannelRail`, and
-`ConversationPanel` are all fixed-width flex siblings with nowhere to go
-on a phone-width viewport.
-- New `hooks/useMediaQuery.ts` (`MOBILE_QUERY = "(max-width: 640px)"`,
-  matchMedia-backed so it reacts live to rotation/DevTools breakpoint
-  changes) — ported near-verbatim from IoTOps, shared by all three
-  components below.
-- **`Sidebar.tsx`** becomes a `position: fixed` off-canvas drawer on
-  mobile instead of a permanent flex sibling: a fixed hamburger button
-  (top-left, 52×52) plus a `.mobile-topbar` brand strip opens it;
-  closes on backdrop click, its own × button, or navigating (a
-  `useLocation` pathname effect, plus an explicit `onClick` on every
-  `NavLink` for the same reason IoTOps's own comment gives — a route
-  change is what the pathname effect reacts to, not the click itself).
-  The desktop `collapsed` icon-rail state is meaningless once inside the
-  drawer (`effectiveCollapsed = isMobile ? false : collapsed`) — it's
-  either fully open or fully hidden, never a narrow icon column on top
-  of that.
-- **`ChannelRail.tsx`** collapses into a single fixed trigger (top-right,
-  a new `ChatIcon`, badged with the sum of
-  `pendingEscalationCountByChannelType` across every channel) that opens
-  a mirrored right-edge drawer. The existing account menu (language/
-  theme/logout `dropdown-menu`) renders as-is at the top of the drawer
-  instead of being redesigned into separate rows — it's already a
-  self-contained click-to-open dropdown, so nesting it needed no new
-  logic. Each channel becomes a labeled row (icon + name + badge)
-  instead of an icon-only button, closing the drawer explicitly on
-  click (clicking a channel never changes the route, so the pathname
-  effect alone wouldn't close it — same non-navigating-action pattern
-  IoTOps's own `ActivityBar.tsx` documents for its own project clicks).
-- **`ConversationPanel.tsx`** becomes a true `inset: 0` full-screen
-  overlay on mobile (its resize handle and stored-width inline style
-  are both dropped — `isMobile ? undefined : {width}}` lets the
-  overlay's own CSS own sizing entirely) instead of a resizable docked
-  panel. Its header gets `padding-left`/`right: 52px` so its own title/
-  close button don't render underneath the two corner-fixed triggers.
-- Z-index scheme ported directly from IoTOps, same reasoning: mobile
-  topbar 30, corner trigger buttons 46 (stay reachable above the
-  full-screen conversation panel at 45), shared `.sidebar-backdrop` 48,
-  either drawer itself 50 (a drawer's own backdrop necessarily sits
-  *above* the corner buttons while that drawer is open -- reachable
-  through the drawer's own close/backdrop, not by reaching past it to a
-  corner button underneath).
-- `App.css` gets the matching `padding-top: 52px` on `.app-content`
-  (clears the fixed mobile topbar) and a reduced `.page` padding (16px
-  vs. 32px/24px) under the same breakpoint.
-- New `MenuIcon` (`icons.tsx`) — same three-line hamburger shape as
-  IoTOps's own.
-- New i18n keys, both locales: `sidebar.openMenu`/`closeMenu`,
-  `channelRail.openMenu`/`title`.
-- `tsc -b`/`vite build`/`oxlint` all clean. **Not yet live-verified in a
-  real mobile viewport** (skipped this round, direct instruction) —
-  unlike this project's usual practice of a Playwright pass at the
-  target viewport before calling a frontend change done (see e.g. the
-  Test Console Thinking-indicator entry below), so treat the drawer
-  open/close wiring and z-index layering as implemented-from-the-
-  reference-pattern but not yet empirically confirmed end to end.
+**2026-08-05** — First production launch, https://envelops.site, on the
+shared Hetzner VM already hosting IoTOps/AgriTwin (PRs #59–64: `deploy/`
+infra, docker-compose, nginx vhost, systemd unit, deploy skill). Three
+live deploy bugs found and fixed the same day: backend Dockerfile missing
+`alembic`/`scripts/` in its `COPY` list, celery-beat OOM-crash-looping at
+an inherited 128M memory limit (bumped to 256M), and a calibration seed
+script's hardcoded `localhost:8000`. Postgres-15's schema-level `GRANT`
+requirement and demo-mode's Test-Console-discard behavior both documented
+in `deploy/SERVER_SETUP.md`/the deploy skill rather than code-fixed.
 
-**2026-08-05, one more thing** — Test Console polish (direct instruction,
-using IoTOps's `CopilotChat.tsx`/`ai/service.py` as the explicit
-reference pattern for both halves of this): the Send button used to
-freeze on "Sending..." for the whole pipeline round-trip (up to 4
-sequential Gemini calls, easily several seconds), and any Gemini failure
-(rate limit, network, auth) reached the browser as a raw, uncaught 500 —
-neither of which this project had a pattern for before.
-- **Optimistic send + inline "Thinking" indicator.** `TestConsole.tsx`
-  now shows the typed message immediately (clears the input, appends a
-  `pendingInbound` bubble) instead of waiting for the response before
-  anything appears on screen; the Send button's label no longer changes
-  to "Sending..." (removed the now-dead `testConsole.sending` i18n key)
-  — it just stays disabled until the request settles, same as before,
-  just without the misleading label. `MessageThread.tsx` (shared with
-  ConversationPanel, so both new props are optional/additive) gained a
-  `ThinkingIndicator` that renders in the AI's own bubble slot and
-  cycles through the pipeline's actual step names — "Understanding
-  intent" → "Grounding in knowledge" → "Scoring the lead" → "Deciding
-  next step" (the same four steps `Documentation.tsx` already describes
-  publicly) — real progress framing, not IoTOps's generic filler
-  phrases, since this pipeline's steps are fixed and known up front. CSS
-  shimmer effect (`.conversation-panel__thinking`) mirrors IoTOps's own
-  gradient-text treatment, using this app's `--accent-h`/`--text-h`
-  variables instead of IoTOps's `--chip`/`--accent`. On a failed send,
-  `pendingInbound` is deliberately *not* cleared — in the real (non-demo)
-  path the inbound `Message` row is committed before the pipeline even
-  runs (CLAUDE.md's checkpointer-commit rule), so it's already durably
-  saved even when the AI reply itself fails; hiding it here would be
-  wrong, not just unpolished.
-- **Friendly AI-provider-failure notice, IoTOps's `AiGenerationError`
-  pattern.** `app/core/llm.py` had zero error handling before this — any
-  SDK exception (network, auth, the documented free-tier
-  `RESOURCE_EXHAUSTED` case) or an empty/safety-filtered response
-  propagated raw, and the two "no usable content" checks each raised a
-  bare `ValueError` nothing ever caught. New `AiProviderError` exception
-  wraps all of it (all three call sites — `generate_text`,
-  `generate_with_tools`, `embed_text` — now `try`/`except Exception` the
-  SDK call itself, and the content-empty checks raise this type too).
-  `app/main.py` registers one global `@app.exception_handler` for it —
-  502, generic client-facing detail ("The AI provider is temporarily
-  unavailable..."), full exception logged server-side
-  only, same "don't leak provider/quota specifics" reasoning as IoTOps's
-  own demo-mode message. Registered globally rather than per-route (only
-  Test Console runs the pipeline synchronously inside a request today,
-  but this is a real safety net for free the moment anything else does).
-  `TestConsole.tsx`'s catch block now shows `ApiError.message` directly
-  (the backend's own detail) instead of always falling back to a
-  generic translated string — for a 4xx it's already-friendly validation
-  text, for the new 502 it's this exact message.
-- New coverage: `tests/test_llm.py` (SDK-exception and empty-response
-  cases for all three functions become `AiProviderError`, mocking
-  `_get_client`), plus one new case in `tests/test_test_console_api.py`
-  asserting the endpoint returns 502 with the friendly detail and
-  explicitly that the raw exception text (`RESOURCE_EXHAUSTED`) never
-  reaches the response body. 400 backend tests pass (was 394),
-  `ruff`/`mypy` clean; frontend `tsc -b`/`vite build`/`oxlint` all clean.
-- Live-verified with Playwright against the real running stack, not just
-  unit tests: (1) success path — button label stays "Send" through the
-  whole send, the typed message appears instantly, the Thinking bubble
-  visibly cycles through two different phrases before the real reply
-  (with its diagnostics badges) replaces it; (2) failure path — routed
-  the real POST through a mocked 502 matching the handler's exact
-  response shape (rather than actually breaking the live Gemini key) and
-  confirmed the pending message stays visible, the Thinking bubble
-  disappears, the exact backend detail string renders in the error
-  banner, and the Send button re-enables the moment there's text to send
-  again.
+**2026-08-05** — Deleted stale `scripts/seed_showcase_tenants.py` (predated
+the Turkish cut, superseded live by `seed_calibration_tenant.py`,
+deliberately deleted from production) and its dependent
+`scripts/run_bitext_stress_test.py`, plus a cascade of stale
+cross-references found from checking (PR #65). Also fixed, unrelated to
+git history: a stray local-only `.env` line breaking `Settings()`.
 
-**2026-08-05, later still** — Deleted all conversation history (direct
-instruction, a clean slate) and ran every message in the demo-stream
-pool once to review the answers — 15/16 were direct and accurate; the
-one miss (Voltage Gadgets escalating "do you ship internationally?")
-turned out to be a real content gap: only Wildroot's knowledge actually
-states a shipping-scope policy. Three follow-ups from that review, all
-direct instruction:
-- **Voltage Gadgets knowledge gap closed**: added "We currently ship
-  only within the United States; international shipping is not
-  available at this time" (a deliberate contrast with Wildroot, which
-  does ship internationally — plausible for a small electronics
-  retailer given import/voltage-standard/certification complexity).
-  Applied to both the seed script and the live tenant.
-- **Demo-stream messages now cover more than knowledge questions.** The
-  original pool (`_DEMO_STREAM_MESSAGES`, kept fully intact, nothing
-  removed) only ever exercised `keep_chatting` with a knowledge-grounded
-  answer. Four new pools added alongside it in `app/pipeline/tasks.py`,
-  each `{}`-style templates filled in with a random order number/
-  quantity/reference per send (not fixed strings, so the same template
-  doesn't read as an identical canned message every time) —
-  `_PURCHASE_INTENT_TEMPLATES`, `_HOT_LEAD_TEMPLATES` (urgent/ready-to-
-  buy phrasing, exercises the `book_or_checkout` handoff since both
-  tenants have that `closing_action`), `_COMPLAINT_TEMPLATES`, and
-  `_ESCALATION_TRIGGER_MESSAGES` (deliberately trips
-  `escalation/safety_gate.py`'s real outcome-guarantee pattern — a
-  certainty word plus an efficacy/risk word in the same message — using
-  business-plausible phrasing like cold-weather jacket performance or
-  power-bank flight safety instead of the module's original health-
-  adjacent framing, which wouldn't make sense for these tenants).
-  `_generate_demo_message()` picks a category by weight (knowledge 45%,
-  purchase 20%, hot lead 15%, complaint 15%, escalation 5% — matching
-  real DM traffic, where safety-floor hits are rare, not routine), then
-  a random template within it. `_stream_demo_dm` calls this instead of
-  sampling `_DEMO_STREAM_MESSAGES` directly.
-- **Channel-level formality narrowed to email only.** Live-watching the
-  earlier all-5-channels-formal setting showed a WhatsApp/Telegram/
-  Instagram/Facebook reply in a stiff "Dear customer... Best regards"
-  register that reads wrong for a chat platform. `_FORMAL_CHANNEL_OVERRIDES`
-  now only has an `email` entry; the other 4 channel types get no
-  `channel_overrides` entry at all, which falls through to
-  `app/pipeline/behavior.py`'s own system default per channel (short,
-  casual, no greeting/sign-off) rather than a second, redundant
-  "casual" override. The shared `BusinessTone` settings (greeting/
-  off_topic/knowledge_query/escalation_cover all `formal_business`) are
-  unchanged — this was specifically about the per-channel axis. Applied
-  to both the seed script and both live tenants.
-- Live-verified with 5 targeted sends, not just unit tests: the
-  escalation-trigger message genuinely tripped the real safety floor
-  (`outcome-guarantee request`, not a scripted fake); a complaint got
-  classified `complaint_or_problem` and answered empathetically; a hot
-  purchase-intent message scored `hot`, routed to `book_or_checkout`,
-  and delivered the real checkout link in casual tone ("Awesome, here
-  you go..."); the identical shipping-scope question got a short,
-  greeting-free reply on Telegram and a "Hello... Best regards" reply on
-  Email from the same tenant.
-- 394 backend tests pass (unchanged — no new test surface, this is
-  content/config/generator-template work covered by the existing
-  `_stream_demo_dm`/pacing test suite), `ruff`/`mypy` clean.
+**2026-08-05** — Mobile-device UI added: `Sidebar`/`ChannelRail` become
+off-canvas drawers, `ConversationPanel` becomes a full-screen overlay,
+below a shared 640px breakpoint — structured directly after IoTOps's own
+mobile pattern (new `useMediaQuery` hook, same z-index scheme) (PR #58).
 
-**2026-08-05, later same day** — FAQ (`url`) and Terms of Service
-(`pdf`) knowledge sources added for both calibration tenants (direct
-instruction), rounding out a tenant's knowledge library with the two
-source *types* the real Knowledge Sources UI supports (besides `manual`)
-that neither tenant had exercised before.
-- New `scripts/seed_calibration_tenant.py` helper, `_add_chunked_source`:
-  seeds one `KnowledgeSource` + its chunks from a long text block run
-  through the real `chunk_text()` splitter — unlike `knowledge`'s one-
-  chunk-per-hand-written-fact, this produces a multi-chunk source shaped
-  like a genuinely-ingested document, matching what a real url/pdf
-  upload through `app/knowledge/api.py` would produce.
-- Never actually fetches the fake FAQ URL or parses a real PDF file, and
-  deliberately doesn't need to: `app/knowledge/api.py`'s own docstrings
-  note this app never retains the original HTML/PDF bytes after
-  ingestion anyway, only the extracted+chunked text — hand-seeding that
-  text directly produces an identical end state for a fraction of the
-  complexity and no new PDF-writing dependency.
-- The FAQ URL uses the `.invalid` TLD (RFC 2606 — reserved, guaranteed
-  to never resolve), deliberately *not* the `.example.com` convention
-  `Tenant.closing_link` already uses elsewhere in this script: a
-  closing_link is only ever rendered as text, never fetched by this
-  app's own code, but a `url` source's `source_uri` can be (a real
-  "Refresh" click does a real `fetch_url`) — `.example.com` actually
-  resolves and would silently overwrite the hand-seeded FAQ content with
-  placeholder garbage on refresh, while `.invalid` fails DNS cleanly, so
-  a refresh attempt gets an honest 400 instead of silent corruption.
-  Acceptable either way since demo mode blocks refresh entirely.
-- Applied to both the seed script (future fresh seeds) and directly to
-  the two already-seeded live tenants.
-- Live-verified through the real pipeline, not just checking the DB: a
-  Wildroot question only answerable from the new FAQ content ("do you
-  offer gift cards?") got a correct, direct, formally-toned answer
-  pulled from that source. A more compound Voltage Gadgets warranty
-  question didn't ground as cleanly (escalated instead of citing the
-  ToS's specific misuse clause) — ordinary top-k vector-retrieval
-  imprecision now that each tenant has more chunks competing for the
-  same slots, not a regression from this change.
-- 394 backend tests pass (unchanged — no new test surface, this is
-  content/seeding only), `ruff`/`mypy` clean.
+**2026-08-05** — Test Console polish, IoTOps's `CopilotChat`/
+`AiGenerationError` pattern as the explicit reference: optimistic send +
+an inline cycling "Thinking" indicator (replacing a frozen "Sending..."
+button state), and a new `AiProviderError` + global exception handler
+turning any Gemini failure into a friendly 502 instead of a raw
+uncaught 500 (PR #56).
 
-**2026-08-05** — Lightweight demo DM streaming + rolling retention
-(direct instruction), following a discussion of static-vs-live demo
-data: Test Console's own demo-mode path was found to never touch the
-real conversation rail at all (`_send_test_message_demo` never commits,
-never publishes an SSE event), so a passive demo visitor never saw
-anything move. Two new Celery Beat jobs in `app/pipeline/tasks.py`, both
-gated on `settings.demo_mode_enabled` being True (checked first thing,
-inverted from `follow_up_check`'s own check) so neither can ever write
-to or delete from a real deployment's database on its own — confirmed
-directly before building, not assumed:
-- **`stream_demo_dm`** (hourly tick) fires at most one simulated inbound
-  DM per tick, paced against a 10-15/day target picked once per calendar
-  day and prorated against elapsed time-of-day (`_should_send_now`, a
-  pure function split out for direct unit testing) — self-corrects if a
-  tick is missed rather than relying on an in-memory counter. Sends
-  across all 5 channel types at random, including `telegram` — a
-  deliberate exception to "Telegram is the one real integration"
-  elsewhere in this app, safe here because a Channel row with
-  `bot_token=None` already makes the outbound send path no-op, the same
-  "real pipeline, no real platform contacted" property the other 4 types
-  get from being simulated in the first place.
-  `ChannelRepository.get_demo_stream_channel` never reuses an existing
-  *real* Telegram channel (checks `bot_token IS NULL`, not just
-  `is_test=False`, since a real integration is also `is_test=False`) --
-  covered by an offline SQL-compilation test
-  (`tests/test_channels_repository.py`), same approach
-  `app/commerce/repository.py` already established.
-- **`purge_stale_demo_data`** (daily) deletes conversations — and
-  everything under them: messages, leads, escalations, pipeline traces,
-  in FK-safe order since none of these models declare
-  `ondelete=CASCADE` — whose most recent message is older than 7 days.
-  Direct instruction: applies to *all* demo history uniformly, including
-  the original calibration-seeded conversations, not just newly-streamed
-  ones, so the whole tenant history stays a rolling recent window rather
-  than a mix of old fixed data and new trickle.
-- Refactored `_ingest_inbound_message` out of `app/channels/api.py` into
-  a new `app/channels/service.py` (`ingest_inbound_message`, now public)
-  so both the real webhook handlers and `stream_demo_dm` share the exact
-  same "a DM arrived" logic — find-or-create Conversation, persist
-  Message, commit, publish the live-update event, enqueue
-  `process_incoming_message`. `process_incoming_message` itself is
-  imported lazily inside the function (not at module level) specifically
-  to avoid a circular import, since `app/pipeline/tasks.py` needs to
-  import `ingest_inbound_message` too.
-- Live-verified against the real running stack, not just unit tests: a
-  triggered `stream_demo_dm` run created a real `whatsapp` Channel
-  (`is_test=False`, `bot_token=None`) for Voltage Gadgets that
-  immediately showed up on the real Channels page, ran the real pipeline
-  end to end (Gemini intent/score/reply calls, a real knowledge-search
-  embedding call), and persisted a real reply. A manually-backdated
-  conversation was then correctly purged (and confirmed gone, along with
-  its messages) by a triggered `purge_stale_demo_data` run.
-- Follow-up round, same day, three more live findings while watching
-  real streamed replies:
-  - Several hardcoded demo messages used a dangling "this item"/"this
-    product" reference with nothing to resolve it against, since every
-    streamed DM starts a brand-new conversation with no prior turn —
-    reworded to be self-contained (e.g. "Is this item currently in
-    stock?" → dropped; "What's the estimated delivery time to my area?"
-    → "...for domestic orders?", matching knowledge both tenants already
-    have).
-  - The same message pool is shared across every demo tenant regardless
-    of vertical, so apparel-specific sizing questions ("what sizes are
-    available?", "exchange for a different size") read as nonsensical
-    coming from an electronics-shop customer — removed from the shared
-    pool entirely (each tenant's own knowledge base still covers sizing
-    for anyone who asks it organically, e.g. via Test Console).
-  - Direct instruction: both calibration tenants set to formal/
-    professional by default across every tone-bearing option, not just
-    `BehaviorAreaBase`'s own friendly/casual defaults — `greeting`,
-    `off_topic`, `knowledge_query`, and `escalation_cover` all set to
-    `tone="formal_business"`, plus an explicit `formal_email` /
-    `include_greeting` / `include_sign_off` / `as_needed`-length
-    `channel_overrides` entry for all 5 channel types. Applied to both
-    `scripts/seed_calibration_tenant.py` (future fresh seeds) and
-    directly to the two already-seeded live tenants. Also added new
-    knowledge chunks to both tenants (damaged/defective-item refund
-    policy — Wildroot's phrased to explicitly answer "do you have a
-    warranty?" too, since the first version didn't ground confidently
-    enough and escalated live — promotions, most-popular-product, and
-    order-tracking-via-the-assistant) so the streamed question pool has
-    real facts to ground an ANSWERED reply in rather than escalating.
-  - 394 backend tests pass (12 new), `ruff`/`mypy` clean.
+**2026-08-05** — Demo-stream messages diversified beyond knowledge
+questions — weighted, randomized purchase-intent/hot-lead/complaint/
+escalation-trigger template pools added alongside the original pool;
+channel-level reply formality narrowed to email-only; a Voltage Gadgets
+international-shipping knowledge gap closed; FAQ (`url`) and Terms of
+Service (`pdf`) knowledge sources added for both calibration tenants,
+rounding out all three source types (PR #55 follow-ups).
 
-**2026-08-04, later still, another round** — The singular/plural-only
-fix from the round below turned out insufficient once tested further:
-"do you sell hoodies" still didn't match "Oversized Hoodie" (missing the
-whole word "Oversized", not just a trailing "s" difference). Presented
-the same widen-vs-stay-bounded tradeoff again with this new evidence
-(direct instruction: move to whole-word containment) rather than
-re-deciding it unilaterally, since it's the same safety-critical
-decision, just with fuller information this time.
-- `app/commerce/repository.py` rewritten: matching moved from a SQL
-  `WHERE ... IN (...)` clause to Python-side word-set comparison
-  (`_significant_words`/`_is_match`) -- word containment doesn't map
-  cleanly onto simple SQL equality/IN matching, and this project's
-  catalogs are small enough (a handful of rows per tenant) that fetching
-  and filtering in Python is far more readable than the Postgres array/
-  full-text-search machinery an equivalent SQL version would need.
-  `_is_match` requires one full word-set to wholly contain the other
-  (either direction) -- "hoodies" ({hoodie}) matches "Oversized Hoodie"
-  ({oversized, hoodie}) since the query's words are a subset, but an
-  off-catalog query ("ak47") still can't coincidentally match a real
-  product just by partial text overlap, preserving the bounded-catalog
-  safety property.
-- Also fixed, found in the same testing pass: a reply leaked the raw
-  "[Live lookup result]" tag itself to the customer verbatim ("[Live
-  lookup result] We do not have oversized tshirts in stock.") -- the
-  model followed "answer with it directly" but didn't know the label
-  prefix wasn't part of the fact to relay. `render_knowledge_query_instruction`
-  now explicitly says never to repeat that literal label.
-- Live-verified: "do you sell hoodies"/"bucket hats" now correctly
-  resolve with real stock counts and no leaked tag; "ak47" and a
-  genuinely unrelated "oversized tshirts" (Wildroot's actual tee is
-  named "Graphic Tee", shares no words) still correctly come back not
-  carried. One known, accepted remaining gap: a literal spelling typo
-  ("hodies" for "hoodies", not just a missing word) still under-matches
-  -- earlier-observed typo tolerance (macbook, vacuum cleaner) came from
-  the model's own spelling normalization when extracting the tool
-  argument, not from server-side matching, so it isn't reliable across
-  every typo. Fixing that deterministically would mean fuzzy/edit-
-  distance matching, which reopens the exact off-catalog false-positive
-  risk this design exists to avoid -- left as a deliberate limitation,
-  not chased further this round.
-- 372 backend tests pass (11 new), `ruff`/`mypy` clean.
+**2026-08-05** — Lightweight demo DM streaming (`stream_demo_dm`, 10–15
+simulated inbound DMs/day across all 5 channel types) plus a rolling
+7-day retention purge (`purge_stale_demo_data`), both demo-mode-gated
+Celery Beat jobs — Test Console's own demo-mode path never touched the
+real conversation rail at all, so a passive visitor never saw anything
+move before this (PR #55).
 
-**2026-08-04, later still, one more round** — Two more findings from
-continued live testing on Wildroot (now that it has tool-calling, see
-below), both fixed:
-- **`INVENTORY_CHECK_TOOL`'s description was too narrow**: "do you sell
-  hats?" reliably (2/2) never called the tool at all -- only "do you
-  have X in stock"-shaped phrasing did -- so it fell through to a
-  knowledge-gap escalation instead of answering. The tool's description
-  only said "is currently in stock," which the model apparently read as
-  scoped to literal stock-check phrasing, not "do you sell/carry X"
-  general-catalog questions that mean the same thing to a customer.
-  Broadened the description (`app/commerce/tools.py`) to say so
-  explicitly. Live-verified 2/2 "do you sell hats?" now calls the tool
-  and answers directly.
-- **Worse, found while verifying the above**: `FakeCommerceProductRepository
-  .find_matching`'s exact-match-only design meant "do you sell bucket
-  hats?" (plural) didn't match a real "Bucket Hat" catalog row at all --
-  the model confidently said *not carried* about a product Wildroot
-  genuinely sells. A false negative about a real product, arguably worse
-  than the original fabrication bug this whole feature exists to
-  prevent. Presented the tradeoff directly (exact-only vs. singular/
-  plural-insensitive vs. general substring matching) rather than picking
-  unilaterally, since it's a real widen-the-matching-net-vs-stay-bounded
-  decision central to the feature's safety story; singular/plural-
-  insensitive was chosen (direct instruction) as the narrowest fix that
-  actually closes the gap, without reopening the substring-fuzzy-match
-  risk (e.g. a query must still never coincidentally match an
-  off-catalog weapon term just by word overlap). `_build_match_stmt`
-  (`app/commerce/repository.py`) now also tries the query with a
-  trailing "s" added or stripped. Live-verified: "bucket hats" and
-  "oversized hoodies" now correctly resolve to their real catalog rows
-  with accurate stock counts, while a genuinely off-catalog "x icons"
-  still correctly comes back not carried.
-- 363 backend tests pass (2 new), `ruff`/`mypy` clean.
+**2026-08-04** — Fake-commerce/tool-calling hardening, several rounds of
+live-found-and-fixed bugs the same day: catalog matching moved from
+exact-match to whole-word containment (a plural or a dropped word no
+longer produces a false "not carried"); a `[Live lookup result]` tag
+that leaked into replies verbatim; `INVENTORY_CHECK_TOOL`'s description
+too narrow to catch "do you sell X" phrasing; `keep_chatting`
+mis-tagging a correct negative tool answer as a knowledge gap instead of
+relaying it; `decide_next_step`'s hot-lead fast path skipping grounding
+entirely (the same fabrication class the fake-commerce platform exists
+to close, reached via a different route). Wildroot given tool-calling +
+a catalog (previously only Voltage Gadgets had it) (PRs off the
+fake-commerce-platform branch, same day).
 
-**2026-08-04, later still, once more** — Reported as "stuck" giving a
-reply, investigated extensively (direct API repro across single/multi-
-turn, hot/warm/cold leads; then a real headless-browser Test Console
-session) — no actual hang found anywhere; requests always completed in
-3-5s. The real finding: the report was on **Wildroot Apparel Co**, which
-had never been given `inventory_check_enabled`/a catalog at all (only
-Voltage Gadgets had, from the original build below) — so it still showed
-the exact pre-fix fabrication (`book_or_checkout`'s "Yes, we do!" for a
-hot lead) and, separately, the pre-existing knowledge-gap escalation for
-any unrecognized product, which reads the same for every off-catalog
-item and can feel "stuck" repeating a non-answer. Direct instruction
-following this: catalog-checking shouldn't ever escalate when a definite
-"not carried" answer is already known — a human would just say the same
-thing.
-- Wildroot given `tool_calling.inventory_check_enabled=True` plus a
-  9-row clothing catalog (`scripts/seed_calibration_tenant.py`'s
-  `TenantSpec.catalog`, matching the "Oversized Hoodie runs one size
-  large" line already in its knowledge base) — applied to both the spec
-  (future fresh seeds) and directly to the already-seeded live tenant.
-  Two tenants with tool-calling now, not one.
-- `format_result`'s not-carried wording simplified (direct instruction):
-  "We don't carry X -- no matching product in our catalog" → "We do not
-  have X in stock" — reads as a plain stock-check answer, not a catalog
-  explanation.
-- No pipeline logic changes needed beyond the config/catalog above — the
-  same-day `[Live lookup result]` fix (below) already makes a negative
-  tool result answer directly instead of escalating; it just needed a
-  tenant with tool-calling enabled to exercise it. Live-verified: hot
-  "do you have the x icon in stock?" and "do you have water filters" on
-  Wildroot now both answer honestly with no escalation, while a hot
-  query about a real catalog item (Oversized Hoodie, size M) still
-  correctly flows through `book_or_checkout` with accurate stock.
-- 361 backend tests pass, `ruff`/`mypy` clean.
+**2026-08-04** — Built the real-HTTP fake commerce platform
+(`app/commerce/fake_platform_api.py`, a bounded per-tenant
+`FakeCommerceProduct` catalog), closing a live-found fabrication bug:
+the old hash-seeded `check_inventory` gave a plausible in-stock answer
+for literally any product string, including "ak47." Full root-cause
+writeup: [`docs/plans/fake-commerce-platform-integration.md`](plans/fake-commerce-platform-integration.md).
 
-**2026-08-04, later still again** — Two more fabrication-class bugs found
-live, testing the fake-commerce-platform work just below, both fixed on
-the same branch/PR:
-- **`keep_chatting` mis-tagging a correct tool answer as `NOT_FOUND`**: a
-  warm "do you have macbook in stock?" got a correct
-  `tool_call_results` answer ("we don't carry macbook") but the model
-  still escalated with a generic cover reply instead of relaying it — it
-  read a negative live-lookup result as "topic not covered"
-  (`render_knowledge_query_instruction`'s case 3) rather than "a complete
-  answer" (case 2). Fixed at the prompt level only: `keep_chatting`
-  labels tool-sourced context lines `[Live lookup result]`
-  (`app/pipeline/graph.py`), and the instruction
-  (`app/pipeline/behavior.py`) now explicitly says that label means
-  answer directly, even when the answer is negative, never `NOT_FOUND`.
-- **`decide_next_step`'s hot-lead branch skipping grounding entirely**:
-  the deeper of the two — a *hot* purchase-intent "do you have macbook in
-  stock?" was routed straight to `book_or_checkout` before `call_tools`
-  ever ran, so `book_or_checkout`'s own prompt (no grounding data at all)
-  confidently replied "Yes, we do! Grab yours right here: ..." for a
-  product not in the tenant's catalog — the exact fabrication class this
-  whole feature exists to close, just reached via a different route than
-  `check_inventory`'s old hash-seeded logic. Fixed by having
-  `decide_next_step` call `call_tools` itself, once, right before
-  committing to the hot-lead fast path (only when the intent needs
-  grounding and the tenant has a fake connector enabled — inert
-  otherwise); a definitive negative result
-  (`PipelineState.tool_call_found_nothing`, new field) falls back to
-  `keep_chatting`'s now-honest answer instead of book_or_checkout/
-  escalate_to_human. A new `tool_calls_attempted` guard on `call_tools`
-  stops the graph's own `decide_next_step -> call_tools` edge from
-  re-running it a second time for the same message.
-- Live-verified across several real runs, not just unit tests: two
-  differently-worded hot "macbook" queries both now correctly answer "We
-  do not carry macbook..." instead of fabricating or vaguely escalating,
-  while a hot query about a real catalog item (SmartHome Hub X1) still
-  correctly flows through `book_or_checkout` with an accurate "Yes, we've
-  got it in stock!"
-- 361 backend tests pass (9 new), `ruff`/`mypy` clean.
+**2026-08-04** — Removed the separate `dev_auth_bypass_enabled` flag and
+Login's own dev-only tenant switcher — demo mode is now the sole
+no-password login mechanism (`/auth/demo-tenants`/`/auth/demo-login`).
 
-**2026-08-04, later still** — Built the real-HTTP fake commerce platform
-planned earlier the same day
-([`docs/plans/fake-commerce-platform-integration.md`](plans/fake-commerce-platform-integration.md)),
-fixing the live-found bug where `check_inventory`'s hash-seeded logic
-fabricated a plausible in-stock answer for *any* product string
-regardless of what a tenant actually sells (found via Test Console: "do
-you have ak47 in stock?" got a confident, ordinary answer).
-- New `FakeCommerceProduct` table (`app/commerce/models.py`,
-  tenant-scoped, one migration) — a bounded per-tenant catalog; a query
-  with no matching row now genuinely comes back "not carried."
-- New internal-only router `app/commerce/fake_platform_api.py`
-  (`/internal/fake-commerce/products`, `/internal/fake-commerce/orders/
-  {order_number}`), bearer-token-gated
-  (`ENVELOPS_FAKE_COMMERCE_INTERNAL_TOKEN`, fail-closed), mounted by this
-  same backend and never reachable from outside it. The order-status
-  endpoint keeps the exact same hash-seeded logic the old in-process
-  connector had (moved server-side, not changed) — no bounded
-  fake-orders table, since an arbitrary-looking order number is a normal
-  thing for a real customer to type, unlike an unbounded product string.
-- `app/commerce/connectors.py` rewritten as real async `httpx` calls to
-  that endpoint (`ENVELOPS_INTERNAL_API_BASE_URL`, `localhost:8000` for
-  host dev, `http://backend:8000` for the backend/worker containers —
-  same override pattern as the database/redis URLs); never raises, a
-  timeout/connection failure/non-2xx degrades to `None` same as
-  `execute()`'s existing hallucinated-tool-name handling.
-  `call_tools`/`tools.execute()` both became `async` to thread this
-  through; `InventoryResult` gained a `carried: bool` field so "off
-  catalog" and "carried but out of stock" render as distinct, honest
-  replies.
-- `scripts/seed_calibration_tenant.py`: new `TenantSpec.catalog` field,
-  seeded for Voltage Gadgets only (the one calibration tenant with
-  `inventory_check_enabled=True`).
-- Live-verified through the real pipeline, not just unit tests: asking
-  Voltage Gadgets' AI about a real catalog item returned the seeded
-  quantity; asking about AK-47 rifles returned "We do not carry AK-47
-  rifles, as there is no matching product in our catalog." Also verified
-  the worker container resolves the internal base URL correctly and can
-  reach the backend container by service name.
-- Does **not** fix the safety-floor weapons/regulated-goods pattern gap
-  (separate, still-open item above) — this closes the *fabrication*
-  path, not the *escalation* path, by design (see the plan doc's own
-  non-goals).
-- 12 migrations now (was 7 in CLAUDE.md's stale count, corrected same
-  session), 352 backend tests pass, `ruff`/`mypy` clean.
+**2026-08-04** — Public read-only demo mode added
+(`ENVELOPS_DEMO_MODE_ENABLED`): every mutating endpoint 403s at the API
+layer, Test Console stays real but persistence-free (swaps in an
+in-memory LangGraph checkpointer), and the frontend replaces the login
+screen with a tenant-switcher dropdown.
 
-**2026-08-04, later same day** — Removed the separate `dev_auth_bypass_enabled`
-flag and Login page's own dev-only tenant switcher entirely, direct
-instruction, now that demo mode covers the same no-password-login need:
-- Backend: `dev_auth_bypass_enabled` deleted from `config.py`.
-  `/auth/dev-tenants`/`/auth/dev-login` renamed to `/auth/demo-tenants`/
-  `/auth/demo-login` (`DevTenantOption`→`DemoTenantOption` etc.), gated
-  solely by `demo_mode_enabled` now — the OR-condition is gone since
-  there's only one flag left.
-- Two calibration/stress-test scripts (`seed_calibration_tenant.py`,
-  `run_bitext_stress_test.py`) used the old dev-login purely as a
-  no-password auth convenience, unrelated to demo mode as a product
-  feature — switched to logging in for real via `POST /auth/login` with
-  the known `DEMO_PASSWORD` each seeded tenant's owner already gets, so
-  neither script depends on `demo_mode_enabled` at all. Deliberate: that
-  flag also makes Test Console stop persisting messages
-  (`_send_test_message_demo`), which would have silently defeated both
-  scripts' actual purpose (real, inspectable seeded message history) if
-  left depending on it.
-- Found via this: the test suite reads the same real `.env` file as the
-  dev server, so turning `demo_mode_enabled` on there to actually view
-  the demo locally 403'd 57 unrelated tests. Fixed with a new
-  `tests/conftest.py` autouse fixture forcing `settings.demo_mode_enabled
-  = False` before every test (individual demo-mode tests still patch it
-  True within their own scope) — the suite no longer depends on whatever
-  a developer's local `.env` happens to be set to.
-- Frontend: `Login.tsx` back to a plain email/password form, no dev
-  dropdown, no `useDevTenants` import. `useDevTenants` renamed
-  `useDemoTenants` (`/auth/demo-tenants`), consumed by `App.tsx`'s
-  auto-login and `Dashboard.tsx`'s tenant dropdown only — Login.tsx isn't
-  a consumer anymore. Removed now-unused `auth.devBadge`/
-  `auth.devTenantSwitch*` i18n keys and `.login-page__dev-switch`/
-  `.dev-badge` CSS in both locales.
-- `.claude/skills/run/SKILL.md` updated to match: no more manual
-  `<select>`/`selectOption` login step to drive a session (demo mode
-  auto-logs in on page load now) — the Dashboard's own tenant dropdown
-  is how a driven session switches tenants, keyed by `tenant_id`, not
-  `user_id` like the old Login dropdown was.
-- 337 backend tests pass (7 dev-bypass tests consolidated into 5
-  demo-mode-only ones, since the OR-condition scenario no longer exists
-  to test separately). Frontend build/lint clean.
+**2026-08-03** — Fixed the Celery worker's asyncpg cross-event-loop bug
+(found live in PR #47): a `NullPool`-backed `worker_async_session`
+added for Celery-task DB access, kept separate from the pooled
+FastAPI-facing session — full gotcha writeup in `CLAUDE.md`. Real
+Dashboard page shipped the same window (stat tiles, trend chart,
+intent-breakdown donut, per-channel table, knowledge status — PR #46).
+Two new nav pages, Channels and Integrations, added as static previews;
+Channels later gained a real per-channel AI auto-reply on/off switch.
 
-**2026-08-04** — Public read-only demo mode (`demo` branch, not yet a
-PR), direct instruction: a single `ENVELOPS_DEMO_MODE_ENABLED` flag turns
-the whole app into a safe-to-share showcase.
-- Backend: every mutating endpoint (knowledge source CRUD, `PATCH
-  /tenants/settings`, escalation resolve + trigger-phrase add/delete, the
-  channel AI toggle, all 5 inbound channel webhooks) 403s via a shared
-  `app/core/demo_mode.py` dependency — enforced at the API layer, not
-  just a frontend disable, per direct instruction. `follow_up_check`
-  (Celery Beat) skips entirely, since it isn't reachable through the API
-  gate at all. `demo_mode_enabled` also ORs into the existing dev-auth-
-  bypass gate (`auth/api.py`), opening the no-password tenant switcher.
-- Test Console is the deliberate exception: still runs the real pipeline
-  (real Gemini calls, real knowledge search) but never creates a
-  Channel/Conversation row or writes a Message/PipelineTrace row —
-  swaps the Postgres checkpointer for an in-memory one and keeps
-  per-session history in a process-local dict instead, keyed the same
-  way a real Conversation lookup would be. Response shape unchanged, so
-  the frontend needed no changes there specifically.
-- Frontend: `App.tsx` skips the login screen entirely in demo mode
-  (auto dev-logs-in as the first showcase tenant via `GET
-  /system/demo-mode` + `GET /auth/dev-tenants`); the Dashboard's own
-  `<h1>` becomes a "Tenant: [dropdown]" selector in its place, reading
-  the current tenant from the JWT itself (`src/lib/jwt.ts`, client-side
-  decode, no new endpoint needed). Every mutating control across
-  Knowledge/Settings/Channels/escalation-resolve gets `disabled` (not
-  hidden — direct instruction: full functionality stays visible, only
-  alterations are cut) plus a `title` tooltip, and a persistent sidebar
-  badge reminds a visitor throughout, not just per-button on hover.
-  `CHANNEL_ICONS` (`ChannelRail.tsx`'s dev-tenants list, now also needed
-  by `App.tsx` and `Dashboard.tsx`) got pulled into shared hooks
-  (`useDevTenants`, `useDemoMode`) and a `DemoModeProvider` context
-  rather than fetched independently per page.
-- 339 backend tests pass (22 new, covering the 403 gate across every
-  route, the dev-auth-bypass OR, `follow_up_check`'s skip, and Test
-  Console's persistence-free path including multi-turn continuity across
-  two messages in the same session). Frontend build/lint clean.
+**2026-07-28 to 2026-07-31** — Conversation rail intent/lead-score
+badges and per-message diagnostics; conversation history threading, SSE
+live rail updates, natural escalation cover replies (PRs #25–34); typed,
+bounded per-tenant behavior configuration (`TenantBehaviorConfig`) plus
+a tabbed Settings UI with independent per-tab save (PRs #35–36).
 
-**2026-08-03, later same day** — Fixed the Celery worker asyncpg
-cross-event-loop bug (found live during PR #47, filed not fixed there —
-see that PR's own write-up) on its own branch/session as planned
-(`fix/celery-asyncpg-event-loop`). Root cause confirmed
-by isolated repro first (two sequential `asyncio.run()` calls against the
-shared pooled engine, outside Celery entirely): the second call reliably
-raised the same `RuntimeError: ... attached to a different loop`, then an
-`InterfaceError` on the third — reproducing the exact live symptom before
-touching any code. Fix: `app/core/db.py` now exposes a second,
-`NullPool`-backed engine/sessionmaker (`worker_engine`/
-`worker_async_session`) used only by `app/pipeline/tasks.py` (imported
-under the existing `async_session` name so the rest of that file, and the
-existing test suite's `patch("app.pipeline.tasks.async_session", ...)`
-targets, didn't need to change) — NullPool opens/closes a real connection
-per checkout instead of reusing one across event-loop boundaries, the same
-"accept per-call connect overhead, stay loop-safe" tradeoff
-`app/core/events.py`'s `publish_event()` already made for Redis. The
-FastAPI-facing `engine`/`async_session` stay pooled, unchanged — uvicorn's
-one long-lived loop was never actually affected by this bug, so there was
-no reason to give up pooling there too. Verified, not just reasoned
-through: the isolated repro script passed cleanly post-fix (3/3 calls
-succeeded); `pytest -q` (317 passed), `ruff check`, `mypy` all clean; then
-a live end-to-end pass against the real docker-compose stack — worker
-restarted for a clean warm process, 20 real webhook POSTs fired at a real
-simulated Instagram channel in quick succession (deliberately more than
-the worker's prefork concurrency of 11, to force multiple tasks onto the
-same child process, matching the original failure shape) — zero
-`different loop`/`InterfaceError` occurrences in worker logs across all
-20. (Incidentally tripped the tenant's Gemini free-tier per-minute quota
-from the burst — expected, unrelated, self-recovered; verification
-conversations/messages/leads/traces cleaned up from the DB afterward
-rather than left as noise on a real tenant.) `follow_up_check` shares the
-same fix since it also now runs under `worker_async_session`, though its
-30-minute cadence made it unlikely to double-fire against one warm process
-in practice either way.
-
-**2026-07-28** — Conversation rail intent/lead-score badges; per-message
-pipeline diagnostics in Test Console.
-
-**2026-07-29** — Conversation history threading across the pipeline (PR
-#25). Dev-only tenant switcher for local testing (PR #26). Knowledge
-source + trigger-phrase delete (PR #27), later extended to view/edit for
-manual sources (PRs #32–34). One clarifying question asked before
-escalating on an ambiguous message, instead of an immediate escalation
-(PR #29). Live rail/badge updates via SSE (PR #30). Natural escalation
-cover reply + internal-note bubble in the conversation thread, plus a
-guard against a second inbound message on an already-escalated
-conversation (PR #31). Multi-tenant showcase seed script — 4 verticals,
-each with a login-able demo user (`scripts/seed_showcase_tenants.py`).
-`keep_chatting`'s knowledge-gap disclaimer turned into a real escalation
-instead of a silent dead end, plus several other live-found
-`keep_chatting` quality bugs fixed the same session (PRs #32–34,
-`scripts/run_bitext_stress_test.py` added as part of this work). Two
-pipeline bugs found and fixed via live Test Console use: a bare greeting
-producing a nonsense disclaimer, and the hot+purchase-intent branch
-silently pausing forever with no visible escalation when
-`closing_action` is `escalate_to_human` (the default).
-
-**2026-07-30** — Typed, bounded per-tenant AI behavior configuration
-(`TenantBehaviorConfig`, `app/tenants/behavior_config.py`) replacing
-hardcoded prose scattered across pipeline nodes (PR #35). Tenant settings
-API + a two-column, tabbed Settings UI with independent per-tab save via
-`PATCH /tenants/settings` (PR #36).
-
-**2026-07-31 — portfolio scope pivot.** Direct instruction: the real
-pilot is deprioritized, EnvelOps becomes a solo portfolio project. Turkish/
-bilingual support cut; real Instagram/WhatsApp/Facebook/commerce
-integrations cut in favor of simulated channels + real Gemini
-tool-calling over fake deterministic connectors; tenant count capped at
-~2 rather than growing across every vertical; template gallery and AI
-copilot cut as predicated on the abandoned multi-vertical ambition (PR
-#37). `escalation/safety_gate.py`'s own Turkish patterns removed too, for
-full English-only consistency; two real calibration findings fixed
-(a fabricated support-email workflow for order-modify/cancel requests,
-and an order-modify request misrouted into `book_or_checkout`) (PR #38,
-live-verified in PR #39). Safety-floor efficacy-cue gap closed — risk/
-safety/complication language now trips the outcome-guarantee check, not
-just functional-outcome words like "cures"/"works" (PR #40). UI polish:
-conversation rail filter chips + pagination, Settings tab reorganization,
-free-text fields converted to resizable textareas (PR #41). PDF knowledge
-source support (PR #42). Knowledge sources page full redesign — stat
-tiles, pill-style type selector, per-chunk preview, search/filter (PR
-#43). Also this day: docs housekeeping — `ROADMAP.md` condensed from
-~1800 lines of session write-ups to open items + this changelog (PR #45).
-
-**2026-08-01 through 2026-08-03** — Real Dashboard page (`GET
-/dashboard/summary` + stat tiles/trend chart/intent breakdown/channels
-table/knowledge status), closing the last open item above, all one PR
-(#46) iterated live against direct feedback:
-- Hand-rolled SVG charts throughout, no new frontend dependency
-  (`frontend/src/components/dashboard/`). First pass used a ranked bar
-  list for "conversations by intent" after this app's status-color
-  tokens failed a categorical CVD-separation check as a set; reversed to
-  a real donut chart on direct request, with a dedicated palette instead
-  (the dataviz skill's own reference palette for the three segments with
-  no existing badge color, this app's real `--accent`/`--info` tokens
-  reused for the two that do — re-validated for CVD separation in this
-  exact mixed order before shipping).
-- "Escalated" changed from a running total to *currently unresolved* —
-  the total-count version didn't move when an escalation got resolved,
-  which read as a bug next to two other now-facing tiles (Hot Leads,
-  Avg Response Time).
-- Recent Escalations card removed (direct request) after initially
-  shipping it as a clickable deep-link into the conversation panel.
-- Two real bugs found and fixed via live verification, not caught by
-  type-check/lint: (1) daily trend bucketing was anchored on the range's
-  *start* date and excluded today entirely, so a tenant's whole day of
-  activity was invisible on every chart while still counting in the stat
-  tiles above it; (2) the trend chart's fixed SVG viewBox was scaled down
-  via CSS to fit a narrower card, which scaled text/stroke-width along
-  with everything else — an 11px axis label was actually rendering at
-  ~5 real pixels on a small-screen layout. Fixed by measuring the
-  container via `ResizeObserver` and rendering at its real pixel width
-  instead of relying on viewBox scaling.
-
-**2026-08-03** — Two new nav pages, Channels and Integrations
-(`frontend/src/pages/Channels.tsx`/`Integrations.tsx`), modeled on
-reference mockups as UI scaffolding for a future phase — **both
-deliberately static previews, no backend work at all** (confirmed
-directly before building: real per-tenant channel data and real
-e-commerce connectors both stay out of scope for now, see ARCHITECTURE
-§10/§12). Channels lists the five real channel types with their real
-Real/Simulated fact; Integrations lists five e-commerce platforms, all
-permanently "Not connected." Every action button (Add channel/Test all
-channels/Configure/Connect) renders disabled with a "coming soon"
-tooltip. No fabricated numbers on either page — same rule as the
-Dashboard build; the reference mockups' invented stats (active
-conversation counts, satisfaction scores, sync timestamps) were dropped
-entirely rather than faked.
-
-**2026-08-03, same day** — Channels' "AI status" column made real: a
-per-channel auto-reply on/off switch, backed by a new
-`Channel.ai_enabled` column (migration, default on for every channel) and
-two new endpoints (`GET /channels/connected`, `PATCH /channels/{id}`).
-Deliberately gated where the pipeline turns a result into a customer-
-facing reply (`app/pipeline/tasks.py`'s `_process_incoming_message` and
-`_send_follow_up`), not before the pipeline runs — intent/lead-score/
-escalation keep getting computed and logged either way, confirmed
-directly with the user; only the actual send is suppressed. A
-conceptual cousin of the cancelled per-conversation "human-paused
-conversations" idea, but narrower (channel-wide, no human-send
-capability) and not a reversal of that cancellation. `GET /channels`
-deliberately isn't the bare collection-root route — `/channels` is also
-a frontend page route now, so the endpoint lives at `/channels/connected`
-instead, same fix `/knowledge/sources` already applies for `/knowledge`.
+**2026-07-31 — portfolio scope pivot** (direct instruction, full
+reasoning in `REQUIREMENTS.md`'s own status update at its top): the real
+pilot (a friend's honey business) is deprioritized, EnvelOps becomes a
+solo portfolio project. Turkish/bilingual support cut everywhere,
+including the safety gate's own pattern lists; real Instagram/WhatsApp/
+Facebook/commerce integrations cut in favor of simulated channels + real
+Gemini tool-calling over fake deterministic connectors; tenant count
+capped at ~2 rather than growing across every vertical; template gallery
+and AI copilot cut as predicated on the abandoned multi-vertical
+ambition (PR #37). Two real calibration findings fixed same window (a
+fabricated support-email workflow, an order-modify request misrouted
+into `book_or_checkout` — PRs #38–39); safety-floor efficacy-cue gap
+closed (PR #40); UI polish pass, PDF knowledge sources, Knowledge
+sources page full redesign (PRs #41–43). Also this day: this file's
+first housekeeping pass, ~1800 lines → open items + changelog (PR #45).
 
 ---
 
@@ -1012,18 +269,18 @@ above:
 
 | Old ref | Topic | Now under |
 |---|---|---|
-| §2 | Conversation history threading | Changelog, 2026-07-29 |
-| §3.1 | Escalation cover reply + internal-note bubble | Changelog, 2026-07-29 |
-| §3.2 | One clarifying question before escalating | Changelog, 2026-07-29 |
-| §3.3 | Conversation rail intent/lead-score badges | Changelog, 2026-07-28 |
-| §3.4 | Test Console per-message diagnostics | Changelog, 2026-07-28 |
-| §3.5 | SSE live updates | Changelog, 2026-07-29 |
-| §3.6 | `keep_chatting` knowledge-gap escalation fix | Changelog, 2026-07-29 |
-| §3.7 | Typed per-tenant behavior config | Changelog, 2026-07-30 |
-| §3.8 | Tenant settings API + UI | Changelog, 2026-07-30 |
-| §5.1 | Multi-tenant showcase seed script | Changelog, 2026-07-29 |
-| §5.4 | Dev-only tenant switcher | Changelog, 2026-07-29 |
-| §5.5 | Knowledge source + trigger-phrase CRUD | Changelog, 2026-07-29 |
+| §2 | Conversation history threading | Changelog, 2026-07-28 to 2026-07-31 |
+| §3.1 | Escalation cover reply + internal-note bubble | Changelog, 2026-07-28 to 2026-07-31 |
+| §3.2 | One clarifying question before escalating | Changelog, 2026-07-28 to 2026-07-31 |
+| §3.3 | Conversation rail intent/lead-score badges | Changelog, 2026-07-28 to 2026-07-31 |
+| §3.4 | Test Console per-message diagnostics | Changelog, 2026-07-28 to 2026-07-31 |
+| §3.5 | SSE live updates | Changelog, 2026-07-28 to 2026-07-31 |
+| §3.6 | `keep_chatting` knowledge-gap escalation fix | Changelog, 2026-07-28 to 2026-07-31 |
+| §3.7 | Typed per-tenant behavior config | Changelog, 2026-07-28 to 2026-07-31 |
+| §3.8 | Tenant settings API + UI | Changelog, 2026-07-28 to 2026-07-31 |
+| §5.1 | Multi-tenant showcase seed script (deleted 2026-08-05) | Changelog, 2026-08-05 |
+| §5.4 | Dev-only tenant switcher (removed 2026-08-04) | Changelog, 2026-08-04 |
+| §5.5 | Knowledge source + trigger-phrase CRUD | Changelog, 2026-07-28 to 2026-07-31 |
 
 ---
 
