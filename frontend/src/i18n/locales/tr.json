@@ -20,7 +20,9 @@
     "collapse": "Kenar çubuğunu daralt",
     "expand": "Kenar çubuğunu genişlet",
     "reference": "Referans",
-    "attribution": "Rıdvan Zengin tarafından geliştirildi"
+    "attribution": "Rıdvan Zengin tarafından geliştirildi",
+    "openMenu": "Menüyü aç",
+    "closeMenu": "Menüyü kapat"
   },
   "pages": {
     "knowledge": "Bilgi kaynağı ekle (URL/PDF/manuel), listele ve yenile.",
@@ -46,7 +48,9 @@
     "email": "E-posta",
     "realIntegration": "Gerçek entegrasyon",
     "simulatedIntegration": "Simüle entegrasyon",
-    "menu": "Hesap menüsü"
+    "menu": "Hesap menüsü",
+    "openMenu": "Kanalları aç",
+    "title": "Kanallar"
   },
   "testConsole": {
     "platform": "Platform",

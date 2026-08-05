@@ -62,6 +62,20 @@
 .page__header { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 4px; }
 .page__description { color: var(--text); margin-bottom: 24px; }
 
+@media (max-width: 640px) {
+  /* .mobile-topbar (Sidebar.tsx/css) is position:fixed at 52px tall --
+     push content below it instead of letting it cover the page's own top
+     content. Same breakpoint/reasoning as the sibling reference project's
+     own mobile pass (iotops-workspace/IoTOps's App.css). */
+  .app-content {
+    padding-top: 52px;
+  }
+
+  .page {
+    padding: 16px;
+  }
+}
+
 /* Only when the form sits directly on a page (Knowledge sources) -- a
    form nested inside its own container (Login's .login-page__card) has
    no following section to make room for, so it doesn't need this. */

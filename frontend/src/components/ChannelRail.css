@@ -90,3 +90,142 @@
   justify-content: center;
   border: 2px solid var(--bg);
 }
+
+/* Mobile: mirrors Sidebar's own off-canvas drawer, on the opposite edge --
+   same breakpoint/backdrop/z-index scheme as the sibling reference
+   project's own ActivityBar mobile rework (iotops-workspace/IoTOps). The
+   permanent 64px icon column has nowhere to go on a phone-width viewport,
+   so it collapses into a single fixed trigger instead. */
+@media (max-width: 640px) {
+  .channel-rail__mobile-trigger {
+    position: fixed;
+    top: 0;
+    right: 0;
+    z-index: 46;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 52px;
+    height: 52px;
+    box-sizing: border-box;
+    border: none;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg);
+    color: var(--text-h);
+    cursor: pointer;
+  }
+
+  .channel-rail__mobile-trigger:hover {
+    background: var(--bg-subtle);
+  }
+
+  .channel-rail__mobile-trigger-icon {
+    width: 20px;
+    height: 20px;
+  }
+
+  .channel-rail--mobile {
+    position: fixed;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: 260px;
+    min-height: 100svh;
+    z-index: 50;
+    background: var(--bg);
+    border-left: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    padding: 0 12px 12px;
+    box-sizing: border-box;
+    overflow-y: auto;
+    transform: translateX(100%);
+    transition: transform 0.2s ease;
+    box-shadow: var(--shadow);
+  }
+
+  .channel-rail--mobile-open {
+    transform: translateX(0);
+  }
+
+  .channel-rail__mobile-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 14px 4px;
+    margin-bottom: 4px;
+    border-bottom: 1px solid var(--border);
+    color: var(--text-h);
+  }
+
+  .channel-rail__mobile-close {
+    border: none;
+    background: none;
+    color: var(--text);
+    font-size: 18px;
+    line-height: 1;
+    cursor: pointer;
+    padding: 2px 6px;
+    border-radius: 4px;
+  }
+
+  .channel-rail__mobile-close:hover {
+    background: var(--bg-subtle);
+    color: var(--text-h);
+  }
+
+  .channel-rail__mobile-account-menu {
+    display: block;
+    width: 100%;
+  }
+
+  .channel-rail__mobile-row {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    padding: 10px 8px;
+    border: none;
+    border-radius: 6px;
+    background: none;
+    color: var(--text);
+    font: inherit;
+    font-size: 14px;
+    font-weight: 500;
+    text-align: left;
+    cursor: pointer;
+  }
+
+  .channel-rail__mobile-row:hover {
+    background: var(--bg-subtle);
+    color: var(--text-h);
+  }
+
+  .channel-rail__mobile-row--active {
+    background: var(--accent-bg);
+    color: var(--accent-h);
+  }
+
+  .channel-rail__mobile-row-icon {
+    width: 20px;
+    height: 20px;
+    flex-shrink: 0;
+    color: var(--text);
+  }
+
+  .channel-rail__mobile-row-icon--real {
+    color: var(--text-h);
+  }
+
+  .channel-rail__mobile-row--active .channel-rail__mobile-row-icon {
+    color: var(--accent-h);
+  }
+
+  .channel-rail__badge--inline {
+    position: static;
+    margin-left: auto;
+    border: none;
+  }
+}

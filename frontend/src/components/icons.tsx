@@ -127,6 +127,19 @@ export function MoreIcon(props: SVGProps<SVGSVGElement>) {
   );
 }
 
+// Mobile nav hamburger trigger (Sidebar.tsx's mobile drawer) -- matches
+// the sibling reference project's own MenuIcon shape (iotops-workspace/
+// IoTOps).
+export function MenuIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <Icon {...props}>
+      <line x1="4" y1="7" x2="20" y2="7" />
+      <line x1="4" y1="12" x2="20" y2="12" />
+      <line x1="4" y1="17" x2="20" y2="17" />
+    </Icon>
+  );
+}
+
 export function SendIcon(props: SVGProps<SVGSVGElement>) {
   return (
     <Icon {...props}>
