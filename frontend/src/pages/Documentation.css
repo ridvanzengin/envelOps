@@ -106,6 +106,14 @@ table.docs-table td:first-child { color: var(--text-h); font-weight: 600; white-
   white-space: pre;
 }
 
+.docs-footer {
+  margin-top: 12px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+  font-size: 13px;
+  color: var(--text);
+}
+
 @media (max-width: 640px) {
   .docs-stat-grid { grid-template-columns: repeat(2, 1fr); }
 }

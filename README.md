@@ -4,7 +4,7 @@ AI DM-handling pipeline for small/mid-size businesses — understands intent,
 grounds replies in the business's own knowledge, scores the lead, and
 either auto-sends or pauses for a human at a hard safety gate. Built as a
 demonstration of AI assistant behavior orchestration, safety gating, and
-per-tenant configuration.
+per-tenant configuration. Open source, MIT licensed.
 
 ![EnvelOps Dashboard](docs/ss.png)
 
@@ -97,3 +97,7 @@ Frontend: `npm run build` (`tsc -b` + production build) and
 This is primarily a solo portfolio project, but issues and pull requests
 are welcome — see [`docs/ROADMAP.md`](docs/ROADMAP.md) for current status
 and what's already planned before proposing something large.
+
+## License
+
+MIT — see [LICENSE](LICENSE).

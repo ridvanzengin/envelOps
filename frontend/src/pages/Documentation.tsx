@@ -5,6 +5,7 @@ import {
   ChannelsIcon,
   DashboardIcon,
   FlaskIcon,
+  GlobeIcon,
   KnowledgeIcon,
   PlugIcon,
   SettingsIcon,
@@ -125,6 +126,19 @@ const FEATURES: Feature[] = [
       </p>
     ),
   },
+  {
+    icon: GlobeIcon,
+    title: "Demo Mode",
+    route: "public, read-only",
+    body: (
+      <p className="docs-p">
+        What this live site runs in: every mutating endpoint is blocked, a lightweight
+        background job keeps the dashboard feeling alive (10–15 simulated DMs/day across all
+        5 channel types, rolling 7-day retention), and a no-password tenant switch replaces
+        login.
+      </p>
+    ),
+  },
 ];
 
 export default function Documentation() {
@@ -153,6 +167,10 @@ export default function Documentation() {
             its own bounded product catalog, knowledge base, and behavior configuration — proving
             the same pipeline adapts per business without hardcoded per-vertical logic.
           </p>
+          <p className="docs-p">
+            Open source under the MIT license — see the repo link in the sidebar, or the license
+            note at the bottom of this page.
+          </p>
 
           <div className="docs-stat-grid">
             <div className="docs-stat">
@@ -172,7 +190,7 @@ export default function Documentation() {
               </span>
             </div>
             <div className="docs-stat">
-              <span className="docs-stat-value">370+</span>
+              <span className="docs-stat-value">400+</span>
               <span className="docs-stat-label">
                 Backend tests
                 <br />
@@ -286,6 +304,16 @@ export default function Documentation() {
             <code className="docs-code">ROADMAP.md</code> for current status and what's next.
           </p>
         </section>
+
+        <div className="docs-footer">
+          <a
+            href="https://github.com/ridvanzengin/envelOps/blob/main/LICENSE"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            MIT Licensed
+          </a>
+        </div>
       </div>
     </section>
   );
