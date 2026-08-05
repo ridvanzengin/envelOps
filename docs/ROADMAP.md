@@ -124,6 +124,36 @@ final, not provisional.
 
 ## Changelog
 
+**2026-08-05, first real bug from production traffic** — Reported live:
+clicking the first celery-beat `stream_demo_dm`-seeded conversation on
+the conversation rail showed "Couldn't load this conversation's
+messages. Try again." Root cause was **nginx, not application code** —
+`deploy/nginx/envelops.conf`'s `location = /conversations`/
+`location = /escalations` blocks (added in PR #59) are exact-match only;
+that PR's own comment already claimed a trailing-slash companion
+location existed for nested paths, but it was never actually written.
+Every nested path under either prefix — `GET /conversations/{id}/
+messages`, `POST /escalations/{id}/resolve`, the trigger-phrase CRUD
+under `/escalations/trigger-phrases` — matched no backend rule and fell
+through to the catch-all `location /`, which proxies to the *frontend*
+container. That silently returned `index.html` (`200 OK`, `text/html`)
+instead of a 404 or JSON. `apiGet()`'s catch block only special-cases a
+401 `ApiError`; a `JSON.parse()` `SyntaxError` on HTML content falls
+into the same generic "couldn't load" message every other failure
+mode does, so this read as an application bug from the browser, not a
+routing gap — confirmed instead via `curl -sI
+https://envelops.site/conversations/<uuid>/messages` returning
+`text/html` directly, and cross-checking `/escalations/trigger-phrases`
+the same way once the pattern was suspected (also broken, same cause —
+this affected resolving escalations and the Settings trigger-phrase UI
+in production too, not just the conversation thread that surfaced it).
+Fixed by adding the missing `location /conversations/ {...}` and
+`location /escalations/ {...}` trailing-slash blocks, identical
+`proxy_pass` to their exact-match siblings — the same pattern every
+other backend prefix in this file already uses. Deployed live; both
+routes confirmed returning real backend responses afterward, IoTOps/
+AgriTwin confirmed unaffected (shared nginx).
+
 **2026-08-05, first production launch** — EnvelOps went live at
 https://envelops.site (PRs #59–64), reusing the same shared Hetzner VM
 ("ringo") already hosting IoTOps and AgriTwin rather than standing up
