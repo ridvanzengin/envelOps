@@ -5,6 +5,7 @@ import {
   ChannelsIcon,
   DashboardIcon,
   FlaskIcon,
+  GlobeIcon,
   KnowledgeIcon,
   PlugIcon,
   SettingsIcon,
@@ -122,6 +123,19 @@ const FEATURES: Feature[] = [
         A static preview of e-commerce platform connectors (Shopify, WooCommerce, and others) —
         not built in this phase. Simulated commerce via Tool-Calling above is the real
         capability today.
+      </p>
+    ),
+  },
+  {
+    icon: GlobeIcon,
+    title: "Demo Mode",
+    route: "public, read-only",
+    body: (
+      <p className="docs-p">
+        What this live site runs in: every mutating endpoint is blocked, a lightweight
+        background job keeps the dashboard feeling alive (10–15 simulated DMs/day across all
+        5 channel types, rolling 7-day retention), and a no-password tenant switch replaces
+        login.
       </p>
     ),
   },
