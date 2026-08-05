@@ -115,11 +115,29 @@ _DEMO_STREAM_MESSAGES = (
 # (_random_order_number/_random_reference) so the same template doesn't
 # read as the exact same canned message every time it's picked, same
 # realism goal as every entry in _DEMO_STREAM_MESSAGES above.
+#
+# Templates below rewritten twice on 2026-08-06 (both direct instruction,
+# real bugs found live watching the stream). Pass 1: the original wording
+# used a dangling "this"/"these"/"it" pointing at an unstated product
+# ("order {qty} of these", "buy this today"), violating constraint (1) in
+# the comment above _DEMO_STREAM_MESSAGES: every streamed DM opens a
+# brand-new conversation, so there's no prior turn for the model (or a
+# human reading the transcript) to resolve the pronoun against. First fix
+# swapped in a generic noun ("my order", "{qty} items"), which resolved
+# the dangling-pronoun problem but was still vague about *what* was being
+# bought. Pass 2: named an actual (fake, synthetic -- not a real lookup
+# against a tenant's FakeCommerceProduct catalog) `{product}` id instead,
+# filled in per send by _random_product_id() below, same "plausible but
+# made up" role _random_order_number()/_random_reference() already play.
 _PURCHASE_INTENT_TEMPLATES = (
-    "I'd like to order {qty} of these -- how do I complete the purchase?",
-    "Can I get {qty} units shipped to me? What would the total cost be?",
-    "I'm ready to buy this today -- what's the best way to check out?",
-    "Can I place an order for {qty} right now?",
+    "I'd like to order {qty} units of product ID {product} -- how do I "
+    "complete the purchase?",
+    "Can I get {qty} units of product ID {product} shipped to me? What "
+    "would the total cost be?",
+    "I'm ready to buy product ID {product} today -- what's the best way "
+    "to check out?",
+    "Can I place an order for {qty} units of product ID {product} right "
+    "now?",
 )
 
 # Deliberately urgent/ready-to-buy phrasing -- meant to score "hot" via
@@ -130,15 +148,18 @@ _PURCHASE_INTENT_TEMPLATES = (
 # category exercises the checkout-link handoff, not the safety floor
 # (that's _ESCALATION_TRIGGER_MESSAGES below, a deliberately separate
 # category).
+# Same two-pass 2026-08-06 fix as _PURCHASE_INTENT_TEMPLATES above --
+# pass 1 swapped "this"/"it" for "my order", pass 2 swapped that for the
+# same fake `{product}` id (_random_product_id()).
 _HOT_LEAD_TEMPLATES = (
-    "I need this delivered by this weekend if at all possible -- order "
-    "reference {ref}. Can you make that happen?",
-    "I want to place an order right now, please send me the checkout "
-    "link immediately.",
-    "This is urgent, I need to buy this today -- how fast can you get "
-    "it to me? Reference {ref}.",
-    "Can I check out immediately? I need this as soon as possible, "
-    "reference {ref}.",
+    "I need product ID {product} delivered by this weekend if at all "
+    "possible -- reference {ref}. Can you make that happen?",
+    "I want to place an order for product ID {product} right now, "
+    "please send me the checkout link immediately.",
+    "This is urgent, I need product ID {product} today -- how fast can "
+    "you get it shipped? Reference {ref}.",
+    "Can I check out immediately? I need product ID {product} as soon "
+    "as possible, reference {ref}.",
 )
 
 _COMPLAINT_TEMPLATES = (
@@ -161,11 +182,28 @@ _COMPLAINT_TEMPLATES = (
 # framing, which wouldn't make sense coming from an apparel/electronics
 # customer -- the pattern itself doesn't require health language, only
 # these two word categories together in the same message.
+#
+# Same two-pass 2026-08-06 fix as the two pools above -- pass 1 swapped
+# "this"/"it" for "my order" (and gave the "fix the issue I'm having"
+# entry a concrete issue, "arrived damaged", the same way
+# _COMPLAINT_TEMPLATES already does), pass 2 swapped "my order" for the
+# same fake `{product}` id (_random_product_id()). Bonus fix found during
+# pass 1, unrelated to either pass's actual ask: the last entry had no
+# certainty word at all ("risk"/"dangerous" are both efficacy cues, not
+# certainty ones) so it never actually tripped
+# check_platform_safety_floor's certainty+efficacy pair despite this
+# docstring claiming all four do -- added "guarantee" so it now matches
+# the "guarantee zero/no risk of X" shape safety_gate.py's own docstring
+# describes.
 _ESCALATION_TRIGGER_MESSAGES = (
-    "Can you guarantee this will definitely work in extreme cold weather?",
-    "Can you guarantee this is completely safe to bring on a flight?",
-    "Do you promise this will fix the issue I'm having, 100% guaranteed?",
-    "Is there any risk this could be dangerous if I use it every day?",
+    "Can you guarantee product ID {product} will definitely work in "
+    "extreme cold weather?",
+    "Can you guarantee product ID {product} is completely safe to bring "
+    "on a flight?",
+    "Product ID {product} I ordered arrived damaged -- do you promise a "
+    "replacement will fix it, 100% guaranteed?",
+    "Can you guarantee there's no risk product ID {product} could be "
+    "dangerous if I use it every day?",
 )
 
 # Weights, not a uniform 1-in-5 -- knowledge questions dominate real DM
@@ -188,6 +226,16 @@ def _random_reference() -> str:
     return f"REQ-{random.randint(1000, 9999)}"
 
 
+def _random_product_id() -> str:
+    # Fake, same as the two generators above -- not a lookup against any
+    # tenant's real FakeCommerceProduct catalog (app/commerce/models.py).
+    # This pool is shared across every demo tenant regardless of vertical
+    # (see the vertical-agnostic note on _DEMO_STREAM_MESSAGES above), so
+    # a synthetic SKU-shaped id reads as plausible without tying a message
+    # to one tenant's actual product names.
+    return f"SKU-{random.randint(1000, 9999)}"
+
+
 def _generate_demo_message() -> str:
     category = random.choices(
         list(_MESSAGE_CATEGORY_WEIGHTS), weights=list(_MESSAGE_CATEGORY_WEIGHTS.values()), k=1
@@ -195,12 +243,16 @@ def _generate_demo_message() -> str:
     if category == "knowledge":
         return random.choice(_DEMO_STREAM_MESSAGES)
     if category == "purchase_intent":
-        return random.choice(_PURCHASE_INTENT_TEMPLATES).format(qty=random.randint(1, 5))
+        return random.choice(_PURCHASE_INTENT_TEMPLATES).format(
+            qty=random.randint(1, 5), product=_random_product_id()
+        )
     if category == "hot_lead":
-        return random.choice(_HOT_LEAD_TEMPLATES).format(ref=_random_reference())
+        return random.choice(_HOT_LEAD_TEMPLATES).format(
+            ref=_random_reference(), product=_random_product_id()
+        )
     if category == "complaint":
         return random.choice(_COMPLAINT_TEMPLATES).format(order_num=_random_order_number())
-    return random.choice(_ESCALATION_TRIGGER_MESSAGES)
+    return random.choice(_ESCALATION_TRIGGER_MESSAGES).format(product=_random_product_id())
 
 
 @celery_app.task(name="process_incoming_message")
