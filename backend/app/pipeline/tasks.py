@@ -552,8 +552,26 @@ async def _stream_demo_dm() -> None:
         if not _should_send_now(sent_today, target, elapsed_fraction):
             return
 
-        tenant_id = random.choice(tenant_ids)
-        channel_type = random.choice(_DEMO_STREAM_CHANNEL_TYPES)
+        # secrets.choice, not random.choice, deliberately -- found live
+        # 2026-08-06: production's first 5 real sends all landed on the
+        # same tenant (Wildroot) despite both it and Voltage Gadgets
+        # existing with an equal-weight entry in tenant_ids (verified
+        # directly against the prod DB, not assumed). random.choice draws
+        # from the process-global `random` module's Mersenne Twister
+        # state; Celery's prefork worker pool forks its child processes
+        # from one parent, and depending on exactly when/whether each
+        # child's copy of that global state gets reseeded post-fork, forked
+        # siblings can end up drawing correlated (in the worst case,
+        # identical) sequences from it -- a known class of issue with
+        # global PRNG state across forked processes, not proven as the
+        # exact root cause here from static reading alone, but a real risk
+        # this task's own correctness (spreading demo activity across
+        # tenants over time) can't afford, and secrets.choice (already
+        # importing `secrets` above for webhook_secret) sidesteps it
+        # entirely -- each call reads fresh OS entropy via SystemRandom,
+        # never process-global state, so no fork can correlate it.
+        tenant_id = secrets.choice(tenant_ids)
+        channel_type = secrets.choice(_DEMO_STREAM_CHANNEL_TYPES)
         text = _generate_demo_message()
 
         channel_repo = ChannelRepository(session)
